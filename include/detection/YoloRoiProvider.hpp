@@ -40,6 +40,10 @@ public:
     std::pair<RoiGroup, RoiGroup> detect(const cv::Mat& left_img,
                                           const cv::Mat& right_img);
 
+    /// 单目模式：仅对左图运行 YOLO，返回单个 RoiGroup。
+    /// 右图不做任何处理。
+    RoiGroup detectMono(const cv::Mat& left_img);
+
 private:
     std::unique_ptr<YoloDetector> detector_;
     std::unique_ptr<RoiGenerator> roi_gen_;

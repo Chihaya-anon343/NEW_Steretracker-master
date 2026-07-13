@@ -1503,6 +1503,117 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 void StereoTracker::clearCache() { state_ = TrackingState{}; }
 
 // ============================================================================
+// 单目模式 —— 仅左图特征提取 + PnP 解算
+// ============================================================================
+
+PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
+                                           bool visualize,
+                                           const RoiRect* left_roi) {
+    PipelineResult result;
+    result.success = false;
+
+    if (!mono_cfg_.enabled) {
+        std::cerr << "[Mono] mono mode not enabled, set MonoConfig::enabled=true" << std::endl;
+        return result;
+    }
+
+    if (left_img.empty()) {
+        std::cerr << "[Mono] empty left image" << std::endl;
+        return result;
+    }
+
+    // 加载灰度图
+    auto [left_color, left_gray] = loadImage(left_img);
+    if (left_gray.empty()) {
+        std::cerr << "[Mono] failed to load left image" << std::endl;
+        return result;
+    }
+    result.left_color = left_color;
+
+    // ROI 校验：无 ROI → 全图
+    RoiRect roi = validateRoi(left_roi, left_img.size(), "mono_left");
+    if (!roi.valid()) {
+        roi = RoiRect{0, 0, left_img.cols, left_img.rows};
+    }
+
+    int roi_area = roi.width * roi.height;
+    std::cout << "[Mono] ROI area=" << roi_area
+              << " (" << roi.width << "x" << roi.height << ")"
+              << std::endl;
+
+    // 裁剪左图 ROI
+    cv::Mat left_gray_roi  = left_gray( cv::Rect(roi.x, roi.y, roi.width, roi.height));
+    cv::Mat left_color_roi = left_color(cv::Rect(roi.x, roi.y, roi.width, roi.height));
+    cv::Point2d left_offset(roi.x, roi.y);
+
+    // 策略链选择
+    configureStrategyChain(roi_area);
+
+    bool is_first = (state_.frame_count == 0);
+    bool extracted = false;
+
+    // 尝试主策略 + 退化链
+    std::vector<FeatureExtractor*> chain;
+    chain.push_back(extractor_);
+    for (auto* fb : fallback_extractors_)
+        chain.push_back(fb);
+
+    for (auto* ext : chain) {
+        if (!ext) continue;
+
+        std::cout << "[Mono] Trying extractor: " << ext->name() << std::endl;
+
+        // 单目提取：传入空右图
+        cv::Mat empty_right_gray, empty_right_color;
+        cv::Point2d right_offset(0, 0);
+
+        // 构造 pipeline 结果
+        PipelineResult local;
+        local.success = false;
+
+        // 使用 extractMono 进行单目提取
+        local = ext->extractMono(left_gray_roi, left_color_roi, left_offset);
+
+        if (local.success && local.n_kp_left >= 3) {
+            result = std::move(local);
+            result.left_color = left_color;
+            result.left_roi_offset_x = static_cast<int>(left_offset.x);
+            result.left_roi_offset_y = static_cast<int>(left_offset.y);
+            extracted = true;
+            std::cout << "[Mono] Extractor " << ext->name()
+                      << " succeeded, n_kp=" << result.n_kp_left << std::endl;
+            break;
+        }
+
+        std::cout << "[Mono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
+    }
+
+    if (!extracted) {
+        std::cerr << "[Mono] All extractors failed" << std::endl;
+        addLogEntry(result, is_first, true);
+        return result;
+    }
+
+    // PnP 解算
+    auto [pnps_ok, pose] = dispatchPnP(extractor_, result, is_first);
+    finalizePose(result, pose);
+
+    result.success = pose.success;
+    addLogEntry(result, is_first, false);
+
+    // 可视化（仅左图）
+    if (visualize && !output_dir_.empty()) {
+        if (!visualizer_)
+            visualizer_ = std::make_unique<Visualizer>();
+        result.left_color = left_color;
+        visualizer_->drawMonoResult(output_dir_, state_.frame_count, result);
+    }
+
+    state_.frame_count++;
+    return result;
+}
+
+// ============================================================================
 // ROI 辅助函数 —— 校验、裁剪、坐标偏移
 // ============================================================================
 

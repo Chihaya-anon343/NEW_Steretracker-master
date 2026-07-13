@@ -67,6 +67,20 @@ public:
                                     const cv::Mat& left_color,
                                     const cv::Mat& right_color) = 0;
 
+    /// 仅从单张图像 ROI 中提取特征（单目模式）。
+    ///
+    /// 默认实现回退到双目 extract()，传入空的右图。
+    /// 各策略可覆盖实现以针对单目场景做专门处理（如跳过光流/立体投影等双图逻辑）。
+    ///
+    /// @param gray   单张灰度 ROI（左图）
+    /// @param color  单张彩色 ROI（左图，用于可视化）
+    /// @return       包含提取特征数据的 PipelineResult（右图相关字段为空）
+    virtual PipelineResult extractMono(const cv::Mat& gray,
+                                        const cv::Mat& color) {
+        cv::Mat empty;
+        return extract(gray, empty, color, empty);
+    }
+
     /// 返回此策略使用的模板数据。
     virtual const TemplateData& templateData() const = 0;
 };

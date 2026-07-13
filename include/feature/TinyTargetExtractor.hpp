@@ -60,6 +60,9 @@ public:
                            const cv::Mat& left_color,
                            const cv::Mat& right_color) override;
 
+    PipelineResult extractMono(const cv::Mat& gray,
+                                const cv::Mat& color) override;
+
     const TemplateData& templateData() const override { return template_data_; }
 
     // ---- Post-extraction state ----

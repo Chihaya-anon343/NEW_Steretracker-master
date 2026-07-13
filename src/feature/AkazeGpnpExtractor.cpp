@@ -108,4 +108,39 @@ PipelineResult AkazeGpnpExtractor::extract(const cv::Mat& left_gray,
     return result;
 }
 
+// ============================================================================
+// 单目特征提取 —— 仅 AKAZE + 模板匹配，无光流/立体投影
+// ============================================================================
+
+PipelineResult AkazeGpnpExtractor::extractMono(const cv::Mat& gray,
+                                                const cv::Mat& color) {
+    PipelineResult result;
+    auto& timing = result.timing;
+
+    // 步骤1: AKAZE 提取
+    auto t0 = std::chrono::high_resolution_clock::now();
+    FeatureSet features = akaze_extractor_.extract(gray);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    timing["akaze"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    result.kp_left = std::move(features.keypoints);
+    result.desc_left = features.descriptors;
+    result.n_kp_left = features.num_keypoints;
+
+    // 步骤2: 模板匹配（单目模式仅做描述子匹配，无立体验证）
+    t0 = std::chrono::high_resolution_clock::now();
+    MatchResult match = template_matcher_.match(
+        result.desc_left, result.kp_left,
+        template_.descriptors, template_.keypoints);
+    t1 = std::chrono::high_resolution_clock::now();
+    timing["match_template"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    result.good_matches = std::move(match.good_matches);
+    result.pts_left_match = std::move(match.pts_left_match);
+    result.pts_template_match = std::move(match.pts_template_match);
+    result.n_template_match = match.num_matches;
+    result.left_color = color;
+
+    return result;
+}
+
 } // namespace gpnp

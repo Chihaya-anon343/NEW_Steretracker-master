@@ -396,4 +396,83 @@ std::vector<cv::Point2f> TinyTargetExtractor::refineCorners(
     return result;
 }
 
+// ============================================================================
+// 单目特征提取 —— 仅左图 4 角点提取（无立体匹配）
+// ============================================================================
+
+PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
+                                                 const cv::Mat& color) {
+    PipelineResult result;
+    result.left_color = color;
+
+    if (gray.empty()) {
+        std::cerr << "[TinyTarget::extractMono] empty image" << std::endl;
+        return result;
+    }
+
+    std::cout << "[TinyTarget] Mono ROI=" << gray.cols << "x" << gray.rows << std::endl;
+
+    // 单图提取4个角点
+    std::vector<cv::Point2f> corners;
+    int best_angle = -1;
+    double best_overlap = 0.0;
+    Status s = extract4Corners(gray, corners, best_angle, best_overlap);
+
+    if (s != Status::Success || corners.size() != 4) {
+        std::cerr << "[TinyTarget::extractMono] extraction failed (status="
+                  << static_cast<int>(s) << ", n=" << corners.size() << ")" << std::endl;
+        return result;
+    }
+
+    last_best_angle_ = best_angle;
+    last_best_overlap_ = best_overlap;
+
+    // kp_left
+    result.kp_left.reserve(4);
+    for (const auto& pt : corners)
+        result.kp_left.emplace_back(pt, 1.0f);
+    result.n_kp_left = 4;
+
+    // pts_left_match
+    result.pts_left_match = corners;
+
+    // 模板匹配数据
+    if (best_angle >= 0) {
+        for (const auto& tmpl : templates_) {
+            if (tmpl.angle == best_angle) {
+                double sx = static_cast<double>(gray.cols) / tmpl.image.cols;
+                double sy = static_cast<double>(gray.rows) / tmpl.image.rows;
+                result.pts_template_match = tmpl.corners;
+                for (auto& pt : result.pts_template_match) {
+                    pt.x *= static_cast<float>(sx);
+                    pt.y *= static_cast<float>(sy);
+                }
+                result.n_template_match = 4;
+                break;
+            }
+        }
+    }
+
+    // DMatch 1:1
+    for (int i = 0; i < 4; ++i)
+        result.good_matches.emplace_back(i, i, 0.0f);
+
+    // 3D 物点（mm）
+    {
+        double half_mm = config_.square_size_m * 1000.0 / 2.0;
+        template_data_.pts_3d = {
+            {-half_mm, -half_mm, 0.0},
+            { half_mm, -half_mm, 0.0},
+            { half_mm,  half_mm, 0.0},
+            {-half_mm,  half_mm, 0.0},
+        };
+    }
+
+    result.timing["tiny_target"] = 0.0;
+
+    std::cout << "[TinyTarget] Mono extracted 4 corners, angle=" << best_angle
+              << "°, overlap=" << best_overlap << std::endl;
+    return result;
+}
+
 } // namespace gpnp

@@ -67,4 +67,34 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
     return {lg, rg};
 }
 
+RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
+    if (!isReady()) return {};
+
+    std::vector<Detection> det_left;
+    Status sl = detector_->detect(left_img, det_left);
+
+    if (sl != Status::Success || det_left.empty()) {
+        std::cerr << "[YoloRoiProvider] Mono detection failed"
+                  << " (status=" << static_cast<int>(sl) << ")"
+                  << std::endl;
+        return {};
+    }
+
+    // 单目模式：仅对左图生成 RoiGroup，右图为空
+    RoiGroup lg = roi_gen_->generateGroup(det_left, left_img.size());
+
+    if (lg.valid()) {
+        std::cout << "[YoloRoiProvider] Mono ROI=("
+                  << lg.primary.x << "," << lg.primary.y << ","
+                  << lg.primary.width << "," << lg.primary.height << ")";
+        if (lg.is_dual) {
+            std::cout << " + secondary=(" << lg.secondary.x << "," << lg.secondary.y << ","
+                      << lg.secondary.width << "," << lg.secondary.height << ")";
+        }
+        std::cout << std::endl;
+    }
+
+    return lg;
+}
+
 } // namespace gpnp

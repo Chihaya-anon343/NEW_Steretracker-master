@@ -56,6 +56,7 @@ struct TrackerConfig {
     int tiny_max_area{800};              ///< TinyTarget 策略的最大 ROI 面积
     int dual_roi_secondary_expand{10};   ///< 双 ROI 模式下次级（class 1）ROI 的拓展像素数
     double dual_roi_akaze_scale{0.5};    ///< 双 ROI class 1 提取时的 AKAZE 缩放
+    bool mono_mode{false};               ///< 单目模式：仅用左图提取特征+PnP，跳过右图及立体匹配
 };
 
 // ============================================================================

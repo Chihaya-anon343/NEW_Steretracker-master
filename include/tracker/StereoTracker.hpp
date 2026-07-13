@@ -63,6 +63,26 @@ public:
                            const RoiGroup* left_group = nullptr,
                            const RoiGroup* right_group = nullptr);
 
+    // ========================================================================
+    // Mono API — 单目模式（仅左图，PnP 解算）
+    // ========================================================================
+
+    /// 单目模式配置
+    struct MonoConfig {
+        bool enabled = false;             ///< true 时 processMono() 生效
+        int akaze_min_area = 40001;
+        int tiny_max_area = 800;
+    };
+
+    /// 设置单目模式配置
+    void setMonoConfig(const MonoConfig& cfg) { mono_cfg_ = cfg; }
+    const MonoConfig& monoConfig() const { return mono_cfg_; }
+
+    /// 单目帧处理（仅左图）：ROI → 策略分发 → 单图特征提取 → PnP 解算
+    PipelineResult processMono(const cv::Mat& left_img,
+                               bool visualize = false,
+                               const RoiRect* left_roi = nullptr);
+
     void clearCache();
 
     // ========================================================================
@@ -102,6 +122,9 @@ private:
     // 策略选择阈值（从配置读取）
     int akaze_min_area_ = 40000;
     int tiny_max_area_  = 800;
+
+    // 单目模式配置
+    MonoConfig mono_cfg_;
 
     // 非 AKAZE 提取器的 ROI 填充
     int binary_roi_pad_ = 0;

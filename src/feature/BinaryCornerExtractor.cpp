@@ -1017,4 +1017,83 @@ void BinaryCornerExtractor::logStep(const std::string& step, const std::string& 
     process_log_.emplace_back(step, info);
 }
 
+// ============================================================================
+// 单目特征提取 —— 仅左图 Otsu → 模板匹配 → approxPolyDP 角点
+// ============================================================================
+
+PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
+                                                   const cv::Mat& color) {
+    PipelineResult result;
+    result.left_color = color;
+
+    if (gray.empty()) {
+        std::cerr << "[BinaryCorner::extractMono] empty image" << std::endl;
+        return result;
+    }
+
+    // Otsu 二值化
+    cv::Mat binary;
+    cv::threshold(gray, binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
+    last_left_binary_ = binary.clone();
+
+    // 从二值图像提取角点
+    std::vector<cv::Point2f> corners;
+    Status s = extractFromBinary(binary, gray, corners);
+    if (s != Status::Success || corners.empty()) {
+        std::cerr << "[BinaryCorner::extractMono] extraction failed (status="
+                  << static_cast<int>(s) << ")" << std::endl;
+        return result;
+    }
+
+    // kp_left
+    result.kp_left.reserve(corners.size());
+    for (const auto& pt : corners) {
+        result.kp_left.emplace_back(pt, 1.0f);
+    }
+    result.n_kp_left = static_cast<int>(corners.size());
+
+    // pts_left_match = 提取到的角点
+    result.pts_left_match = corners;
+
+    // 模板匹配数据（使用 0° 模板）
+    const TemplateData* matched_tmpl = last_matched_template_;
+    const TemplateData* tmpl_0 = nullptr;
+    for (const auto& t : templates_) {
+        if (t.angle == 0) { tmpl_0 = &t; break; }
+    }
+    if (tmpl_0 == nullptr) tmpl_0 = matched_tmpl;
+
+    if (tmpl_0 != nullptr) {
+        double scale_x = static_cast<double>(gray.cols) / tmpl_0->image.cols;
+        double scale_y = static_cast<double>(gray.rows) / tmpl_0->image.rows;
+
+        result.pts_template_match = tmpl_0->corners;
+        for (auto& pt : result.pts_template_match) {
+            pt.x *= static_cast<float>(scale_x);
+            pt.y *= static_cast<float>(scale_y);
+        }
+        result.n_template_match = static_cast<int>(result.pts_template_match.size());
+
+        int n_match = std::min(static_cast<int>(corners.size()),
+                               static_cast<int>(tmpl_0->corners.size()));
+        result.good_matches.reserve(n_match);
+        for (int i = 0; i < n_match; ++i) {
+            result.good_matches.emplace_back(i, i, 0.0f);
+        }
+
+        // 3D 物方点
+        if (config_.pixel_to_meter_scale > 0.0) {
+            double s_mm = config_.pixel_to_meter_scale * 1000.0;
+            const auto& tc = tmpl_0->corners;
+            template_data_.pts_3d.clear();
+            template_data_.pts_3d.reserve(tc.size());
+            for (const auto& pt : tc) {
+                template_data_.pts_3d.emplace_back(pt.x * s_mm, pt.y * s_mm, 0.0);
+            }
+        }
+    }
+
+    return result;
+}
+
 } // namespace gpnp
