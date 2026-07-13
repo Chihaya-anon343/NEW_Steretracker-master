@@ -1,0 +1,82 @@
+{
+  "input": {
+    "left": "data/大图/cj01_image_0032 - 副本.jpg",
+    "right": "data/大图/cj01_image_0032 - 副本.jpg"
+  },
+  "output": {
+    "visualize": true
+  },
+
+  "TODO": {
+    "BINARY CORNER": "修改模板的点顺序,使得各角度模板的点顺序确定,都选择黑色块的点作为第一个点.用各角度的模板找到对应角度后,将点对应到0角度的模板点上,然后进行PNP",
+    "实验计划":"确认BinaryCorner策略下,特征点与模板点的匹配方式,应该是以角度选择第一个点,然后以逆时针进行排序.确定的排序应该是模板的顺序,不过现在已经把所有模板的第一个点都确定为黑块红点了",
+    "续":"这样设计好后,提取点的顺序与0角度模板的点顺序已经完成了(即都是黑块红点为第一个点,逆时针)"
+  },
+
+  "camera": {
+    "fx": 541.764,
+    "fy": 541.764,
+    "cx": 553.682,
+    "cy": 232.397,
+    "baseline_mm": 60.0
+  },
+
+  "yolo": {
+    "model_path": "best.onnx",
+    "conf_threshold": 0.5,
+    "target_class_id": 0,
+    "roi_expand_ratio": 0.0,
+    "roi_min_size": 0
+  },
+
+  "manual_roi": {
+    "_comment": "设为 true 则跳过 YOLO，直接使用下方 ROI；设为 false 则走正常 YOLO 流程",
+    "enabled": false,
+    "left":   { "x": 416, "y": 113, "width": 300, "height": 300 },
+    "right":  { "x": 410, "y": 113, "width": 300, "height": 300 }
+  },
+
+  "strategies": {
+    "_comment": "ROI area thresholds: <= tiny_max → TinyTarget, >= akaze_min → AKAZE, else BinaryCorner",
+    "akaze_min_area": 40001,
+    "tiny_max_area": 800,
+
+    "akaze_gpnp": {
+      "template_path": "data/大图/img_1.png",
+      "template_real_width_mm": 500.0,
+      "template_real_height_mm": 500.0,
+      "scale": 0.5,
+      "gpnp_min_pts": 4,
+      "use_initial_pnp": true
+    },
+
+    "binary_corner": {
+      "template_dir": "data/NewMuBan(reordered)",
+      "corners": 10,
+      "kernel_size": 3,
+      "corner_scale": 3.0,
+      "target_width": 100,
+      "target_height": 100,
+      "pixel_to_meter_scale": 0.004,
+      "roi_pad_pixels": 3,
+      "otsu_ratio": 1
+    },
+
+    "tiny_target": {
+      "template_dir": "data/NewMuBan(reordered)",
+      "target_width": 50,
+      "target_height": 50,
+      "scale_factor": 4,
+      "square_size_m": 0.2,
+      "roi_pad_pixels": 5
+    },
+
+    "dual_roi": {
+      "_comment": "双ROI模式下class 1 ROI的四周拓展像素数 + AKAZE提取参数",
+      "secondary_expand_pixels": 50,
+      "akaze": {
+        "scale": 1
+      }
+    }
+  }
+}

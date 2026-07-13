@@ -1,0 +1,103 @@
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+# =========================================================
+# 使用阿里源
+# =========================================================
+
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+
+# =========================================================
+# 基础开发环境
+# =========================================================
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    pkg-config \
+    git \
+    wget \
+    curl \
+    unzip \
+    vim \
+    gdb \
+    clang-format \
+    ca-certificates \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# =========================================================
+# OpenCV
+# =========================================================
+
+RUN apt-get update && apt-get install -y \
+    libopencv-dev \
+    libopencv-contrib-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# =========================================================
+# Eigen
+# =========================================================
+
+RUN apt-get update && apt-get install -y \
+    libeigen3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# =========================================================
+# spdlog
+# =========================================================
+
+RUN apt-get update && apt-get install -y \
+    libspdlog-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# =========================================================
+# yaml-cpp
+# =========================================================
+
+RUN apt-get update && apt-get install -y \
+    libyaml-cpp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# =========================================================
+# Ceres Solver
+# =========================================================
+
+RUN apt-get update && apt-get install -y \
+    libceres-dev \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    libsuitesparse-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# =========================================================
+# ONNX Runtime GPU
+# =========================================================
+
+ARG ONNXRUNTIME_VERSION=1.20.1
+
+RUN cd /opt && \
+    wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}.tgz && \
+    tar -xzf onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}.tgz && \
+    rm onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}.tgz
+
+ENV ONNXRUNTIME_ROOT=/opt/onnxruntime-linux-x64-gpu-${ONNXRUNTIME_VERSION}
+
+# =========================================================
+# 环境变量
+# =========================================================
+
+ENV LD_LIBRARY_PATH=${ONNXRUNTIME_ROOT}/lib:${LD_LIBRARY_PATH}
+ENV PATH=${ONNXRUNTIME_ROOT}/bin:${PATH}
+
+# =========================================================
+# 工作目录
+# =========================================================
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]

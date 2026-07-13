@@ -1,0 +1,15 @@
+# Normalized Template Corners
+# Angle: 105 degrees
+# Format: Corner_Index: X, Y
+# Image Size: 50x50
+
+Corner_6: 7.52, 40.78
+Corner_7: 35.88, 33.18
+Corner_8: 39.38, 45.87
+Corner_9: 50.02, 42.93
+Corner_0: 39.59, 3.92
+Corner_1: 28.88, 6.86
+Corner_2: 31.95, 19.55
+Corner_3: 14.45, 24.21
+Corner_4: 11.02, 11.59
+Corner_5: 0.59, 14.53
