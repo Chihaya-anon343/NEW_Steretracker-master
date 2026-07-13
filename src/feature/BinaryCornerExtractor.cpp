@@ -1093,6 +1093,7 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
         }
     }
 
+    result.success = !corners.empty();
     return result;
 }
 

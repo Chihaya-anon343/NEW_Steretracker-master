@@ -470,6 +470,7 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
 
     result.timing["tiny_target"] = 0.0;
 
+    result.success = true;
     std::cout << "[TinyTarget] Mono extracted 4 corners, angle=" << best_angle
               << "°, overlap=" << best_overlap << std::endl;
     return result;

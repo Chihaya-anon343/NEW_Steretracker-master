@@ -139,6 +139,7 @@ PipelineResult AkazeGpnpExtractor::extractMono(const cv::Mat& gray,
     result.pts_template_match = std::move(match.pts_template_match);
     result.n_template_match = match.num_matches;
     result.left_color = color;
+    result.success = (match.num_matches >= 4);
 
     return result;
 }

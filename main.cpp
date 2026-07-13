@@ -117,6 +117,13 @@ int main(int argc, char** argv) {
         }
     }
 
+    // 单目模式配置
+    bool mono_mode = false;
+    cv::FileNode mono_node = fs["mono_mode"];
+    if (!mono_node.empty()) {
+        mono_mode = static_cast<int>(mono_node) != 0;
+    }
+
     fs.release();
 
     // ========================================================================
@@ -169,48 +176,93 @@ int main(int argc, char** argv) {
                               tiny_cfg, tiny_template_dir);
         tracker.setOutputDir(output_dir);
 
-        // ====================================================================
-        // ④ 逐帧处理
-        // ====================================================================
-        for (int frame = 1; frame <= 2; ++frame) {
-            std::cout << "\n===== 第 " << frame << " 帧 =====" << std::endl;
+        // 启用单目模式
+        if (mono_mode) {
+            StereoTracker::MonoConfig mono_cfg;
+            mono_cfg.enabled = true;
+            mono_cfg.akaze_min_area = akaze_min_area;
+            mono_cfg.tiny_max_area = tiny_max_area;
+            tracker.setMonoConfig(mono_cfg);
+            std::cout << "单目模式已启用（仅左图）" << std::endl;
+        }
 
-            // 获取 ROI：手动输入 > YOLO 检测
-            RoiGroup lg, rg;
-            if (use_manual_roi) {
-                lg = RoiGroup{manual_rl, {}, false};
-                rg = RoiGroup{manual_rr, {}, false};
-                std::cout << "  手动 ROI: left=(" << manual_rl.x << "," << manual_rl.y << ","
-                          << manual_rl.width << "," << manual_rl.height << "), right=("
-                          << manual_rr.x << "," << manual_rr.y << "," << manual_rr.width
-                          << "," << manual_rr.height << ")" << std::endl;
-            } else if (yolo_ok) {
-                std::tie(lg, rg) = yolo.detect(left_img, right_img);
-                if (lg.is_dual) {
-                    std::cout << "  双 ROI 模式: secondary=(" << lg.secondary.width
-                              << "x" << lg.secondary.height << ")" << std::endl;
+        // ====================================================================
+        // ④ 逐帧处理（单目 / 双目分支）
+        // ====================================================================
+        if (mono_mode) {
+            // ================================================================
+            // 单目路径：仅使用左图
+            // ================================================================
+            for (int frame = 1; frame <= 2; ++frame) {
+                std::cout << "\n===== 第 " << frame << " 帧 (单目) =====" << std::endl;
+
+                // 获取 ROI（仅左图）
+                RoiRect* plr = nullptr;
+                RoiRect manual_rl_copy = manual_rl;
+                if (use_manual_roi) {
+                    plr = &manual_rl_copy;
+                } else if (yolo_ok) {
+                    auto [lg, rg] = yolo.detect(left_img, right_img);
+                    if (lg.valid()) {
+                        manual_rl_copy = lg.primary;
+                        plr = &manual_rl_copy;
+                    }
                 }
+
+                // processMono() 内部完成：策略链选择 + 单图提取 + PnP 解算
+                auto result = tracker.processMono(left_img, visualize, plr);
+
+                // 输出结果摘要
+                std::cout << "  特征点: " << result.n_kp_left
+                          << "  匹配: " << result.n_matched
+                          << "  模板: " << result.n_template_match
+                          << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
+                          << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
             }
+        } else {
+            // ================================================================
+            // 双目路径：左右图立体匹配
+            // ================================================================
+            for (int frame = 1; frame <= 2; ++frame) {
+                std::cout << "\n===== 第 " << frame << " 帧 =====" << std::endl;
 
-            // process() 内部自动完成：策略链选择 + ROI padding + 提取 + 位姿解算
-            const RoiGroup* plg = lg.valid() ? &lg : nullptr;
-            const RoiGroup* prg = rg.valid() ? &rg : nullptr;
+                // 获取 ROI：手动输入 > YOLO 检测
+                RoiGroup lg, rg;
+                if (use_manual_roi) {
+                    lg = RoiGroup{manual_rl, {}, false};
+                    rg = RoiGroup{manual_rr, {}, false};
+                    std::cout << "  手动 ROI: left=(" << manual_rl.x << "," << manual_rl.y << ","
+                              << manual_rl.width << "," << manual_rl.height << "), right=("
+                              << manual_rr.x << "," << manual_rr.y << "," << manual_rr.width
+                              << "," << manual_rr.height << ")" << std::endl;
+                } else if (yolo_ok) {
+                    std::tie(lg, rg) = yolo.detect(left_img, right_img);
+                    if (lg.is_dual) {
+                        std::cout << "  双 ROI 模式: secondary=(" << lg.secondary.width
+                                  << "x" << lg.secondary.height << ")" << std::endl;
+                    }
+                }
 
-            // 处理当前帧
-            auto result = tracker.process(left_img, right_img, visualize, plg, prg);
+                // process() 内部自动完成：策略链选择 + ROI padding + 提取 + 位姿解算
+                const RoiGroup* plg = lg.valid() ? &lg : nullptr;
+                const RoiGroup* prg = rg.valid() ? &rg : nullptr;
 
-            // 输出结果摘要
-            std::cout << "  特征点: " << result.n_kp_left
-                      << "  匹配: " << result.n_matched
-                      << "  投影: " << result.n_projected
-                      << "  模板: " << result.n_template_match;
-            if (!result.disparity.empty()) {
-                std::vector<double> abs_disp;
-                for (double d : result.disparity) abs_disp.push_back(std::abs(d));
-                std::cout << "  视差: " << computeMedian(std::move(abs_disp)) << "px";
+                // 处理当前帧
+                auto result = tracker.process(left_img, right_img, visualize, plg, prg);
+
+                // 输出结果摘要
+                std::cout << "  特征点: " << result.n_kp_left
+                          << "  匹配: " << result.n_matched
+                          << "  投影: " << result.n_projected
+                          << "  模板: " << result.n_template_match;
+                if (!result.disparity.empty()) {
+                    std::vector<double> abs_disp;
+                    for (double d : result.disparity) abs_disp.push_back(std::abs(d));
+                    std::cout << "  视差: " << computeMedian(std::move(abs_disp)) << "px";
+                }
+                std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
+                          << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
             }
-            std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
-                      << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
         }
 
         tracker.printLogs();

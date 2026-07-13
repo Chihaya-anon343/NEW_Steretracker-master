@@ -233,45 +233,51 @@ std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(PipelineResult& result,
     PoseEstimate pose;
     double gpnp_timing = 0.0;
 
-    // ---- MAD disparity filter ----
-    auto t_filter = std::chrono::high_resolution_clock::now();
-    MadFilterResult mad_res = mad_filter_.filter(
-        result.pts_left_good, result.pts_right_good, result.idx_from_filtered);
+    // ---- MAD disparity filter (mono mode: skip, no right-image data) ----
+    bool is_mono = result.pts_right_good.empty();
 
-    result.pts_left_good = std::move(mad_res.pts_left_filtered);
-    result.pts_right_good = std::move(mad_res.pts_right_filtered);
-    result.disparity = std::move(mad_res.disparity);
-    result.dx_filtered = std::move(mad_res.dx_filtered);
-    result.idx_from_filtered = std::move(mad_res.idx_from_filtered);
+    if (!is_mono) {
+        auto t_filter = std::chrono::high_resolution_clock::now();
+        MadFilterResult mad_res = mad_filter_.filter(
+            result.pts_left_good, result.pts_right_good, result.idx_from_filtered);
 
-    auto t_filter_end = std::chrono::high_resolution_clock::now();
-    result.timing["filter"] = std::chrono::duration<double, std::milli>(t_filter_end - t_filter).count();
+        result.pts_left_good = std::move(mad_res.pts_left_filtered);
+        result.pts_right_good = std::move(mad_res.pts_right_filtered);
+        result.disparity = std::move(mad_res.disparity);
+        result.dx_filtered = std::move(mad_res.dx_filtered);
+        result.idx_from_filtered = std::move(mad_res.idx_from_filtered);
 
-    // ---- Sync pts_left_used/pts_right_used/pts_right_projected after MAD ----
-    if (!mad_res.downgraded && !mad_res.filter_mask.empty()) {
-        bool all_pass = true;
-        for (bool m : mad_res.filter_mask) { if (!m) { all_pass = false; break; } }
+        auto t_filter_end = std::chrono::high_resolution_clock::now();
+        result.timing["filter"] = std::chrono::duration<double, std::milli>(t_filter_end - t_filter).count();
 
-        if (!all_pass && !result.valid_mask.empty()) {
-            std::vector<int> valid_indices;
-            for (size_t i = 0; i < result.valid_mask.size(); ++i)
-                if (result.valid_mask[i]) valid_indices.push_back(static_cast<int>(i));
+        // ---- Sync pts_left_used/pts_right_used/pts_right_projected after MAD ----
+        if (!mad_res.downgraded && !mad_res.filter_mask.empty()) {
+            bool all_pass = true;
+            for (bool m : mad_res.filter_mask) { if (!m) { all_pass = false; break; } }
 
-            std::vector<bool> filter_subset(valid_indices.size());
-            for (size_t i = 0; i < valid_indices.size(); ++i)
-                filter_subset[i] = mad_res.filter_mask[valid_indices[i]];
+            if (!all_pass && !result.valid_mask.empty()) {
+                std::vector<int> valid_indices;
+                for (size_t i = 0; i < result.valid_mask.size(); ++i)
+                    if (result.valid_mask[i]) valid_indices.push_back(static_cast<int>(i));
 
-            auto apply_subset = [&](std::vector<cv::Point2f>& arr) {
-                if (arr.size() != filter_subset.size()) return;
-                std::vector<cv::Point2f> filtered;
-                for (size_t i = 0; i < filter_subset.size(); ++i)
-                    if (filter_subset[i]) filtered.push_back(arr[i]);
-                arr = std::move(filtered);
-            };
-            apply_subset(result.pts_left_used);
-            apply_subset(result.pts_right_used);
-            apply_subset(result.pts_right_projected);
+                std::vector<bool> filter_subset(valid_indices.size());
+                for (size_t i = 0; i < valid_indices.size(); ++i)
+                    filter_subset[i] = mad_res.filter_mask[valid_indices[i]];
+
+                auto apply_subset = [&](std::vector<cv::Point2f>& arr) {
+                    if (arr.size() != filter_subset.size()) return;
+                    std::vector<cv::Point2f> filtered;
+                    for (size_t i = 0; i < filter_subset.size(); ++i)
+                        if (filter_subset[i]) filtered.push_back(arr[i]);
+                    arr = std::move(filtered);
+                };
+                apply_subset(result.pts_left_used);
+                apply_subset(result.pts_right_used);
+                apply_subset(result.pts_right_projected);
+            }
         }
+    } else {
+        result.timing["filter"] = 0.0;
     }
 
     // ---- AKAZE uses its own template pts_3d if available ----
@@ -1558,27 +1564,40 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
     for (auto* fb : fallback_extractors_)
         chain.push_back(fb);
 
+    FeatureExtractor* winning_ext = nullptr;
+
     for (auto* ext : chain) {
         if (!ext) continue;
 
         std::cout << "[Mono] Trying extractor: " << ext->name() << std::endl;
 
-        // 单目提取：传入空右图
-        cv::Mat empty_right_gray, empty_right_color;
-        cv::Point2d right_offset(0, 0);
+        // 单目提取（仅左图，2 参数）
+        PipelineResult local = ext->extractMono(left_gray_roi, left_color_roi);
 
-        // 构造 pipeline 结果
-        PipelineResult local;
-        local.success = false;
-
-        // 使用 extractMono 进行单目提取
-        local = ext->extractMono(left_gray_roi, left_color_roi, left_offset);
+        // 将 ROI 局部坐标恢复到全图坐标系
+        if (!local.pts_left_match.empty()) {
+            for (auto& p : local.pts_left_match) {
+                p.x += static_cast<float>(left_offset.x);
+                p.y += static_cast<float>(left_offset.y);
+            }
+        }
+        if (!local.pts_left_good.empty()) {
+            for (auto& p : local.pts_left_good) {
+                p.x += static_cast<float>(left_offset.x);
+                p.y += static_cast<float>(left_offset.y);
+            }
+        }
+        for (auto& kp : local.kp_left) {
+            kp.pt.x += static_cast<float>(left_offset.x);
+            kp.pt.y += static_cast<float>(left_offset.y);
+        }
 
         if (local.success && local.n_kp_left >= 3) {
             result = std::move(local);
             result.left_color = left_color;
             result.left_roi_offset_x = static_cast<int>(left_offset.x);
             result.left_roi_offset_y = static_cast<int>(left_offset.y);
+            winning_ext = ext;
             extracted = true;
             std::cout << "[Mono] Extractor " << ext->name()
                       << " succeeded, n_kp=" << result.n_kp_left << std::endl;
@@ -1594,19 +1613,59 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
         return result;
     }
 
-    // PnP 解算
-    auto [pnps_ok, pose] = dispatchPnP(extractor_, result, is_first);
+    // PnP 解算（使用实际获胜的提取器）
+    auto [pnps_ok, pose] = dispatchPnP(winning_ext, result, is_first);
     finalizePose(result, pose);
 
     result.success = pose.success;
     addLogEntry(result, is_first, false);
 
-    // 可视化（仅左图）
+    // 可视化（仅左图：绘制关键点 + 位姿轴）
     if (visualize && !output_dir_.empty()) {
-        if (!visualizer_)
-            visualizer_ = std::make_unique<Visualizer>();
-        result.left_color = left_color;
-        visualizer_->drawMonoResult(output_dir_, state_.frame_count, result);
+        cv::Mat vis = left_color.clone();
+
+        // 绘制左图匹配点（绿色十字）
+        for (const auto& pt : result.pts_left_match) {
+            cv::drawMarker(vis, pt, cv::Scalar(0, 255, 0),
+                           cv::MARKER_CROSS, 10, 2);
+        }
+
+        // 绘制模板匹配连线编号
+        for (size_t i = 0; i < result.pts_left_match.size() && i < result.pts_template_match.size(); ++i) {
+            cv::putText(vis, std::to_string(i), result.pts_left_match[i],
+                        cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 255), 1);
+        }
+
+        // 绘制位姿坐标轴
+        if (result.gpnp_success) {
+            std::vector<cv::Point3d> axis_pts = {
+                {0, 0, 0}, {100, 0, 0}, {0, 100, 0}, {0, 0, 100}
+            };
+            std::vector<cv::Point2d> img_pts;
+            cv::Mat K_cv = (cv::Mat_<double>(3, 3) <<
+                camera_.K(0,0), camera_.K(0,1), camera_.K(0,2),
+                camera_.K(1,0), camera_.K(1,1), camera_.K(1,2),
+                camera_.K(2,0), camera_.K(2,1), camera_.K(2,2));
+            cv::Mat rvec;
+            cv::Mat R_cv = (cv::Mat_<double>(3, 3) <<
+                result.R(0,0), result.R(0,1), result.R(0,2),
+                result.R(1,0), result.R(1,1), result.R(1,2),
+                result.R(2,0), result.R(2,1), result.R(2,2));
+            cv::Rodrigues(R_cv, rvec);
+            cv::Mat tvec = (cv::Mat_<double>(3, 1) << result.t(0), result.t(1), result.t(2));
+            cv::projectPoints(axis_pts, rvec, tvec, K_cv, cv::Mat(), img_pts);
+
+            if (img_pts.size() == 4) {
+                cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0, 0, 255), 3);  // X: 红
+                cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0, 255, 0), 3);  // Y: 绿
+                cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255, 0, 0), 3);  // Z: 蓝
+            }
+        }
+
+        std::string mono_path = output_dir_ + "/mono_f" +
+            std::to_string(state_.frame_count) + ".png";
+        cv::imwrite(mono_path, vis);
+        std::cout << "[Mono] Visualization saved: " << mono_path << std::endl;
     }
 
     state_.frame_count++;

@@ -1,12 +1,12 @@
 {
   "input": {
-    "left": "data/大图/cj01_image_0032 - 副本.jpg",
-    "right": "data/大图/cj01_image_0032 - 副本.jpg"
+    "left": "data/小图/gj06_image_0317.jpg",
+    "right": "data/小图/gj06_image_0317.jpg"
   },
   "output": {
     "visualize": true
   },
-  "mono_mode": false,
+  "mono_mode": true,
 
   "TODO": {
     "BINARY CORNER": "修改模板的点顺序,使得各角度模板的点顺序确定,都选择黑色块的点作为第一个点.用各角度的模板找到对应角度后,将点对应到0角度的模板点上,然后进行PNP",
