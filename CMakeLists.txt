@@ -63,6 +63,7 @@ set(SOURCES
     src/stereo/StereoProjector.cpp
     src/pose/InitialPnPSolver.cpp
     src/pose/GPnPSolver.cpp
+    src/pose/MonoPnPSolver.cpp
     src/utils/PoseUtils.cpp
     src/visualization/Visualizer.cpp
     src/tracker/StereoTracker.cpp

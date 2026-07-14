@@ -6,6 +6,7 @@
 #include "feature/MadDisparityFilter.hpp"
 #include "pose/GPnPSolver.hpp"
 #include "pose/InitialPnPSolver.hpp"
+#include "pose/MonoPnPSolver.hpp"
 #include "visualization/Visualizer.hpp"
 
 #include <opencv2/core.hpp>
@@ -140,6 +141,7 @@ private:
     // 子系统模块
     InitialPnPSolver initial_pnp_;
     GPnPSolver gpnp_solver_;
+    MonoPnPSolver mono_pnp_;          ///< 单目专用 EPnP 求解器（无 GPNP / warm-start）
     MadDisparityFilter mad_filter_;
     std::unique_ptr<Visualizer> visualizer_;
 

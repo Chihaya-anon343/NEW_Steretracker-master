@@ -1613,8 +1613,8 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
         return result;
     }
 
-    // PnP 解算（使用实际获胜的提取器）
-    auto [pnps_ok, pose] = dispatchPnP(winning_ext, result, is_first);
+    // 单目 PnP 解算（EPnP，无 GPNP / warm-start）
+    PoseEstimate pose = mono_pnp_.solve(result.pts_left_match, template_.pts_3d, camera_.K);
     finalizePose(result, pose);
 
     result.success = pose.success;
@@ -1636,8 +1636,8 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
                         cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 255), 1);
         }
 
-        // 绘制位姿坐标轴
-        if (result.gpnp_success) {
+        // 绘制位姿坐标轴（单目路径始终使用 success 标志）
+        if (result.success) {
             std::vector<cv::Point3d> axis_pts = {
                 {0, 0, 0}, {100, 0, 0}, {0, 100, 0}, {0, 0, 100}
             };
