@@ -80,6 +80,7 @@ int main(int argc, char** argv) {
     // 策略选择阈值（从 JSON 读取，替代原硬编码常量）
     int akaze_min_area = fs["strategies"]["akaze_min_area"];
     int tiny_max_area  = fs["strategies"]["tiny_max_area"];
+    int dual_trigger_area = fs["strategies"]["dual_trigger_area"];
 
     // 双 ROI 配置（class 1 ROI 拓展像素 + AKAZE 提取参数）
     int dual_expand = 10;
@@ -166,7 +167,7 @@ int main(int argc, char** argv) {
         YoloConfig yolo_cfg = makeYoloConfig(model_path, DeviceType::CPU, conf);
         yolo_cfg.target_class_id = target_cls;
         yolo_cfg.roi_expand_ratio = expand;
-        RoiGenerator::Config roi_cfg{target_cls, expand, min_roi};
+        RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
         bool yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
 
         // 初始化 StereoTracker（预创建全部 3 种策略，每帧仅切换指针）
@@ -196,21 +197,17 @@ int main(int argc, char** argv) {
             for (int frame = 1; frame <= 2; ++frame) {
                 std::cout << "\n===== 第 " << frame << " 帧 (单目) =====" << std::endl;
 
-                // 获取 ROI（仅左图）
-                RoiRect* plr = nullptr;
-                RoiRect manual_rl_copy = manual_rl;
+                // 获取 ROI（仅左图，保留 is_dual + secondary）
+                RoiGroup left_group;
                 if (use_manual_roi) {
-                    plr = &manual_rl_copy;
+                    left_group = RoiGroup{manual_rl, {}, false};
                 } else if (yolo_ok) {
                     auto [lg, rg] = yolo.detect(left_img, right_img);
-                    if (lg.valid()) {
-                        manual_rl_copy = lg.primary;
-                        plr = &manual_rl_copy;
-                    }
+                    left_group = lg;  // preserves is_dual + secondary
                 }
 
-                // processMono() 内部完成：策略链选择 + 单图提取 + PnP 解算
-                auto result = tracker.processMono(left_img, visualize, plr);
+                const RoiGroup* plg = left_group.valid() ? &left_group : nullptr;
+                auto result = tracker.processMono(left_img, visualize, plg);
 
                 // 输出结果摘要
                 std::cout << "  特征点: " << result.n_kp_left

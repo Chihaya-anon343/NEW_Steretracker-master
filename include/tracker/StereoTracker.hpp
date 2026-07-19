@@ -79,10 +79,11 @@ public:
     void setMonoConfig(const MonoConfig& cfg) { mono_cfg_ = cfg; }
     const MonoConfig& monoConfig() const { return mono_cfg_; }
 
-    /// 单目帧处理（仅左图）：ROI → 策略分发 → 单图特征提取 → PnP 解算
+    /// 单目帧处理（仅左图）：ROI → 策略分发 → 单图特征提取 → PnP 解算。
+    /// 当 left_group->is_dual 为 true 时，委托给 processDualRoiMono()。
     PipelineResult processMono(const cv::Mat& left_img,
                                bool visualize = false,
-                               const RoiRect* left_roi = nullptr);
+                               const RoiGroup* left_group = nullptr);
 
     void clearCache();
 
@@ -178,13 +179,19 @@ private:
                          int left_cols, int left_rows,
                          int right_cols, int right_rows) const;
 
-    /// 双 ROI 策略：class 0（边缘）使用 BinaryCorner + class 1（中心）使用 AKAZE。
+    /// 双 ROI 策略（双目）：class 0（边缘）使用 BinaryCorner + class 1（中心）使用 AKAZE。
     /// 合并两个提取器的角点，输入 GPNP 优化。
     PipelineResult processDualRoi(const cv::Mat& left_img,
                                    const cv::Mat& right_img,
                                    const RoiGroup& left_group,
                                    const RoiGroup& right_group,
                                    bool visualize);
+
+    /// 双 ROI 策略（单目）：class 0（边缘）使用 BinaryCorner + class 1（中心）使用 AKAZE。
+    /// 仅使用左图，合并后由 MonoPnPSolver 进行 EPnP 解算。
+    PipelineResult processDualRoiMono(const cv::Mat& left_img,
+                                      const RoiGroup& left_group,
+                                      bool visualize);
 
     /// 一次性初始化：从 AKAZE 模板中提取 BinaryCorner 风格的角点。
     void prepareDualBcTemplate();

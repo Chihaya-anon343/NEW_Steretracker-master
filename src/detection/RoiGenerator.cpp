@@ -12,14 +12,6 @@
 namespace gpnp {
 
 // ============================================================================
-// 常量
-// ============================================================================
-
-/// 触发双 ROI 模式的 class 0 边界框面积阈值。
-/// 当 class 0 检测面积超过此值时，同时提取 class 1 ROI。
-static constexpr int kDualTriggerArea = 700 * 700;  // 490000 px²
-
-// ============================================================================
 // 构造
 // ============================================================================
 
@@ -80,11 +72,11 @@ RoiGroup RoiGenerator::generateGroup(const std::vector<Detection>& detections,
 
     // 2. 检测 class 0 面积是否超过阈值 → 同时提取 class 1
     int area = class0_roi.width * class0_roi.height;
-    if (area > kDualTriggerArea) {
+    if (area > config_.dual_trigger_area) {
         RoiRect class1_roi = generate(detections, image_size, 1);
         if (class1_roi.valid()) {
             std::cout << "[RoiGenerator] Dual-ROI mode triggered"
-                      << " (class0 area=" << area << " > " << kDualTriggerArea << ")"
+                      << " (class0 area=" << area << " > " << config_.dual_trigger_area << ")"
                       << "  primary=" << class0_roi.width << "x" << class0_roi.height
                       << "  secondary=" << class1_roi.width << "x" << class1_roi.height
                       << std::endl;

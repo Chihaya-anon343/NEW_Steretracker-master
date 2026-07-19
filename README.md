@@ -35,19 +35,31 @@
                            └──────┬───────────────┘
                                   ▼
                     ┌──────────────────────────────┐
-                    │ StereoTracker::process()      │
-                    │  ├─ is_dual? → processDualRoi │
-                    │  ├─ 否则 → configureStrategy  │
-                    │  └─ 特征提取 + 退化 + 位姿     │
-                    │     (全部内部自动完成)         │
-                    └──────────────┬───────────────┘
+                    │  mono_mode ?                  │
+                    └──────┬──────────────┬─────────┘
+                      true │              │ false
+                           ▼              ▼
+                    ┌──────────────────────────────────┐
+                    │ StereoTracker::processMono()      │
+                    │  ├─ is_dual? → processDualRoiMono │
+                    │  ├─ 否则 → configureStrategy      │
+                    │  └─ extractMono() + MonoPnP       │
+                    └──────────────┬───────────────────┘
+                                   │
+                    ┌──────────────▼──────────────────┐
+                    │ StereoTracker::process()         │
+                    │  ├─ is_dual? → processDualRoi    │
+                    │  ├─ 否则 → configureStrategy     │
+                    │  └─ 特征提取 + 退化 + GPNP       │
+                    │     (全部内部自动完成)            │
+                    └──────────────┬───────────────────┘
                                    │
                     ┌──────────────▼──────────────┐
                     │ 输出位姿 [R|t] + 日志 + 可视化 │
                     └─────────────────────────────┘
 ```
 
-帧循环中 `main.cpp` 仅负责获取 ROI（手动配置或 YOLO 检测）并调用 `tracker.process()`，所有策略选择和特征提取由 `StereoTracker` 内部自动完成。ROI 优先级：**手动 ROI > YOLO 检测**。
+帧循环中 `main.cpp` 仅负责获取 ROI（手动配置或 YOLO 检测），根据 `mono_mode` 配置调用 `tracker.processMono()` 或 `tracker.process()`，所有策略选择和特征提取由 `StereoTracker` 内部自动完成。ROI 优先级：**手动 ROI > YOLO 检测**。
 
 ---
 
@@ -121,7 +133,187 @@ public:
 
 ---
 
-## 3. 双 ROI 策略 (Dual-ROI)
+## 3. 单目模式 (Mono Mode)
+
+**适用场景**：仅左图可用（如单目相机），右图数据不存在或无效。
+
+**模块映射**：`StereoTracker::processMono()` / `processDualRoiMono()` + `MonoPnPSolver` + 各提取器的 `extractMono()`
+
+### 3.1 概述
+
+单目模式通过配置文件中的 `mono_mode: true` 启用。与双目路径相比，单目路径的核心差异：
+
+| 维度 | 双目 | 单目 |
+|------|------|------|
+| 输入图像 | 左图 + 右图 | 仅左图 |
+| 光流追踪 | LK 金字塔 L→R + FB 校验 | **无** |
+| 立体投影 | 视差 → 深度 → 右图重投影 | **无** |
+| 视差滤波 | MAD 中值滤波 | **无** |
+| 位姿解算 | `GPnPSolver` (Eigen LM, 7 维) | `MonoPnPSolver` (EPnP) |
+| 优化约束 | 重投影 + 立体射线 | 仅重投影 |
+| Warm-start | 前一帧位姿缓存 | **无** |
+| ROI 输入 | `RoiGroup*` (含 primary + secondary) | `RoiGroup*`（同双目，支持双 ROI） |
+
+单目配置结构体 `MonoConfig`（`include/tracker/StereoTracker.hpp:72-76`）：
+
+```cpp
+struct MonoConfig {
+    bool enabled = false;             ///< true → processMono() 生效
+    int akaze_min_area = 40001;
+    int tiny_max_area = 800;
+};
+```
+
+### 3.2 入口与分发
+
+`processMono()` 是单目帧处理的唯一入口，内部根据 ROI 类型分发：
+
+```
+processMono(left_img, visualize, left_group)
+  │
+  ├── left_group->is_dual == true
+  │   └── processDualRoiMono(left_img, left_group, visualize)
+  │       (单目双 ROI：BC class 0 + AK class 1 → MonoPnP)
+  │
+  └── left_group->is_dual == false 或 nullptr
+      └── 单 ROI 策略链
+          ├── configureStrategyChain(roi_area)  ← 同双目
+          ├── 尝试 extractMono() → 退化链
+          └── mono_pnp_.solve(pts_2d, pts_3d, K)
+```
+
+### 3.3 单 ROI 策略链
+
+与双目相同的面积分级逻辑（见 §2.1），但使用各提取器的 `extractMono()` 方法：
+
+**`AkazeGpnpExtractor::extractMono(gray, color)`**
+- AKAZE 特征检测（同双目）
+- **模板匹配**：Ratio Test → Cross-Check → Homography RANSAC
+- **跳过**：光流追踪、立体投影、MAD 滤波
+- 输出：`kp_left`, `desc_left`, `good_matches`, `pts_left_match`, `n_template_match`
+
+**`BinaryCornerExtractor::extractMono(gray, color)`**
+- Otsu 二值化 → 保留最大连通域 → 形态学平滑
+- 模板匹配 (IoU) → 旋转回正 → approxPolyDP 角点提取 → 逆旋转
+- 模板角点重排序 (matchCorners)
+- **跳过**：右图提取、立体配对
+- 输出：`kp_left`, `pts_left_match`, `pts_template_match`, `good_matches`, `template_data_.pts_3d`
+
+**`TinyTargetExtractor::extractMono(gray, color)`**
+- Otsu 二值化 → 模板匹配 → 超分辨率放大 → 连通域评分 → minAreaRect → 角点提取
+- **跳过**：右图提取、角度对齐
+- 输出：`kp_left`, `pts_left_match`, `pts_template_match`, `good_matches`, `template_data_.pts_3d`
+
+> 如果某个提取器未重写 `extractMono()`，基类提供默认实现：直接调用 `extract()` 并将右图参数置空。
+
+### 3.4 单目 Dual-ROI 策略
+
+与双目 Dual-ROI（§4）触发条件相同（YOLO 检测到 class 0 + class 1），但仅使用左图。
+
+**完整流水线**：
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                  单目 Dual-ROI 流水线                          │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌─ class 0 ROI (边缘) ─┐    ┌─ class 1 ROI (中心) ────────┐ │
+│  │ BinaryCorner 提取     │    │ AKAZE 提取                   │ │
+│  │ extractMono()         │    │ extractMono()                │ │
+│  │ • Otsu 二值化          │    │ • AKAZE 特征检测             │ │
+│  │ • 模板匹配 (IoU)      │    │ • 模板匹配 (三阶段)          │ │
+│  │ • 旋转回正             │    │                              │ │
+│  │ • approxPolyDP 角点   │    │                              │ │
+│  │ • matchCorners 重排序  │    │                              │ │
+│  └────────┬──────────────┘    └──────────┬──────────────────┘ │
+│           │                              │                    │
+│           │  坐标变换:                    │                    │
+│           │  class-1-local → class-0-local                    │
+│           │                              │                    │
+│           ▼                              ▼                    │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ 合并两组特征点:                                          │ │
+│  │  - BC 角点[i] ↔ dual_bc_tmpl_pts3d_[i]  (10 个轮廓角点) │ │
+│  │  - AK 匹配点[i] ↔ ak_pts3d[good_matches[i].trainIdx]    │ │
+│  │     (2~N 个 AKAZE 特征点)                                │ │
+│  └────────────────────┬────────────────────────────────────┘ │
+│                       │                                       │
+│                       ▼                                       │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ 恢复全图坐标: offset = (primary.x, primary.y)             │ │
+│  └────────────────────┬────────────────────────────────────┘ │
+│                       │                                       │
+│                       ▼                                       │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ MonoPnPSolver::solve(pts_2d, pts_3d, K)                  │ │
+│  │  ┌─ RANSAC EPnP (300 iter, 8.0px, 0.99)                │ │
+│  │  │   成功 → ITERATIVE 内点精化                           │ │
+│  │  └─ 有效性校验: t.z>0, 10<|t|<20000, 有限值             │ │
+│  └────────────────────┬────────────────────────────────────┘ │
+│                       │                                       │
+│                       ▼                                       │
+│                ┌─────────────┐                               │
+│                │ 输出 [R|t]   │                               │
+│                └─────────────┘                               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**合并阶段的 3D 对应关系**：
+
+- **BC 贡献**：`result_bc.pts_left_match[i]` ↔ `dual_bc_tmpl_pts3d_[i]`。若 BC 匹配到的模板角度 ≠ 0°，先对 `dual_bc_tmpl_pts3d_` 用 `reorderByGeometry(ref_angle=bc_matched->angle)` 重排，确保角点与 3D 点的物理对应一致。
+- **AK 贡献**：`result_ak.pts_left_match[i]` ↔ `ak_pts3d[good_matches[i].trainIdx]`。通过 `trainIdx` 在模板关键点列表中查找对应的 3D 物点。
+
+**与双目 Dual-ROI 的关键差异**：
+
+| 步骤 | 双目 `processDualRoi()` | 单目 `processDualRoiMono()` |
+|------|------------------------|---------------------------|
+| BC 提取 | `extract()` — 左右图双路提取 + 立体配对 | `extractMono()` — 仅左图 |
+| AK 提取 | `extract()` — AKAZE + 光流 + 投影 | `extractMono()` — AKAZE + 模板匹配 |
+| BC n_bc_use | `min(n_bc, n_bc_right)` — 受右图约束 | `min(n_bc, n_bc_3d)` — 受 3D 点数约束 |
+| AK 合并 | 有立体验证分支 + 回退分支 | 直接使用 `trainIdx` 查找 3D 点 |
+| PnP 求解 | `InitialPnP` → `GPnPSolver` (立体射线约束) | `MonoPnPSolver` (EPnP, 无立体) |
+| Warm-start | 前一帧位姿 | 无 |
+| 坐标恢复 | `offsetResultToOriginal()` (左右图) | 手动 offset (仅左图) |
+| 可视化 | 5 面板 (overview/corners/axes/reproj/right/correspondence) | 3 面板 (overview/corners/axes/reproj) |
+
+### 3.5 MonoPnPSolver
+
+`MonoPnPSolver`（`src/pose/MonoPnPSolver.cpp`）是单目位姿估计的核心，流程如下：
+
+```
+MonoPnPSolver::solve(pts_2d, pts_3d, K)
+  │
+  ├─ 1. 校验: pts_2d.size() == pts_3d.size() && ≥ 4
+  │    失败 → 返回空 PoseEstimate
+  │
+  ├─ 2. cv::solvePnPRansac(SOLVEPNP_EPNP)
+  │    参数: 300 iter, 8.0px reproj, 0.99 confidence
+  │    useExtrinsicGuess = false
+  │    失败/内点<4 → 返回失败
+  │
+  ├─ 3. ITERATIVE 精化 (仅内点子集)
+  │    cv::solvePnP(SOLVEPNP_ITERATIVE, useExtrinsicGuess=true)
+  │    失败 → 继续使用 RANSAC 结果（非致命）
+  │
+  └─ 4. 有效性校验
+       • t.z > 0（相机在模板前方）
+       • 10 < |t| < 20000 mm
+       • R, t 各分量有限（无 NaN/Inf）
+```
+
+与 `GPnPSolver` 的关键区别：
+
+| 特性 | `MonoPnPSolver` | `GPnPSolver` |
+|------|----------------|-------------|
+| 算法 | OpenCV EPnP + ITERATIVE | Eigen Levenberg-Marquardt |
+| 约束 | 2D↔3D 重投影误差 | 重投影 + 立体射线交叉残差 |
+| 参数空间 | 无初始值 | 7 维 [q, t]，依赖 warm-start |
+| 帧间状态 | 无缓存 | 缓存上一帧 [R\|t] |
+| 适用模式 | 单目 | 双目 |
+
+---
+
+## 4. 双 ROI 策略 (Dual-ROI)
 
 **适用场景**：大尺寸目标（class 0 检测框面积 > 700×700 px²），可利用目标的边缘 (class 0) 与中心纹理 (class 1) 两部分信息联合定位。
 
@@ -199,7 +391,7 @@ public:
 
 ---
 
-## 4. 策略一：TinyTarget（ROI ≤ 800 px²）
+## 5. 策略一：TinyTarget（ROI ≤ 800 px²）
 
 **适用场景**：远距离微小矩形目标（如 4 角点标定板）。
 
@@ -283,7 +475,7 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 
 ---
 
-## 5. 策略二：BinaryCorner（ROI 801 ~ 40000 px²）
+## 6. 策略二：BinaryCorner（ROI 801 ~ 40000 px²）
 
 **适用场景**：中等尺寸多边形目标（如 10 角点标识板）。
 
@@ -382,7 +574,7 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 
 ---
 
-## 6. 策略三：AKAZE_GPNP（ROI ≥ 40001 px² / 无检测）
+## 7. 策略三：AKAZE_GPNP（ROI ≥ 40001 px² / 无检测）
 
 **适用场景**：大尺寸 / 全图纹理丰富的目标（传统 AKAZE 特征匹配方案）。
 
@@ -491,7 +683,9 @@ GPNP 输出位姿需通过以下全部校验：
 
 ---
 
-## 7. 四策略对比总结
+## 8. 五策略对比总结
+
+### 8.1 双目策略
 
 | 维度 | Dual-ROI | TinyTarget | BinaryCorner | AKAZE_GPNP |
 |------|----------|-----------|-------------|------------|
@@ -506,9 +700,33 @@ GPNP 输出位姿需通过以下全部校验：
 | **退化角色** | 独立路径（不退化为单策略） | 链末端（无后备） | AKAZE 的后备；可退化为 TinyTarget | 最优先策略；可退化为 BinaryCorner |
 | **可视化** | 5 面板（双 ROI 合并） | 标准 solvePnP 输出 | 5 面板 (二值/轴系/模板/立体/重投影) | 4 面板 (特征/立体/模板/坐标轴) |
 
+### 8.2 单目策略 (mono_mode = true)
+
+| 维度 | Mono Dual-ROI | Mono TinyTarget | Mono BinaryCorner | Mono AKAZE |
+|------|--------------|-----------------|-------------------|------------|
+| **触发条件** | class 0 > 700×700 + class 1 | ≤ 800 px² | 801 ~ 40000 px² | ≥ 40001 px² |
+| **提取方法** | `extractMono()` × 2 | `extractMono()` | `extractMono()` | `extractMono()` |
+| **输入图像** | 仅左图 (class 0 + class 1 ROI) | 仅左图 | 仅左图 | 仅左图 |
+| **光流 / 立体** | 无 | 无 | 无 | 无 |
+| **3D 来源** | BC: dual_bc_tmpl_pts3d_, AK: trainIdx | 4 正方形顶点 | 0° 模板角点 × pixel_to_meter | AKAZE 模板 pts_3d[trainIdx] |
+| **位姿解算** | `MonoPnPSolver` (EPnP) | `MonoPnPSolver` (EPnP) | `MonoPnPSolver` (EPnP) | `MonoPnPSolver` (EPnP) |
+| **帧间缓存** | 无 warm-start | 无 warm-start | 无 warm-start | 无 warm-start |
+| **可视化** | 3 面板 (overview/corners/axes/reproj) | 单图关键点+坐标轴 | 单图关键点+坐标轴 | 单图关键点+坐标轴 |
+
+### 8.3 单/双目关键差异
+
+| 维度 | 双目 | 单目 |
+|------|------|------|
+| 启用方式 | 默认 | `mono_mode: true` |
+| API 入口 | `process(left, right, ...)` | `processMono(left, ...)` |
+| ROI 参数 | `RoiGroup*` (含 primary + secondary) | `RoiGroup*`（同双目） |
+| 去畸变 | 双目极线校正 (可选) | 无 |
+| PnP 求解 | `GPnPSolver` (LM 7维) | `MonoPnPSolver` (EPnP + ITERATIVE) |
+| 退化约束 | 立体射线 + 重投影 | 仅重投影 |
+
 ---
 
-## 8. 核心数据结构
+## 9. 核心数据结构
 
 所有模块间数据传递使用强类型结构体，定义于 [`include/common/Types.hpp`](include/common/Types.hpp)：
 
@@ -526,13 +744,20 @@ GPNP 输出位姿需通过以下全部校验：
 | `TrackingState` | 帧间状态: 上帧位姿缓存、帧计数、日志列表 |
 | `RoiRect` | ROI 矩形: (x, y, width, height) |
 | `RoiGroup` | 双 ROI 组: primary (class 0) + secondary (class 1) + is_dual 标志 |
+| `MonoConfig` | 单目模式配置: enabled, akaze_min_area, tiny_max_area (定义于 `StereoTracker.hpp`) |
 | `MadFilterResult` | MAD 滤波输出: 过滤后点集、filter_mask、劣化标志 |
 | `YoloConfig` | YOLO 检测器配置: 模型路径、设备类型、置信度阈值等 |
 | `Detection` | YOLO 单次检测结果: class_id、confidence、bbox |
 
+`MonoPnPSolver`（`include/pose/MonoPnPSolver.hpp`）是单目位姿估计类：
+
+| 方法 | 说明 |
+|------|------|
+| `solve(pts_2d, pts_3d, K)` | RANSAC EPnP (300 iter, 8.0px) → ITERATIVE 精化 → 有效性校验 |
+
 ---
 
-## 9. 配置文件
+## 10. 配置文件
 
 配置文件位于 [`config/tracker_config.json`](config/tracker_config.json)，结构如下：
 
@@ -542,6 +767,7 @@ GPNP 输出位姿需通过以下全部校验：
     "left": "data/delivery_area_2l/im0.png",
     "right": "data/delivery_area_2l/im1.png"
   },
+  "mono_mode": false,
   "output": {
     "visualize": true
   },
@@ -611,6 +837,7 @@ GPNP 输出位姿需通过以下全部校验：
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
+| `mono_mode` | `false` | 设为 `true` 启用单目模式（仅左图，EPnP 位姿解算） |
 | `strategies.akaze_min_area` | 40001 | ROI ≥ 此值时选择 AKAZE_GPNP 策略 |
 | `strategies.tiny_max_area` | 800 | ROI ≤ 此值时选择 TinyTarget 策略 |
 | `manual_roi.enabled` | `true` | 设为 `true` 跳过 YOLO 检测，直接使用硬编码 ROI |
@@ -619,7 +846,7 @@ GPNP 输出位姿需通过以下全部校验：
 
 ---
 
-## 10. 工厂函数
+## 11. 工厂函数
 
 提供三个带参数校验的工厂函数，定义于 [`include/common/Config.hpp`](include/common/Config.hpp)：
 
@@ -652,7 +879,7 @@ StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
 
 ---
 
-## 11. 构建与运行
+## 12. 构建与运行
 
 ### 依赖
 
@@ -693,7 +920,7 @@ cmake --build . --config Release
 
 ---
 
-## 12. 项目目录结构
+## 13. 项目目录结构
 
 ```
 Steretracker/
@@ -736,7 +963,8 @@ Steretracker/
 │   │   └── TemplateMatcher.hpp      # 三阶段模板匹配
 │   ├── pose/
 │   │   ├── InitialPnPSolver.hpp     # RANSAC+ITERATIVE 初始 PnP
-│   │   └── GPnPSolver.hpp           # Eigen LM GPNP 非线性优化
+│   │   ├── GPnPSolver.hpp           # Eigen LM GPNP 非线性优化
+│   │   └── MonoPnPSolver.hpp        # 单目 EPnP 位姿估计（仅左图）
 │   ├── stereo/
 │   │   └── StereoProjector.hpp      # 视差→深度→投影
 │   ├── tracker/
@@ -751,7 +979,7 @@ Steretracker/
 │   ├── feature/    (AkazeExtractor + AkazeGpnpExtractor + BinaryCornerExtractor
 │   │                + TinyTargetExtractor + OpticalFlowTracker + MadDisparityFilter)
 │   ├── matching/   (TemplateMatcher)
-│   ├── pose/       (InitialPnPSolver + GPnPSolver)
+│   ├── pose/       (InitialPnPSolver + GPnPSolver + MonoPnPSolver)
 │   ├── stereo/     (StereoProjector)
 │   ├── tracker/    (StereoTracker)
 │   ├── visualization/ (Visualizer)

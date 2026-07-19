@@ -26,6 +26,7 @@ public:
         int target_class_id{0};         ///< 仅考虑此类的检测结果
         float roi_expand_ratio{0.1f};   ///< 在每侧按该比例扩展 ROI
         int roi_min_size{100};          ///< ROI 的最小宽度和高度（像素）
+        int dual_trigger_area{490000};  ///< class 0 面积超过此值时触发双 ROI (700×700)
     };
 
     RoiGenerator();

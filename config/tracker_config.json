@@ -1,7 +1,7 @@
 {
   "input": {
-    "left": "data/小图/gj06_image_0317.jpg",
-    "right": "data/小图/gj06_image_0317.jpg"
+    "left": "data/大图/cj01_image_0032 _rot180.jpg",
+    "right": "data/大图/cj01_image_0032 _rot180.jpg"
   },
   "output": {
     "visualize": true
@@ -41,6 +41,7 @@
     "_comment": "ROI area thresholds: <= tiny_max → TinyTarget, >= akaze_min → AKAZE, else BinaryCorner",
     "akaze_min_area": 40001,
     "tiny_max_area": 800,
+    "dual_trigger_area": 490000,
 
     "akaze_gpnp": {
       "template_path": "data/大图/img_1.png",
