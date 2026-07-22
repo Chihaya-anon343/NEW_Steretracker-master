@@ -1,6 +1,7 @@
 #include "feature/BinaryCornerExtractor.hpp"
 #include "utils/PoseUtils.hpp"
 #include "common/GeometryUtils.hpp"
+#include "common/LogConfig.hpp"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/calib3d.hpp>
@@ -84,8 +85,9 @@ BinaryCornerExtractor::BinaryCornerExtractor(const Config& config,
     // 从 NewMuBan 加载角点模板
     templates_ = loadTemplates(template_dir, false);
     if (!templates_.empty()) {
-        std::cout << "[BinaryCorner] Loaded " << templates_.size()
-                  << " templates from " << template_dir << std::endl;
+        if (g_verbose_console)
+            std::cout << "[BinaryCorner] Loaded " << templates_.size()
+                      << " templates from " << template_dir << std::endl;
     } else {
         std::cerr << "[BinaryCorner] WARNING: No templates loaded from "
                   << template_dir << std::endl;
@@ -101,8 +103,9 @@ void BinaryCornerExtractor::setTemplateData(const std::string& template_dir,
                                              double /*real_height_mm*/) {
     templates_ = loadTemplates(template_dir, false);
     if (!templates_.empty()) {
-        std::cout << "[BinaryCorner] Reloaded " << templates_.size()
-                  << " templates" << std::endl;
+        if (g_verbose_console)
+            std::cout << "[BinaryCorner] Reloaded " << templates_.size()
+                      << " templates" << std::endl;
     }
 }
 
@@ -135,13 +138,15 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
         last_right_binary_ = right_binary.clone();
     }
 
-    std::cout << "[BinaryCorner] Left ROI=" << left_gray.cols << "x" << left_gray.rows
-              << ", white=" << cv::countNonZero(left_binary);
-    if (has_right) {
-        std::cout << " | Right ROI=" << right_gray.cols << "x" << right_gray.rows
-                  << ", white=" << cv::countNonZero(right_binary);
+    if (g_verbose_console) {
+        std::cout << "[BinaryCorner] Left ROI=" << left_gray.cols << "x" << left_gray.rows
+                  << ", white=" << cv::countNonZero(left_binary);
+        if (has_right) {
+            std::cout << " | Right ROI=" << right_gray.cols << "x" << right_gray.rows
+                      << ", white=" << cv::countNonZero(right_binary);
+        }
+        std::cout << std::endl;
     }
-    std::cout << std::endl;
 
     // ---- 第2步: 从左图提取角点 ----
     std::vector<cv::Point2f> left_corners;
@@ -257,8 +262,9 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
             template_data_.pts_3d.emplace_back(pt.x * s_mm_per_px,
                                                pt.y * s_mm_per_px, 0.0);
         }
-        std::cout << "[BinaryCorner] 3D pts (mm): " << template_data_.pts_3d.size()
-                  << " (angle=0, scale=" << s_mm_per_px << " mm/px)" << std::endl;
+        if (g_verbose_console)
+            std::cout << "[BinaryCorner] 3D pts (mm): " << template_data_.pts_3d.size()
+                      << " (angle=0, scale=" << s_mm_per_px << " mm/px)" << std::endl;
     }
 
     // desc_left 保持为空（无 AKAZE 描述子）
@@ -267,12 +273,13 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
 
     result.timing["binary_corner"] = 0.0;
 
-    std::cout << "[BinaryCorner] Extracted " << left_corners.size()
-              << " corners (L), " << right_corners.size() << " corners (R)"
-              << ", stereo=" << n_stereo
-              << ", angle=" << (matched_tmpl ? std::to_string(matched_tmpl->angle) : "none")
-              << ", overlap=" << matched_overlap
-              << ", template_corners=" << (matched_tmpl ? static_cast<int>(matched_tmpl->corners.size()) : 0)
+    if (g_verbose_console)
+        std::cout << "[BinaryCorner] Extracted " << left_corners.size()
+                  << " corners (L), " << right_corners.size() << " corners (R)"
+                  << ", stereo=" << n_stereo
+                  << ", angle=" << (matched_tmpl ? std::to_string(matched_tmpl->angle) : "none")
+                  << ", overlap=" << matched_overlap
+                  << ", template_corners=" << (matched_tmpl ? static_cast<int>(matched_tmpl->corners.size()) : 0)
               << ", 3d_pts=" << template_data_.pts_3d.size()
               << std::endl;
 
@@ -670,9 +677,10 @@ std::vector<cv::Point2f> BinaryCornerExtractor::extractCornersFromContour(
 
     // 如果未精确命中，使用最接近的一次近似结果
     if (!exact_hit && !best_approx.empty()) {
-        std::cout << "[BinaryCorner] approxPolyDP binary search: no exact hit, "
-                  << "best=" << best_approx.size() << " corners (target="
-                  << config_.corners << ", diff=" << best_diff << ")" << std::endl;
+        if (g_verbose_console)
+            std::cout << "[BinaryCorner] approxPolyDP binary search: no exact hit, "
+                      << "best=" << best_approx.size() << " corners (target="
+                      << config_.corners << ", diff=" << best_diff << ")" << std::endl;
         approx = std::move(best_approx);
     }
 
@@ -1093,6 +1101,7 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
         }
     }
 
+    result.n_matched = static_cast<int>(result.good_matches.size());
     result.success = !corners.empty();
     return result;
 }

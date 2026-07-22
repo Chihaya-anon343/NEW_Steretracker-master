@@ -254,6 +254,7 @@ struct PipelineResult {
     bool gpnp_success{false};
     int gpnp_n_pts{0};
     bool success{false};  ///< 流水线整体成功标志（提取 + PnP，单目/双目通用）
+    std::string strategy_name; ///< 本帧胜出的策略名（如 "BinaryCorner", "TinyTarget"）
 
     // --- 耗时统计 ---
     std::map<std::string, double> timing; ///< 阶段 → 毫秒

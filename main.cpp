@@ -13,6 +13,11 @@
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 
+// 输入系统 (Phase 1)
+#include "input/InputProvider.hpp"
+#include "input/InputConfig.hpp"
+#include "input/FileStereoSource.hpp"
+
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 
@@ -98,6 +103,11 @@ int main(int argc, char** argv) {
     std::string left_path  = fs["input"]["left"];
     std::string right_path = fs["input"]["right"];
     bool visualize = static_cast<int>(fs["output"]["visualize"]) != 0;
+    bool verbose_console = true;  // 默认详细输出
+    {
+        cv::FileNode vn = fs["output"]["verbose_console"];
+        if (!vn.empty()) verbose_console = static_cast<int>(vn) != 0;
+    }
 
     // 手动 ROI 配置（若 enabled=true 则跳过 YOLO，直接使用指定 ROI）
     bool use_manual_roi = false;
@@ -128,6 +138,75 @@ int main(int argc, char** argv) {
     fs.release();
 
     // ========================================================================
+    // ①-b 解析 input_system 配置（若存在则优先于 input.left / input.right）
+    // ========================================================================
+    cv::FileStorage fs2(config_path, cv::FileStorage::READ);
+    input::InputSystemConfig input_sys_cfg;
+    bool use_input_system = false;
+    int max_frames = 2;  // 默认 2 帧（兼容 warm-start）
+
+    cv::FileNode input_sys_node = fs2["input_system"];
+    if (!input_sys_node.empty()) {
+        cv::FileNode img_node = input_sys_node["image"];
+        if (!img_node.empty()) {
+            std::string img_type = img_node["type"];
+            if (img_type == "file") {
+                std::string lpath = img_node["left_path"];
+                std::string rpath = img_node["right_path"];
+                if (!lpath.empty() && !rpath.empty()) {
+                    input_sys_cfg.image.type = input::ImageSourceType::File;
+                    input_sys_cfg.image.left_path = lpath;
+                    input_sys_cfg.image.right_path = rpath;
+                    use_input_system = true;
+                }
+            } else if (img_type == "directory") {
+                std::string dir_path = img_node["directory_path"];
+                if (!dir_path.empty()) {
+                    input_sys_cfg.image.type = input::ImageSourceType::Directory;
+                    input_sys_cfg.image.directory_path = dir_path;
+                    input_sys_cfg.image.left_pattern = static_cast<std::string>(img_node["left_pattern"]);
+                    input_sys_cfg.image.right_pattern = static_cast<std::string>(img_node["right_pattern"]);
+                    if (input_sys_cfg.image.left_pattern.empty())
+                        input_sys_cfg.image.left_pattern = "left";
+                    if (input_sys_cfg.image.right_pattern.empty())
+                        input_sys_cfg.image.right_pattern = "right";
+                    use_input_system = true;
+                }
+            } else if (img_type == "sequence") {
+                std::string dir_path = img_node["directory_path"];
+                if (!dir_path.empty()) {
+                    input_sys_cfg.image.type = input::ImageSourceType::Sequence;
+                    input_sys_cfg.image.directory_path = dir_path;
+                    input_sys_cfg.image.sequence_pattern = static_cast<std::string>(img_node["sequence_pattern"]);
+                    if (input_sys_cfg.image.sequence_pattern.empty())
+                        input_sys_cfg.image.sequence_pattern = "frame";
+                    use_input_system = true;
+                }
+            }
+        }
+        max_frames = static_cast<int>(input_sys_node["max_frames"]);
+        if (max_frames <= 0) max_frames = 999999;  // 0 = unlimited
+
+        // IMU / Altimeter config (Phase 2)
+        cv::FileNode imu_node = input_sys_node["imu"];
+        if (!imu_node.empty()) {
+            input_sys_cfg.imu.enabled = static_cast<int>(imu_node["enabled"]) != 0;
+            if (input_sys_cfg.imu.enabled) {
+                input_sys_cfg.imu.port = static_cast<std::string>(imu_node["port"]);
+                input_sys_cfg.imu.baud_rate = imu_node["baud_rate"];
+            }
+        }
+        cv::FileNode alt_node = input_sys_node["altimeter"];
+        if (!alt_node.empty()) {
+            input_sys_cfg.altimeter.enabled = static_cast<int>(alt_node["enabled"]) != 0;
+            if (input_sys_cfg.altimeter.enabled) {
+                input_sys_cfg.altimeter.can_interface = static_cast<std::string>(alt_node["can_interface"]);
+            }
+        }
+    }
+    fs2.release();
+
+    // ========================================================================
     // ② 构造输出目录（按图像名分类）
     // ========================================================================
     namespace fsp = std::filesystem;
@@ -155,14 +234,29 @@ int main(int argc, char** argv) {
                                                   dual_expand, dual_akaze_scale);
 
     try {
-        // 加载双目图像
-        std::cout << "加载图像: " << left_path << " / " << right_path << std::endl;
-        cv::Mat left_img  = cv::imread(left_path,  cv::IMREAD_COLOR);
-        cv::Mat right_img = cv::imread(right_path, cv::IMREAD_COLOR);
-        if (left_img.empty() || right_img.empty())
-            throw std::runtime_error("无法读取输入图像");
+        // ====================================================================
+        // 图像加载 —— 新版 InputProvider 或 旧版 cv::imread
+        // ====================================================================
+        input::InputProvider input_provider;
+        cv::Mat left_img, right_img;  // 旧版路径使用
 
-        // 初始化 YOLO 检测器
+        if (use_input_system) {
+            std::cout << "[输入系统] 初始化 InputProvider..." << std::endl;
+            if (!input_provider.initialize(input_sys_cfg))
+                throw std::runtime_error("InputProvider 初始化失败");
+            std::cout << "[输入系统] 就绪, 最大帧数: " << max_frames << std::endl;
+        } else {
+            // 旧版路径：直接从路径加载图像
+            std::cout << "加载图像: " << left_path << " / " << right_path << std::endl;
+            left_img  = cv::imread(left_path,  cv::IMREAD_COLOR);
+            right_img = cv::imread(right_path, cv::IMREAD_COLOR);
+            if (left_img.empty() || right_img.empty())
+                throw std::runtime_error("无法读取输入图像");
+        }
+
+        // ====================================================================
+        // 初始化 YOLO + StereoTracker（两种路径共用）
+        // ====================================================================
         YoloRoiProvider yolo;
         YoloConfig yolo_cfg = makeYoloConfig(model_path, DeviceType::CPU, conf);
         yolo_cfg.target_class_id = target_cls;
@@ -170,14 +264,13 @@ int main(int argc, char** argv) {
         RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
         bool yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
 
-        // 初始化 StereoTracker（预创建全部 3 种策略，每帧仅切换指针）
         std::cout << "初始化 StereoTracker（预加载 3 种提取器）..." << std::endl;
         StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
                               binary_cfg, binary_template_dir,
                               tiny_cfg, tiny_template_dir);
         tracker.setOutputDir(output_dir);
+        tracker.setVerboseConsole(verbose_console);
 
-        // 启用单目模式
         if (mono_mode) {
             StereoTracker::MonoConfig mono_cfg;
             mono_cfg.enabled = true;
@@ -190,64 +283,52 @@ int main(int argc, char** argv) {
         // ====================================================================
         // ④ 逐帧处理（单目 / 双目分支）
         // ====================================================================
-        if (mono_mode) {
-            // ================================================================
-            // 单目路径：仅使用左图
-            // ================================================================
-            for (int frame = 1; frame <= 2; ++frame) {
-                std::cout << "\n===== 第 " << frame << " 帧 (单目) =====" << std::endl;
+        auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) {
+            PipelineResult result;
 
-                // 获取 ROI（仅左图，保留 is_dual + secondary）
+            if (mono_mode) {
+                // 单目路径
                 RoiGroup left_group;
                 if (use_manual_roi) {
                     left_group = RoiGroup{manual_rl, {}, false};
                 } else if (yolo_ok) {
-                    auto [lg, rg] = yolo.detect(left_img, right_img);
-                    left_group = lg;  // preserves is_dual + secondary
+                    auto [lg, rg] = yolo.detect(L, R);
+                    left_group = lg;
+                    if (!left_group.valid()) {
+                        std::cout << "[Frame " << frame << "] YOLO未检测到目标" << std::endl;
+                        return;
+                    }
                 }
-
-                const RoiGroup* plg = left_group.valid() ? &left_group : nullptr;
-                auto result = tracker.processMono(left_img, visualize, plg);
-
-                // 输出结果摘要
-                std::cout << "  特征点: " << result.n_kp_left
-                          << "  匹配: " << result.n_matched
-                          << "  模板: " << result.n_template_match
-                          << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
-                          << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
-            }
-        } else {
-            // ================================================================
-            // 双目路径：左右图立体匹配
-            // ================================================================
-            for (int frame = 1; frame <= 2; ++frame) {
-                std::cout << "\n===== 第 " << frame << " 帧 =====" << std::endl;
-
-                // 获取 ROI：手动输入 > YOLO 检测
+                result = tracker.processMono(L, visualize, &left_group);
+            } else {
+                // 双目路径
                 RoiGroup lg, rg;
                 if (use_manual_roi) {
                     lg = RoiGroup{manual_rl, {}, false};
                     rg = RoiGroup{manual_rr, {}, false};
-                    std::cout << "  手动 ROI: left=(" << manual_rl.x << "," << manual_rl.y << ","
-                              << manual_rl.width << "," << manual_rl.height << "), right=("
-                              << manual_rr.x << "," << manual_rr.y << "," << manual_rr.width
-                              << "," << manual_rr.height << ")" << std::endl;
+                    if (verbose_console) {
+                        std::cout << "  手动 ROI: left=(" << manual_rl.x << "," << manual_rl.y << ","
+                                  << manual_rl.width << "," << manual_rl.height << "), right=("
+                                  << manual_rr.x << "," << manual_rr.y << "," << manual_rr.width
+                                  << "," << manual_rr.height << ")" << std::endl;
+                    }
                 } else if (yolo_ok) {
-                    std::tie(lg, rg) = yolo.detect(left_img, right_img);
-                    if (lg.is_dual) {
+                    std::tie(lg, rg) = yolo.detect(L, R);
+                    if (!lg.valid() || !rg.valid()) {
+                        std::cout << "[Frame " << frame << "] YOLO未检测到目标" << std::endl;
+                        return;
+                    }
+                    if (lg.is_dual && verbose_console) {
                         std::cout << "  双 ROI 模式: secondary=(" << lg.secondary.width
                                   << "x" << lg.secondary.height << ")" << std::endl;
                     }
                 }
+                result = tracker.process(L, R, visualize, &lg, &rg);
+            }
 
-                // process() 内部自动完成：策略链选择 + ROI padding + 提取 + 位姿解算
-                const RoiGroup* plg = lg.valid() ? &lg : nullptr;
-                const RoiGroup* prg = rg.valid() ? &rg : nullptr;
-
-                // 处理当前帧
-                auto result = tracker.process(left_img, right_img, visualize, plg, prg);
-
-                // 输出结果摘要
+            // ---- 输出 ----
+            if (verbose_console) {
+                // 详细模式：当前行为
                 std::cout << "  特征点: " << result.n_kp_left
                           << "  匹配: " << result.n_matched
                           << "  投影: " << result.n_projected
@@ -259,10 +340,50 @@ int main(int argc, char** argv) {
                 }
                 std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
                           << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
+            } else {
+                // 静默模式：策略 + n + r + t 或 FAILED
+                if (result.success) {
+                    Eigen::AngleAxisd aa(result.R);
+                    Eigen::Vector3d rvec = aa.angle() * aa.axis();
+                    std::string sname = result.strategy_name.empty()
+                        ? "Unknown" : result.strategy_name;
+                    std::cout << "[Frame " << frame << "] " << sname
+                              << "  n=" << result.n_matched
+                              << "  r=[" << rvec.x() << ", " << rvec.y() << ", " << rvec.z() << "]"
+                              << "  t=[" << result.t.x() << ", " << result.t.y() << ", " << result.t.z() << "]"
+                              << std::endl;
+                } else {
+                    std::cout << "[Frame " << frame << "] FAILED" << std::endl;
+                }
+            }
+        };
+
+        if (use_input_system) {
+            // 新版输入系统路径 —— 数据驱动的帧循环
+            int frame = 0;
+            input::SensorPacket packet;
+            while (input_provider.getNextPacket(packet) && frame < max_frames) {
+                ++frame;
+                if (verbose_console)
+                    std::cout << "\n===== 第 " << frame << " 帧"
+                              << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
+                processFrame(frame, packet.left_image, packet.right_image);
+            }
+            if (frame == 0) {
+                std::cerr << "警告: 输入系统未产生任何帧" << std::endl;
+            }
+        } else {
+            // 旧版路径 —— 固定帧数循环（向后兼容）
+            for (int frame = 1; frame <= max_frames; ++frame) {
+                if (verbose_console)
+                    std::cout << "\n===== 第 " << frame << " 帧"
+                              << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
+                processFrame(frame, left_img, right_img);
             }
         }
 
-        tracker.printLogs();
+        if (verbose_console)
+            tracker.printLogs();
 
     } catch (const std::exception& e) {
         std::cerr << "致命错误: " << e.what() << std::endl;

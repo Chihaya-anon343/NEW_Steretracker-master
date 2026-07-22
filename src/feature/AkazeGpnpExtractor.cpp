@@ -1,4 +1,5 @@
 #include "feature/AkazeGpnpExtractor.hpp"
+#include "common/LogConfig.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -39,9 +40,10 @@ void AkazeGpnpExtractor::setTemplateData(const std::string& template_dir,
     template_ = full_akaze.extractTemplate(template_dir, real_width_mm, real_height_mm);
     auto t1 = std::chrono::high_resolution_clock::now();
     double t_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    std::cout << "[AkazeGpnp] Template features: "
-              << template_.keypoints.size() << " kp, "
-              << t_ms << " ms" << std::endl;
+    if (g_verbose_console)
+        std::cout << "[AkazeGpnp] Template features: "
+                  << template_.keypoints.size() << " kp, "
+                  << t_ms << " ms" << std::endl;
 }
 
 // ============================================================================
@@ -139,6 +141,7 @@ PipelineResult AkazeGpnpExtractor::extractMono(const cv::Mat& gray,
     result.pts_template_match = std::move(match.pts_template_match);
     result.n_template_match = match.num_matches;
     result.left_color = color;
+    result.n_matched = match.num_matches;
     result.success = (match.num_matches >= 4);
 
     return result;

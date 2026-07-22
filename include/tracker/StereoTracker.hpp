@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Config.hpp"
+#include "common/LogConfig.hpp"
 #include "common/Types.hpp"
 #include "feature/FeatureExtractor.hpp"
 #include "feature/MadDisparityFilter.hpp"
@@ -97,6 +98,10 @@ public:
     /// 设置可视化图像的输出目录。
     void setOutputDir(const std::string& dir) { output_dir_ = dir; }
 
+    /// 控制终端详细输出（策略链、退化、PnP 状态等）。false 时仅输出最终位姿。
+    void setVerboseConsole(bool v) { verbose_console_ = v; g_verbose_console = v; }
+    bool verboseConsole() const { return verbose_console_; }
+
     const StereoCameraParams& cameraParams() const { return camera_; }
     const TemplateData& templateData() const { return template_; }
     const TrackerConfig& config() const { return config_; }
@@ -138,6 +143,7 @@ private:
     std::vector<Eigen::Vector3d> dual_bc_tmpl_pts3d_; ///< 每个角点的 3D 坐标
 
     std::string output_dir_;
+    bool verbose_console_ = true;     ///< 终端详细输出开关
 
     // 子系统模块
     InitialPnPSolver initial_pnp_;

@@ -69,6 +69,11 @@ set(SOURCES
     src/tracker/StereoTracker.cpp
     src/detection/RoiGenerator.cpp
     src/detection/YoloRoiProvider.cpp
+    # 输入系统 (Phase 1)
+    src/input/FileStereoSource.cpp
+    src/input/DirectoryStereoSource.cpp
+    src/input/SequenceSource.cpp
+    src/input/InputProvider.cpp
 )
 
 # ============================================================================

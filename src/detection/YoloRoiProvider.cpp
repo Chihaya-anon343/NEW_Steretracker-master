@@ -5,6 +5,7 @@
 
 #include "detection/YoloRoiProvider.hpp"
 #include "detection/YoloDetector.hpp"
+#include "common/LogConfig.hpp"
 
 #include <iostream>
 
@@ -18,11 +19,12 @@ bool YoloRoiProvider::initialize(const YoloConfig& yolo_cfg,
     try {
         detector_ = std::make_unique<YoloDetector>(yolo_cfg);
         roi_gen_  = std::make_unique<RoiGenerator>(roi_cfg);
-        std::cout << "[YoloRoiProvider] Ready. Model: " << yolo_cfg.model_path
-                  << ", conf=" << yolo_cfg.conf_threshold
-                  << ", class=" << yolo_cfg.target_class_id
-                  << ", expand=" << roi_cfg.roi_expand_ratio
-                  << std::endl;
+        if (g_verbose_console)
+            std::cout << "[YoloRoiProvider] Ready. Model: " << yolo_cfg.model_path
+                      << ", conf=" << yolo_cfg.conf_threshold
+                      << ", class=" << yolo_cfg.target_class_id
+                      << ", expand=" << roi_cfg.roi_expand_ratio
+                      << std::endl;
         return true;
     } catch (const std::exception& e) {
         std::cerr << "[YoloRoiProvider] Init failed: " << e.what() << std::endl;
@@ -44,10 +46,11 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
 
     if (sl != Status::Success || sr != Status::Success ||
         det_left.empty() || det_right.empty()) {
-        std::cerr << "[YoloRoiProvider] Detection failed"
-                  << " (L status=" << static_cast<int>(sl)
-                  << ", R status=" << static_cast<int>(sr) << ")"
-                  << std::endl;
+        if (g_verbose_console)
+            std::cerr << "[YoloRoiProvider] Detection failed"
+                      << " (L status=" << static_cast<int>(sl)
+                      << ", R status=" << static_cast<int>(sr) << ")"
+                      << std::endl;
         return {};
     }
 
@@ -55,13 +58,15 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
         det_left, det_right, left_img.size(), right_img.size());
 
     if (lg.valid() && rg.valid()) {
-        std::cout << "[YoloRoiProvider] ROI=(" << lg.primary.x << "," << lg.primary.y << ","
-                  << lg.primary.width << "," << lg.primary.height << ")";
-        if (lg.is_dual) {
-            std::cout << " + secondary=(" << lg.secondary.x << "," << lg.secondary.y << ","
-                      << lg.secondary.width << "," << lg.secondary.height << ")";
+        if (g_verbose_console) {
+            std::cout << "[YoloRoiProvider] ROI=(" << lg.primary.x << "," << lg.primary.y << ","
+                      << lg.primary.width << "," << lg.primary.height << ")";
+            if (lg.is_dual) {
+                std::cout << " + secondary=(" << lg.secondary.x << "," << lg.secondary.y << ","
+                          << lg.secondary.width << "," << lg.secondary.height << ")";
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
     }
 
     return {lg, rg};
@@ -74,9 +79,10 @@ RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
     Status sl = detector_->detect(left_img, det_left);
 
     if (sl != Status::Success || det_left.empty()) {
-        std::cerr << "[YoloRoiProvider] Mono detection failed"
-                  << " (status=" << static_cast<int>(sl) << ")"
-                  << std::endl;
+        if (g_verbose_console)
+            std::cerr << "[YoloRoiProvider] Mono detection failed"
+                      << " (status=" << static_cast<int>(sl) << ")"
+                      << std::endl;
         return {};
     }
 
@@ -84,14 +90,16 @@ RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
     RoiGroup lg = roi_gen_->generateGroup(det_left, left_img.size());
 
     if (lg.valid()) {
-        std::cout << "[YoloRoiProvider] Mono ROI=("
-                  << lg.primary.x << "," << lg.primary.y << ","
-                  << lg.primary.width << "," << lg.primary.height << ")";
-        if (lg.is_dual) {
-            std::cout << " + secondary=(" << lg.secondary.x << "," << lg.secondary.y << ","
-                      << lg.secondary.width << "," << lg.secondary.height << ")";
+        if (g_verbose_console) {
+            std::cout << "[YoloRoiProvider] Mono ROI=("
+                      << lg.primary.x << "," << lg.primary.y << ","
+                      << lg.primary.width << "," << lg.primary.height << ")";
+            if (lg.is_dual) {
+                std::cout << " + secondary=(" << lg.secondary.x << "," << lg.secondary.y << ","
+                          << lg.secondary.width << "," << lg.secondary.height << ")";
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
     }
 
     return lg;

@@ -1,10 +1,40 @@
 {
   "input": {
+    "_comment": "===== 旧版输入配置（input_system 不存在时使用）=====",
     "left": "data/大图/cj01_image_0032 _rot180.jpg",
     "right": "data/大图/cj01_image_0032 _rot180.jpg"
   },
+
+  "input_system": {
+    "_comment": "===== 新版输入系统（优先于 input.*）=====",
+    "_comment2": "type: file(静态双图), directory(双目序列), sequence(单目序列), camera(实时摄像头-未来)",
+    "max_frames": 0,
+    "image": {
+      "type": "sequence",
+      "left_path": "",
+      "right_path": "",
+      "directory_path": "data/output_frames",
+      "left_pattern": "left",
+      "right_pattern": "right",
+      "sequence_pattern": "frame"
+    },
+    "imu": {
+      "_comment": "IMU 传感器配置 (Phase 2, Linux only)",
+      "enabled": false,
+      "port": "/dev/ttyUSB0",
+      "baud_rate": 921600,
+      "protocol": "custom"
+    },
+    "altimeter": {
+      "_comment": "高度计/雷达配置 (Phase 2, Linux only)",
+      "enabled": false,
+      "can_interface": "can0",
+      "type": "can"
+    }
+  },
   "output": {
-    "visualize": true
+    "visualize": true,
+    "verbose_console": false
   },
   "mono_mode": true,
 
@@ -40,7 +70,7 @@
   "strategies": {
     "_comment": "ROI area thresholds: <= tiny_max → TinyTarget, >= akaze_min → AKAZE, else BinaryCorner",
     "akaze_min_area": 40001,
-    "tiny_max_area": 800,
+    "tiny_max_area": 400,
     "dual_trigger_area": 490000,
 
     "akaze_gpnp": {

@@ -1,6 +1,7 @@
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/PoseUtils.hpp"
 #include "common/GeometryUtils.hpp"
+#include "common/LogConfig.hpp"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/calib3d.hpp>
@@ -21,8 +22,9 @@ TinyTargetExtractor::TinyTargetExtractor(const Config& config,
 {
     templates_ = loadTemplates(template_dir, false);
     if (!templates_.empty()) {
-        std::cout << "[TinyTarget] Loaded " << templates_.size()
-                  << " templates from " << template_dir << std::endl;
+        if (g_verbose_console)
+            std::cout << "[TinyTarget] Loaded " << templates_.size()
+                      << " templates from " << template_dir << std::endl;
     } else {
         std::cerr << "[TinyTarget] WARNING: No templates loaded from "
                   << template_dir << std::endl;
@@ -38,8 +40,9 @@ void TinyTargetExtractor::setTemplateData(const std::string& template_dir,
                                            double /*real_height_mm*/) {
     templates_ = loadTemplates(template_dir, false);
     if (!templates_.empty()) {
-        std::cout << "[TinyTarget] Reloaded " << templates_.size()
-                  << " templates" << std::endl;
+        if (g_verbose_console)
+            std::cout << "[TinyTarget] Reloaded " << templates_.size()
+                      << " templates" << std::endl;
     }
 }
 
@@ -61,9 +64,11 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
     }
 
     bool has_right = !right_gray.empty();
-    std::cout << "[TinyTarget] Left ROI=" << left_gray.cols << "x" << left_gray.rows;
-    if (has_right) std::cout << " | Right ROI=" << right_gray.cols << "x" << right_gray.rows;
-    std::cout << std::endl;
+    if (g_verbose_console) {
+        std::cout << "[TinyTarget] Left ROI=" << left_gray.cols << "x" << left_gray.rows;
+        if (has_right) std::cout << " | Right ROI=" << right_gray.cols << "x" << right_gray.rows;
+        std::cout << std::endl;
+    }
 
     // ---- 步骤1: 从左图提取4个角点 ----
     std::vector<cv::Point2f> left_corners;
@@ -149,9 +154,10 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
 
     result.timing["tiny_target"] = 0.0;
 
-    std::cout << "[TinyTarget] Extracted 4 corners (L), " << right_corners.size()
-              << " corners (R), stereo=" << n_stereo
-              << ", angle=" << best_angle << ", overlap=" << best_overlap << std::endl;
+    if (g_verbose_console)
+        std::cout << "[TinyTarget] Extracted 4 corners (L), " << right_corners.size()
+                  << " corners (R), stereo=" << n_stereo
+                  << ", angle=" << best_angle << ", overlap=" << best_overlap << std::endl;
 
     return result;
 }
@@ -410,7 +416,7 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
         return result;
     }
 
-    std::cout << "[TinyTarget] Mono ROI=" << gray.cols << "x" << gray.rows << std::endl;
+    if (g_verbose_console) std::cout << "[TinyTarget] Mono ROI=" << gray.cols << "x" << gray.rows << std::endl;
 
     // 单图提取4个角点
     std::vector<cv::Point2f> corners;
@@ -470,9 +476,11 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
 
     result.timing["tiny_target"] = 0.0;
 
+    result.n_matched = 4;
     result.success = true;
-    std::cout << "[TinyTarget] Mono extracted 4 corners, angle=" << best_angle
-              << "°, overlap=" << best_overlap << std::endl;
+    if (g_verbose_console)
+        std::cout << "[TinyTarget] Mono extracted 4 corners, angle=" << best_angle
+                  << "°, overlap=" << best_overlap << std::endl;
     return result;
 }
 

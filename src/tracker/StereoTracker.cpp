@@ -83,8 +83,9 @@ StereoTracker::StereoTracker(const Eigen::Matrix3d& K,
     fallback_extractors_.push_back(binary_extractor_.get());
     fallback_extractors_.push_back(tiny_extractor_.get());
 
-    std::cout << "[StereoTracker] Pre-initialized 3 extractors: AkazeGpnp, BinaryCorner, TinyTarget"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[StereoTracker] Pre-initialized 3 extractors: AkazeGpnp, BinaryCorner, TinyTarget"
+                  << std::endl;
 }
 
 StereoTracker::~StereoTracker() = default;
@@ -102,24 +103,27 @@ void StereoTracker::configureStrategyChain(int roi_area) {
         fallback_extractors_.push_back(binary_extractor_.get());
         fallback_extractors_.push_back(tiny_extractor_.get());
 
-        std::cout << "[StereoTracker] Strategy chain: AkazeGpnp → BinaryCorner → TinyTarget"
-                  << " (roi_area=" << roi_area << ")" << std::endl;
+        if (verbose_console_)
+            std::cout << "[StereoTracker] Strategy chain: AkazeGpnp → BinaryCorner → TinyTarget"
+                      << " (roi_area=" << roi_area << ")" << std::endl;
 
     } else if (roi_area > tiny_max_area_) {
         // Medium ROI → BinaryCorner → TinyTarget
         extractor_ = binary_extractor_.get();
         fallback_extractors_.push_back(tiny_extractor_.get());
 
-        std::cout << "[StereoTracker] Strategy chain: BinaryCorner → TinyTarget"
-                  << " (roi_area=" << roi_area << ")" << std::endl;
+        if (verbose_console_)
+            std::cout << "[StereoTracker] Strategy chain: BinaryCorner → TinyTarget"
+                      << " (roi_area=" << roi_area << ")" << std::endl;
 
     } else {
         // Small ROI → TinyTarget only (no further fallback)
         extractor_ = tiny_extractor_.get();
         // fallback_extractors_ remains empty
 
-        std::cout << "[StereoTracker] Strategy chain: TinyTarget only"
-                  << " (roi_area=" << roi_area << ")" << std::endl;
+        if (verbose_console_)
+            std::cout << "[StereoTracker] Strategy chain: TinyTarget only"
+                      << " (roi_area=" << roi_area << ")" << std::endl;
     }
 }
 
@@ -213,9 +217,10 @@ bool StereoTracker::runExtraction(FeatureExtractor& ext,
             result.disparity[i] = -d;  // = right.x - left.x (match AKAZE convention)
         }
         if (n > 0) {
-            std::cout << "  [" << ext.name() << "] Full-image stereo: " << n
-                      << " pairs, median_disp=" << computeMedian(result.disparity) << " px"
-                      << std::endl;
+            if (verbose_console_)
+                std::cout << "  [" << ext.name() << "] Full-image stereo: " << n
+                          << " pairs, median_disp=" << computeMedian(result.disparity) << " px"
+                          << std::endl;
         }
     }
 
@@ -302,19 +307,19 @@ std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(PipelineResult& result,
             pose = gpnp_solver_.solve(result, pnp_pts_3d, &init_pose.R, &init_pose.t, gpnp_timing);
             if (!pose.success) {
                 // GPNP failed but InitialPnP succeeded → use InitialPnP (no degradation)
-                std::cout << "  [AKAZE] GPNP failed, falling back to InitialPnP result" << std::endl;
+                if (verbose_console_) std::cout << "  [AKAZE] GPNP failed, falling back to InitialPnP result" << std::endl;
                 pose = init_pose;
                 pose.success = true;
             }
         } else {
             // InitialPnP failed → try GPNP with default depth
-            std::cout << "  [AKAZE] InitialPnP failed, trying GPNP with default depth" << std::endl;
+            if (verbose_console_) std::cout << "  [AKAZE] InitialPnP failed, trying GPNP with default depth" << std::endl;
             Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
             Eigen::Vector3d t_id(0, 0, 5000);
             pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
         }
     } else if (is_first && !config_.use_initial_pnp) {
-        std::cout << "  [InitialPnP] Skipped (use_initial_pnp=false)" << std::endl;
+        if (verbose_console_) std::cout << "  [InitialPnP] Skipped (use_initial_pnp=false)" << std::endl;
         Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
         Eigen::Vector3d t_id(0, 0, 5000);
         pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
@@ -353,13 +358,13 @@ std::pair<bool, PoseEstimate> StereoTracker::runBinaryCornerPnP(PipelineResult& 
             pose = gpnp_solver_.solve(result, pnp_pts_3d, &init_pose.R, &init_pose.t, gpnp_timing);
             if (!pose.success) {
                 // GPNP failed but InitialPnP succeeded → use InitialPnP (no degradation)
-                std::cout << "  [BinaryCorner] GPNP failed, falling back to InitialPnP result" << std::endl;
+                if (verbose_console_) std::cout << "  [BinaryCorner] GPNP failed, falling back to InitialPnP result" << std::endl;
                 pose = init_pose;
                 pose.success = true;
             }
         } else {
             // InitialPnP failed → fallback to depth-from-disparity
-            std::cout << "  [BinaryCorner] InitialPnP failed, estimating depth from disparity" << std::endl;
+            if (verbose_console_) std::cout << "  [BinaryCorner] InitialPnP failed, estimating depth from disparity" << std::endl;
             Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
             double depth_from_disp = 500.0;
             if (!result.disparity.empty()) {
@@ -369,15 +374,16 @@ std::pair<bool, PoseEstimate> StereoTracker::runBinaryCornerPnP(PipelineResult& 
                 if (med_disp > 1.0) {
                     depth_from_disp = camera_.focal_length * camera_.baseline / med_disp;
                     depth_from_disp = std::clamp(depth_from_disp, 50.0, 5000.0);
-                    std::cout << "  [BinaryCorner] Depth from disparity: " << static_cast<int>(depth_from_disp)
-                              << "mm (median_disp=" << static_cast<int>(med_disp) << "px)" << std::endl;
+                    if (verbose_console_)
+                        std::cout << "  [BinaryCorner] Depth from disparity: " << static_cast<int>(depth_from_disp)
+                                  << "mm (median_disp=" << static_cast<int>(med_disp) << "px)" << std::endl;
                 }
             }
             Eigen::Vector3d t_id(0, 0, depth_from_disp);
             pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
         }
     } else if (is_first && !config_.use_initial_pnp) {
-        std::cout << "  [InitialPnP] Skipped (use_initial_pnp=false)" << std::endl;
+        if (verbose_console_) std::cout << "  [InitialPnP] Skipped (use_initial_pnp=false)" << std::endl;
         Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
         double depth_from_disp = 500.0;
         if (!result.disparity.empty()) {
@@ -445,8 +451,9 @@ std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(PipelineResult& re
         double rpe_sum = 0.0;
         for (size_t i = 0; i < projected.size(); ++i)
             rpe_sum += cv::norm(projected[i] - img_pts[i]);
-        std::cout << "  [TinyTarget] solvePnP OK  n_pts=4  RE="
-                  << (rpe_sum / 4.0) << "px" << std::endl;
+        if (verbose_console_)
+            std::cout << "  [TinyTarget] solvePnP OK  n_pts=4  RE="
+                      << (rpe_sum / 4.0) << "px" << std::endl;
     } else {
         std::cerr << "  [TinyTarget] solvePnP FAILED" << std::endl;
     }
@@ -471,10 +478,12 @@ void StereoTracker::finalizePose(PipelineResult& result, const PoseEstimate& pos
             R_cv.at<double>(r, c) = pose.R(r, c);
         cv::Mat rvec;
         cv::Rodrigues(R_cv, rvec);
-        std::cout << "  Pose: rvec=[" << rvec.at<double>(0) << ", "
-                  << rvec.at<double>(1) << ", " << rvec.at<double>(2) << "]"
-                  << "  tvec=[" << pose.t(0) << ", " << pose.t(1) << ", "
-                  << pose.t(2) << "] mm  n_pts=" << pose.num_points << std::endl;
+        if (verbose_console_) {
+            std::cout << "  Pose: rvec=[" << rvec.at<double>(0) << ", "
+                      << rvec.at<double>(1) << ", " << rvec.at<double>(2) << "]"
+                      << "  tvec=[" << pose.t(0) << ", " << pose.t(1) << ", "
+                      << pose.t(2) << "] mm  n_pts=" << pose.num_points << std::endl;
+        }
 
         state_.R_prev = pose.R;
         state_.t_prev = pose.t;
@@ -601,7 +610,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
         if (is_fb) {
             fallback_used = true;
             std::string from = chain[i - 1]->name();
-            std::cout << "[Degradation] " << from << " failed → " << strategy_name << std::endl;
+            if (verbose_console_) std::cout << "[Degradation] " << from << " failed → " << strategy_name << std::endl;
         }
 
         bool extract_ok = runExtraction(*ext, left_cropped, right_cropped,
@@ -611,10 +620,12 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
 
         if (!extract_ok) {
             if (is_primary) {
-                std::cout << "[Degradation] " << strategy_name << " extraction failed"
-                          << " (n_kp=" << result.n_kp_left << ")" << std::endl;
+                if (verbose_console_)
+                    std::cout << "[Degradation] " << strategy_name << " extraction failed"
+                              << " (n_kp=" << result.n_kp_left << ")" << std::endl;
             } else {
-                std::cout << "[Degradation] " << strategy_name << " extraction failed" << std::endl;
+                if (verbose_console_)
+                    std::cout << "[Degradation] " << strategy_name << " extraction failed" << std::endl;
             }
             continue;
         }
@@ -624,6 +635,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
             pose_ok = true;
             final_pose = pose;
             winning_strategy = strategy_name;
+            result.strategy_name = strategy_name;
             break;
         }
     }
@@ -1033,10 +1045,11 @@ void StereoTracker::prepareDualBcTemplate() {
     }
 
     dual_bc_template_ready_ = true;
-    std::cout << "[DualRoi] BC template prepared: " << dual_bc_tmpl_corners_.size()
-              << " corners on AKAZE template (" << tw << "x" << th << ")"
-              << "  real_size=" << real_w << "x" << real_h << "mm"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi] BC template prepared: " << dual_bc_tmpl_corners_.size()
+                  << " corners on AKAZE template (" << tw << "x" << th << ")"
+                  << "  real_size=" << real_w << "x" << real_h << "mm"
+                  << std::endl;
 }
 
 PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
@@ -1085,12 +1098,13 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         static_cast<double>(right_sec.x - right_pri.x),
         static_cast<double>(right_sec.y - right_pri.y));
 
-    std::cout << "[DualRoi] pad=" << pad
-              << "  primary=" << left_pri.width << "x" << left_pri.height
-              << "  secondary(raw)=" << left_group.secondary.width << "x" << left_group.secondary.height
-              << "  secondary(expanded)=" << left_sec.width << "x" << left_sec.height
-              << "  offset=(" << sec_to_pri_offset.x << "," << sec_to_pri_offset.y << ")"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi] pad=" << pad
+                  << "  primary=" << left_pri.width << "x" << left_pri.height
+                  << "  secondary(raw)=" << left_group.secondary.width << "x" << left_group.secondary.height
+                  << "  secondary(expanded)=" << left_sec.width << "x" << left_sec.height
+                  << "  offset=(" << sec_to_pri_offset.x << "," << sec_to_pri_offset.y << ")"
+                  << std::endl;
 
     // 2. Crop images
     cv::Mat left_c0_gray   = left_gray(cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
@@ -1108,17 +1122,18 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         left_c0_gray, right_c0_gray, left_c0_color, right_c0_color);
 
     int n_bc = static_cast<int>(result_bc.pts_left_match.size());
-    std::cout << "[DualRoi] BinaryCorner on class 0: " << n_bc << " corners" << std::endl;
+    if (verbose_console_) std::cout << "[DualRoi] BinaryCorner on class 0: " << n_bc << " corners" << std::endl;
 
     // 4. AKAZE extraction on class 1 (center texture features, dual-ROI params)
     PipelineResult result_ak = dual_akaze_extractor_->extract(
         left_c1_gray, right_c1_gray, left_c1_color, right_c1_color);
 
     int m_ak_match = static_cast<int>(result_ak.pts_left_match.size());
-    std::cout << "[DualRoi] AKAZE on class 1: " << m_ak_match << " template matches"
-              << " (kp=" << result_ak.n_kp_left
-              << ", flow=" << result_ak.pts_left_good.size() << ")"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi] AKAZE on class 1: " << m_ak_match << " template matches"
+                  << " (kp=" << result_ak.n_kp_left
+                  << ", flow=" << result_ak.pts_left_good.size() << ")"
+                  << std::endl;
 
     // 5. Coordinate transform: class-1-ROI-local → class-0-ROI-local
     auto offsetPoints = [](std::vector<cv::Point2f>& pts, double dx, double dy) {
@@ -1185,8 +1200,9 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     if (ak_good_indices.empty()) {
         // Fallback: use pts_left_match as-is, skip right-image points for AK part
-        std::cout << "  [DualRoi] AK: no points with both stereo+template, using template-only"
-                  << std::endl;
+        if (verbose_console_)
+            std::cout << "  [DualRoi] AK: no points with both stereo+template, using template-only"
+                      << std::endl;
         for (int i = 0; i < m_ak; ++i) {
             merged_pts_left.push_back(result_ak.pts_left_match[i]);
             merged_kp_left.emplace_back(result_ak.pts_left_match[i], 1.0f);
@@ -1256,9 +1272,10 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         merged_idx[i] = i;
     }
 
-    std::cout << "[DualRoi] Merged: " << total_use << " total (BC=" << bc_total
-              << " [3d=" << bc_3d_added << "], AK=" << m_ak_match << ")"
-              << "  pts3d=" << total_3d << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi] Merged: " << total_use << " total (BC=" << bc_total
+                  << " [3d=" << bc_3d_added << "], AK=" << m_ak_match << ")"
+                  << "  pts3d=" << total_3d << std::endl;
 
     if (total_use < 4) {
         std::cerr << "[DualRoi] Too few merged points (" << total_use << "), aborting" << std::endl;
@@ -1303,21 +1320,21 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         result.timing["initial_pnp"] = 0.0;
 
         if (init_pose.success) {
-            std::cout << "  [DualRoi] InitialPnP OK, warm-starting GPNP" << std::endl;
+            if (verbose_console_) std::cout << "  [DualRoi] InitialPnP OK, warm-starting GPNP" << std::endl;
             pose = gpnp_solver_.solve(result, merged_pts3d, &init_pose.R, &init_pose.t, gpnp_timing);
             if (!pose.success) {
-                std::cout << "  [DualRoi] GPNP failed, using InitialPnP result" << std::endl;
+                if (verbose_console_) std::cout << "  [DualRoi] GPNP failed, using InitialPnP result" << std::endl;
                 pose = init_pose;
                 pose.success = true;
             }
         } else {
-            std::cout << "  [DualRoi] InitialPnP failed, trying GPNP with default depth" << std::endl;
+            if (verbose_console_) std::cout << "  [DualRoi] InitialPnP failed, trying GPNP with default depth" << std::endl;
             Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
             Eigen::Vector3d t_id(0, 0, 5000);
             pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing);
         }
     } else if (is_first && !config_.use_initial_pnp) {
-        std::cout << "  [DualRoi] InitialPnP skipped" << std::endl;
+        if (verbose_console_) std::cout << "  [DualRoi] InitialPnP skipped" << std::endl;
         Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
         Eigen::Vector3d t_id(0, 0, 5000);
         pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing);
@@ -1339,6 +1356,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     if (pose.success) {
         finalizePose(result, pose);
     }
+    result.strategy_name = "DualRoi";
 
     // ---- Visualization (dual-ROI) ----
     if (visualize && pose.success) {
@@ -1492,18 +1510,20 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             cv::imwrite(output_dir_ + "/dual_roi_correspondence" + prefix + ".png", p5);
         }
 
-        std::cout << "  [DualRoi] Visualized: " << bc_total << " BC + "
-                  << ak_count << " AK corners" << std::endl;
+        if (verbose_console_)
+            std::cout << "  [DualRoi] Visualized: " << bc_total << " BC + "
+                      << ak_count << " AK corners" << std::endl;
     }
 
     result.n_matched = total_use;
     result.n_projected = total_use;
     addLogEntry(result, is_first, false);
 
-    std::cout << "[DualRoi] Frame done: n_pts=" << total_use
-              << "  GPNP=" << (pose.success ? "OK" : "FAIL")
-              << "  time=" << result.total_time_ms() << "ms"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi] Frame done: n_pts=" << total_use
+                  << "  GPNP=" << (pose.success ? "OK" : "FAIL")
+                  << "  time=" << result.total_time_ms() << "ms"
+                  << std::endl;
 
     return result;
 }
@@ -1546,12 +1566,13 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
         static_cast<double>(left_sec.x - left_pri.x),
         static_cast<double>(left_sec.y - left_pri.y));
 
-    std::cout << "[DualRoi][Mono] pad=" << pad
-              << "  primary=" << left_pri.width << "x" << left_pri.height
-              << "  secondary(raw)=" << left_group.secondary.width << "x" << left_group.secondary.height
-              << "  secondary(expanded)=" << left_sec.width << "x" << left_sec.height
-              << "  offset=(" << sec_to_pri_offset.x << "," << sec_to_pri_offset.y << ")"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi][Mono] pad=" << pad
+                  << "  primary=" << left_pri.width << "x" << left_pri.height
+                  << "  secondary(raw)=" << left_group.secondary.width << "x" << left_group.secondary.height
+                  << "  secondary(expanded)=" << left_sec.width << "x" << left_sec.height
+                  << "  offset=(" << sec_to_pri_offset.x << "," << sec_to_pri_offset.y << ")"
+                  << std::endl;
 
     // 2. Crop images (left only)
     cv::Mat left_c0_gray  = left_gray(cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
@@ -1562,14 +1583,15 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
     // 3. BC extraction on class 0 (mono)
     PipelineResult result_bc = binary_extractor_->extractMono(left_c0_gray, left_c0_color);
     int n_bc = static_cast<int>(result_bc.pts_left_match.size());
-    std::cout << "[DualRoi][Mono] BinaryCorner on class 0: " << n_bc << " corners" << std::endl;
+    if (verbose_console_) std::cout << "[DualRoi][Mono] BinaryCorner on class 0: " << n_bc << " corners" << std::endl;
 
     // 4. AK extraction on class 1 (mono)
     PipelineResult result_ak = dual_akaze_extractor_->extractMono(left_c1_gray, left_c1_color);
     int m_ak_match = static_cast<int>(result_ak.pts_left_match.size());
-    std::cout << "[DualRoi][Mono] AKAZE on class 1: " << m_ak_match << " template matches"
-              << " (kp=" << result_ak.n_kp_left << ")"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi][Mono] AKAZE on class 1: " << m_ak_match << " template matches"
+                  << " (kp=" << result_ak.n_kp_left << ")"
+                  << std::endl;
 
     // 5. Coordinate transform: class-1-local → class-0-local
     auto offsetPoints = [](std::vector<cv::Point2f>& pts, const cv::Point2d& offset) {
@@ -1608,8 +1630,9 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
         bc_pts3d.reserve(order.size());
         for (int idx : order)
             bc_pts3d.push_back(dual_bc_tmpl_pts3d_[idx]);
-        std::cout << "  [DualRoi][Mono] BC pts3d reordered for angle="
-                  << bc_matched->angle << "°" << std::endl;
+        if (verbose_console_)
+            std::cout << "  [DualRoi][Mono] BC pts3d reordered for angle="
+                      << bc_matched->angle << "°" << std::endl;
     }
 
     // --- BC contribution: corners[i] ↔ bc_pts3d[i] ---
@@ -1633,9 +1656,10 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
     }
 
     int total_use = static_cast<int>(merged_pts_2d.size());
-    std::cout << "[DualRoi][Mono] Merged: " << total_use << " total (BC=" << n_bc_use
-              << ", AK=" << m_ak_match << ")"
-              << "  pts3d=" << merged_pts_3d.size() << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi][Mono] Merged: " << total_use << " total (BC=" << n_bc_use
+                  << ", AK=" << m_ak_match << ")"
+                  << "  pts3d=" << merged_pts_3d.size() << std::endl;
 
     if (total_use < 4) {
         std::cerr << "[DualRoi][Mono] Too few merged points (" << total_use << "), aborting" << std::endl;
@@ -1668,6 +1692,7 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
     if (pose.success) {
         finalizePose(result, pose);
     }
+    result.strategy_name = "DualRoi";
 
     result.n_matched   = total_use;
     result.n_projected = 0;
@@ -1759,13 +1784,15 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
             cv::imwrite(output_dir_ + "/dual_roi_mono_reproj" + prefix + ".png", p3);
         }
 
-        std::cout << "  [DualRoi][Mono] Visualized: " << n_bc_use << " BC + "
-                  << (total_use - n_bc_use) << " AK corners" << std::endl;
+        if (verbose_console_)
+            std::cout << "  [DualRoi][Mono] Visualized: " << n_bc_use << " BC + "
+                      << (total_use - n_bc_use) << " AK corners" << std::endl;
     }
 
-    std::cout << "[DualRoi][Mono] Frame done: n_pts=" << total_use
-              << "  PnP=" << (pose.success ? "OK" : "FAIL")
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[DualRoi][Mono] Frame done: n_pts=" << total_use
+                  << "  PnP=" << (pose.success ? "OK" : "FAIL")
+                  << std::endl;
 
     return result;
 }
@@ -1815,9 +1842,10 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
     }
 
     int roi_area = roi.width * roi.height;
-    std::cout << "[Mono] ROI area=" << roi_area
-              << " (" << roi.width << "x" << roi.height << ")"
-              << std::endl;
+    if (verbose_console_)
+        std::cout << "[Mono] ROI area=" << roi_area
+                  << " (" << roi.width << "x" << roi.height << ")"
+                  << std::endl;
 
     // 裁剪左图 ROI
     cv::Mat left_gray_roi  = left_gray( cv::Rect(roi.x, roi.y, roi.width, roi.height));
@@ -1841,7 +1869,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
     for (auto* ext : chain) {
         if (!ext) continue;
 
-        std::cout << "[Mono] Trying extractor: " << ext->name() << std::endl;
+        if (verbose_console_) std::cout << "[Mono] Trying extractor: " << ext->name() << std::endl;
 
         // 单目提取（仅左图，2 参数）
         PipelineResult local = ext->extractMono(left_gray_roi, left_color_roi);
@@ -1871,12 +1899,13 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
             result.left_roi_offset_y = static_cast<int>(left_offset.y);
             winning_ext = ext;
             extracted = true;
-            std::cout << "[Mono] Extractor " << ext->name()
-                      << " succeeded, n_kp=" << result.n_kp_left << std::endl;
+            if (verbose_console_)
+                std::cout << "[Mono] Extractor " << ext->name()
+                          << " succeeded, n_kp=" << result.n_kp_left << std::endl;
             break;
         }
 
-        std::cout << "[Mono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
+        if (verbose_console_) std::cout << "[Mono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
     }
 
     if (!extracted) {
@@ -1903,6 +1932,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
     PoseEstimate pose = mono_pnp_.solve(result.pts_left_match, matched_pts_3d, camera_.K);
     finalizePose(result, pose);
 
+    result.strategy_name = winning_ext ? winning_ext->name() : "Unknown";
     result.success = pose.success;
     addLogEntry(result, is_first, false);
 
@@ -2066,7 +2096,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
                     cv::imwrite(output_dir_ + "/binary_corner_mono_reproj" + prefix + ".png", p4);
                 }
 
-                std::cout << "[Mono] BC visualization saved to " << output_dir_ << std::endl;
+                if (verbose_console_) std::cout << "[Mono] BC visualization saved to " << output_dir_ << std::endl;
             }
         } else if (winning_ext && winning_ext->name() == "TinyTarget" &&
                    roi.width > 0 && roi.height > 0) {
@@ -2194,7 +2224,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
                     cv::imwrite(output_dir_ + "/tiny_target_mono_reproj" + prefix + ".png", p2);
                 }
 
-                std::cout << "[Mono] TT visualization saved to " << output_dir_ << std::endl;
+                if (verbose_console_) std::cout << "[Mono] TT visualization saved to " << output_dir_ << std::endl;
             }
         } else if (winning_ext && winning_ext->name() == "AkazeGpnp") {
             // ================================================================
@@ -2273,7 +2303,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
                 cv::imwrite(output_dir_ + "/akaze_mono_axes" + prefix + ".png", axes_img);
             }
 
-            std::cout << "[Mono] AKAZE visualization saved to " << output_dir_ << std::endl;
+            if (verbose_console_) std::cout << "[Mono] AKAZE visualization saved to " << output_dir_ << std::endl;
 
         } else {
             // ================================================================
@@ -2312,7 +2342,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& left_img,
             std::string mono_path = output_dir_ + "/mono_f" +
                 std::to_string(state_.frame_count) + ".png";
             cv::imwrite(mono_path, vis);
-            std::cout << "[Mono] Visualization saved: " << mono_path << std::endl;
+            if (verbose_console_) std::cout << "[Mono] Visualization saved: " << mono_path << std::endl;
         }
     }
 
@@ -2435,7 +2465,10 @@ void StereoTracker::addLogEntry(const PipelineResult& result, bool is_first, boo
 
 void StereoTracker::printLogs() const {
     const auto& logs = state_.logs;
-    if (logs.empty()) { std::cout << "[Log is empty]" << std::endl; return; }
+    if (logs.empty()) {
+        if (verbose_console_) std::cout << "[Log is empty]" << std::endl;
+        return;
+    }
 
     const std::vector<std::string> timing_keys = {"akaze", "flow", "filter", "proj", "match_template", "gpnp"};
     const std::map<std::string, std::string> timing_labels = {
