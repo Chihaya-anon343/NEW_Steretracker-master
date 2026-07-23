@@ -135,17 +135,14 @@ int main(int argc, char** argv) {
         mono_mode = static_cast<int>(mono_node) != 0;
     }
 
-    fs.release();
-
     // ========================================================================
     // ①-b 解析 input_system 配置（若存在则优先于 input.left / input.right）
     // ========================================================================
-    cv::FileStorage fs2(config_path, cv::FileStorage::READ);
     input::InputSystemConfig input_sys_cfg;
     bool use_input_system = false;
     int max_frames = 2;  // 默认 2 帧（兼容 warm-start）
 
-    cv::FileNode input_sys_node = fs2["input_system"];
+    cv::FileNode input_sys_node = fs["input_system"];
     if (!input_sys_node.empty()) {
         cv::FileNode img_node = input_sys_node["image"];
         if (!img_node.empty()) {
@@ -204,7 +201,8 @@ int main(int argc, char** argv) {
             }
         }
     }
-    fs2.release();
+
+    fs.release();
 
     // ========================================================================
     // ② 构造输出目录（按图像名分类）
@@ -255,14 +253,22 @@ int main(int argc, char** argv) {
         }
 
         // ====================================================================
-        // 初始化 YOLO + StereoTracker（两种路径共用）
+        // 初始化 YOLO — 手动 ROI 时跳过以节省加载时间
         // ====================================================================
         YoloRoiProvider yolo;
-        YoloConfig yolo_cfg = makeYoloConfig(model_path, DeviceType::CPU, conf);
-        yolo_cfg.target_class_id = target_cls;
-        yolo_cfg.roi_expand_ratio = expand;
-        RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
-        bool yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
+        bool yolo_ok = false;
+
+        if (!use_manual_roi) {
+            YoloConfig yolo_cfg = makeYoloConfig(model_path, DeviceType::CPU, conf);
+            yolo_cfg.target_class_id = target_cls;
+            yolo_cfg.roi_expand_ratio = expand;
+            RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
+            yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
+        }
+
+        // ====================================================================
+        // 初始化 StereoTracker
+        // ====================================================================
 
         std::cout << "初始化 StereoTracker（预加载 3 种提取器）..." << std::endl;
         StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
@@ -364,10 +370,15 @@ int main(int argc, char** argv) {
             input::SensorPacket packet;
             while (input_provider.getNextPacket(packet) && frame < max_frames) {
                 ++frame;
-                if (verbose_console)
-                    std::cout << "\n===== 第 " << frame << " 帧"
-                              << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
-                processFrame(frame, packet.left_image, packet.right_image);
+                try {
+                    if (verbose_console)
+                        std::cout << "\n===== 第 " << frame << " 帧"
+                                  << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
+                    processFrame(frame, packet.left_image, packet.right_image);
+                } catch (const std::exception& e) {
+                    std::cerr << "[Frame " << frame << "] 异常: " << e.what() << std::endl;
+                    // 继续下一帧，不中断整条序列
+                }
             }
             if (frame == 0) {
                 std::cerr << "警告: 输入系统未产生任何帧" << std::endl;
@@ -375,10 +386,14 @@ int main(int argc, char** argv) {
         } else {
             // 旧版路径 —— 固定帧数循环（向后兼容）
             for (int frame = 1; frame <= max_frames; ++frame) {
-                if (verbose_console)
-                    std::cout << "\n===== 第 " << frame << " 帧"
-                              << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
-                processFrame(frame, left_img, right_img);
+                try {
+                    if (verbose_console)
+                        std::cout << "\n===== 第 " << frame << " 帧"
+                                  << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
+                    processFrame(frame, left_img, right_img);
+                } catch (const std::exception& e) {
+                    std::cerr << "[Frame " << frame << "] 异常: " << e.what() << std::endl;
+                }
             }
         }
 

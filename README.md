@@ -14,13 +14,23 @@
                           │ tracker_config.json │
                           └────────┬────────┘
                                    │
-                          ┌────────▼────────┐
-                          │  加载双目图像     │
-                          └────────┬────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
+                    ┌──────────────▼──────────────────┐
+                    │  input_system 节存在？            │
+                    └──────┬──────────────┬───────────┘
+                      true │              │ false
+                           ▼              ▼
+                    ┌──────────────┐  ┌──────────────────────┐
+                    │ InputProvider │  │ cv::imread 加载       │
+                    │ (File / Dir   │  │ 旧版 input.left /     │
+                    │  / Sequence)  │  │ input.right 路径      │
+                    └──────┬───────┘  └──────────┬───────────┘
+                           │                     │
+                           └──────┬──────────────┘
+                                  ▼
+                    ┌──────────────────────────────┐
                     │      逐 帧 循 环             │
-                    └──────────────┬──────────────┘
+                    │  (InputProvider 或 旧版循环)  │
+                    └──────────────┬───────────────┘
                                    │
                     ┌──────────────▼──────────────────┐
                     │  manual_roi.enabled ?            │
@@ -61,11 +71,120 @@
 
 帧循环中 `main.cpp` 仅负责获取 ROI（手动配置或 YOLO 检测），根据 `mono_mode` 配置调用 `tracker.processMono()` 或 `tracker.process()`，所有策略选择和特征提取由 `StereoTracker` 内部自动完成。ROI 优先级：**手动 ROI > YOLO 检测**。
 
+图像加载通过**输入系统**（见[§2](#2-输入系统-input-system)）统一管理：若配置文件中存在 `input_system` 节，优先使用 `InputProvider` 多源抽象；否则回退到旧版 `input.left` / `input.right` 直接 `cv::imread` 加载。
+
 ---
 
-## 2. 策略分发与退化机制
+## 2. 输入系统 (Input System)
 
-### 2.1 主策略选择
+**适用场景**：统一管理多源图像输入（文件/目录/序列/摄像头），为后续多传感器融合（IMU + 高度计）提供基础架构。
+
+**模块映射**：`InputProvider` + `IStereoImageSource` + 三种具体源实现 + `RingBuffer<T>`
+
+### 2.1 概述
+
+输入系统是 Phase 1 新增模块，提供可配置、可扩展的图像源抽象层。配置文件中的 `input_system` 节**优先于**旧版 `input.left` / `input.right` 路径，实现新旧路径无缝兼容。
+
+```cpp
+// main.cpp 中的双路径逻辑
+if (use_input_system) {
+    // 新版：InputProvider 数据驱动的帧循环
+    input_provider.initialize(input_sys_cfg);
+    while (input_provider.getNextPacket(packet) && frame < max_frames) {
+        processFrame(frame, packet.left_image, packet.right_image);
+    }
+} else {
+    // 旧版：cv::imread 加载 + 固定帧数循环（向后兼容）
+    for (int frame = 1; frame <= max_frames; ++frame)
+        processFrame(frame, left_img, right_img);
+}
+```
+
+### 2.2 架构
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                       InputProvider                           │
+│  统一协调器：创建图像源 → 组装 SensorPacket                      │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌────────────────────┐  ┌────────────────────┐              │
+│  │ IStereoImageSource  │  │ TimeSyncUnit       │ (Phase 2)   │
+│  │ (图像源抽象接口)     │  │ (IMU 插值 + 融合)   │              │
+│  └────────┬───────────┘  └────────────────────┘              │
+│           │                                                   │
+│     ┌─────┼─────────────┬──────────────┐                     │
+│     ▼     ▼             ▼              ▼                      │
+│  ┌────┐ ┌──────────┐ ┌──────────┐ ┌────────┐                │
+│  │File│ │Directory │ │Sequence  │ │Camera  │                │
+│  │文件│ │双目编号序│ │单目序列  │ │实时摄像│ (Phase 3)       │
+│  │对  │ │列        │ │          │ │头      │                │
+│  └────┘ └──────────┘ └──────────┘ └────────┘                │
+│                                                               │
+│  输出: SensorPacket { left, right, timestamp, IMU, 高度 }     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 三种图像源模式
+
+| type | 类 | 用途 | nextFrame() 行为 |
+|------|----|------|-----------------|
+| `"file"` | `FileStereoSource` | 静态双目文件对 | 每次返回同一帧图像 |
+| `"directory"` | `DirectoryStereoSource` | 双目编号图像序列 | 扫描 `left_*.png` / `right_*.png` 配对，按文件名排序逐帧返回 |
+| `"sequence"` | `SequenceSource` | 单目图像序列 | 扫描文件作为 left 输出，right = left.clone() |
+| `"camera"` | *未实现* | 实时摄像头 | Phase 3 待开发 |
+
+`FileStereoSource` 等价于旧版 static-file 行为，保持 warm-start 兼容：`max_frames=2` 时同一帧跑两次，第二次携带前一帧位姿做 GPNP warm-start。
+
+### 2.4 SensorPacket 统一数据包
+
+```cpp
+struct SensorPacket {
+    int64_t timestamp_us;              // 图像时间戳 (微秒)
+    cv::Mat left_image;                // 左图
+    cv::Mat right_image;               // 右图
+
+    // Phase 2 占位
+    std::optional<ImuPacket> imu;      // 时间对齐后的 IMU 插值数据
+    std::optional<HeightPacket> height;// 高度计读数
+
+    bool valid = false;
+};
+```
+
+`InputProvider::getNextPacket()` 负责从图像源拉取下一帧并填充 `timestamp_us`、`left_image`、`right_image`。Phase 2 的 IMU/高度计字段当前置为 `reset()`（空值）。
+
+### 2.5 RingBuffer（线程安全环形缓冲区）
+
+位于 `include/input/RingBuffer.hpp`，是 header-only 模板类，为 Phase 2 多传感器时间对齐提供基础设施：
+
+| 特性 | 说明 |
+|------|------|
+| 线程安全 | `std::shared_mutex`：生产者独占写（`unique_lock`），消费者共享读（`shared_lock`） |
+| 容量上限 | 满时丢弃最老元素，防止内存无限增长 |
+| 丢弃计数 | `dropped()` 监控因满溢而丢弃的元素数 |
+| 批量消费 | `drainAll()` 一次性排空所有元素（如 ESKF 预测） |
+| 快照 | `snapshot()` 读取所有元素但不删除 |
+
+### 2.6 Phase 规划
+
+| Phase | 状态 | 内容 |
+|-------|------|------|
+| Phase 1 | ✅ 已完成 | 图像源抽象 (file/directory/sequence) + RingBuffer |
+| Phase 2 | 占位 | IMU (`IImuSource`) + 高度计 (`IAltimeterSource`) + `TimeSyncUnit` 时间对齐 |
+| Phase 3 | 未开始 | 实时摄像头源 (`CameraSource`) |
+
+Phase 2/3 的接口已在 `InputProvider::createImuSource()` / `createAltimeterSource()` 中预留，当前返回 `false` 并输出 `"尚未实现"` 提示。
+
+### 2.7 配置
+
+见 [§11 配置文件](#11-配置文件) 中的 `input_system` 节说明。
+
+---
+
+## 3. 策略分发与退化机制
+
+### 3.1 主策略选择
 
 系统根据 ROI 面积自动选择**主**特征提取策略：
 
@@ -75,11 +194,11 @@
 | 801 ~ 40000 px² | BinaryCorner | `BinaryCornerExtractor` | `GPnPSolver` (Eigen LM) |
 | ≥ 40001 px² / 无检测 | AKAZE_GPNP | `AkazeGpnpExtractor` | `GPnPSolver` (Eigen LM) |
 
-> **双 ROI 模式**（见[§3](#3-双-roi-策略-dual-roi)）是一种正交于面积阈值的特殊路径：当 YOLO 同时检测到 class 0 和 class 1 目标时，`process()` 直接走 `processDualRoi()`，不走上述策略链。
+> **双 ROI 模式**（见[§5](#5-双-roi-策略-dual-roi)）是一种正交于面积阈值的特殊路径：当 YOLO 同时检测到 class 0 和 class 1 目标时，`process()` 直接走 `processDualRoi()`，不走上述策略链。
 
 三种提取器在 `StereoTracker` **构造时一次性预创建并加载全部模板**（包括双 ROI 专用的第二个 AKAZE 提取器）。每帧 `process()` 内部调用 `configureStrategyChain()` 仅通过**指针切换**来选择活跃的主策略和退化链，零堆分配开销。
 
-### 2.2 退化后备链
+### 3.2 退化后备链
 
 当主策略（或更高优先级后备）特征提取失败时，系统自动退化到低一级精度策略。退化链按精度从高到低排列：
 
@@ -102,7 +221,7 @@ AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarg
 
 PnP 分发由 `dispatchPnP()` 根据每个 extractor 的 `name()` 自动路由到 `runAkazePnP()` / `runBinaryCornerPnP()` / `runTinyTargetPnP()`，确保退化后的位姿解算与策略匹配。
 
-### 2.3 API
+### 3.3 API
 
 ```cpp
 // StereoTracker 构造函数 — 预创建全部 3 种提取器并加载模板（含双 ROI AKAZE）
@@ -116,7 +235,7 @@ auto result = tracker.process(left_img, right_img, visualize, &left_group, &righ
 
 旧 API `setExtractor()` / `addFallbackExtractor()` / `clearFallbackExtractors()` 已移除。策略链配置由私有方法 `configureStrategyChain(int roi_area)` 完成，对外不可见。
 
-### 2.4 FeatureExtractor 基类
+### 3.4 FeatureExtractor 基类
 
 ```cpp
 enum class StrategyType { Akaze, BinaryCorner, TinyTarget };
@@ -133,13 +252,13 @@ public:
 
 ---
 
-## 3. 单目模式 (Mono Mode)
+## 4. 单目模式 (Mono Mode)
 
 **适用场景**：仅左图可用（如单目相机），右图数据不存在或无效。
 
 **模块映射**：`StereoTracker::processMono()` / `processDualRoiMono()` + `MonoPnPSolver` + 各提取器的 `extractMono()`
 
-### 3.1 概述
+### 4.1 概述
 
 单目模式通过配置文件中的 `mono_mode: true` 启用。与双目路径相比，单目路径的核心差异：
 
@@ -164,7 +283,7 @@ struct MonoConfig {
 };
 ```
 
-### 3.2 入口与分发
+### 4.2 入口与分发
 
 `processMono()` 是单目帧处理的唯一入口，内部根据 ROI 类型分发：
 
@@ -182,9 +301,9 @@ processMono(left_img, visualize, left_group)
           └── mono_pnp_.solve(pts_2d, pts_3d, K)
 ```
 
-### 3.3 单 ROI 策略链
+### 4.3 单 ROI 策略链
 
-与双目相同的面积分级逻辑（见 §2.1），但使用各提取器的 `extractMono()` 方法：
+与双目相同的面积分级逻辑（见 §3.1），但使用各提取器的 `extractMono()` 方法：
 
 **`AkazeGpnpExtractor::extractMono(gray, color)`**
 - AKAZE 特征检测（同双目）
@@ -206,9 +325,9 @@ processMono(left_img, visualize, left_group)
 
 > 如果某个提取器未重写 `extractMono()`，基类提供默认实现：直接调用 `extract()` 并将右图参数置空。
 
-### 3.4 单目 Dual-ROI 策略
+### 4.4 单目 Dual-ROI 策略
 
-与双目 Dual-ROI（§4）触发条件相同（YOLO 检测到 class 0 + class 1），但仅使用左图。
+与双目 Dual-ROI（§5）触发条件相同（YOLO 检测到 class 0 + class 1），但仅使用左图。
 
 **完整流水线**：
 
@@ -276,7 +395,7 @@ processMono(left_img, visualize, left_group)
 | 坐标恢复 | `offsetResultToOriginal()` (左右图) | 手动 offset (仅左图) |
 | 可视化 | 5 面板 (overview/corners/axes/reproj/right/correspondence) | 3 面板 (overview/corners/axes/reproj) |
 
-### 3.5 MonoPnPSolver
+### 4.5 MonoPnPSolver
 
 `MonoPnPSolver`（`src/pose/MonoPnPSolver.cpp`）是单目位姿估计的核心，流程如下：
 
@@ -313,20 +432,20 @@ MonoPnPSolver::solve(pts_2d, pts_3d, K)
 
 ---
 
-## 4. 双 ROI 策略 (Dual-ROI)
+## 5. 双 ROI 策略 (Dual-ROI)
 
 **适用场景**：大尺寸目标（class 0 检测框面积 > 700×700 px²），可利用目标的边缘 (class 0) 与中心纹理 (class 1) 两部分信息联合定位。
 
 **模块映射**：`StereoTracker::processDualRoi()` + `AkazeGpnpExtractor` + `BinaryCornerExtractor`
 
-### 3.1 触发条件
+### 5.1 触发条件
 
 当 `RoiGroup::is_dual == true` 时，`process()` 直接调用 `processDualRoi()`，不走常规单策略链。双 ROI 由 `RoiGenerator::generateGroup()` 自动创建：
 
 - **primary ROI**（class 0）：目标整体边界框 → BinaryCorner 提取边缘角点
 - **secondary ROI**（class 1）：目标中心区域 → AKAZE 提取纹理特征
 
-### 3.2 完整流水线
+### 5.2 完整流水线
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -374,7 +493,7 @@ MonoPnPSolver::solve(pts_2d, pts_3d, K)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 3.3 关键成员与配置
+### 5.3 关键成员与配置
 
 | 成员/配置 | 类型 | 用途 |
 |-----------|------|------|
@@ -385,19 +504,19 @@ MonoPnPSolver::solve(pts_2d, pts_3d, K)
 | `dual_roi_secondary_expand` | `int` (默认 10) | secondary ROI 的额外拓展像素数 |
 | `dual_roi_akaze_scale` | `double` (默认 0.5) | 双 ROI 中 AKAZE 提取的缩放因子 |
 
-### 3.4 模板预处理
+### 5.4 模板预处理
 
 `prepareDualBcTemplate()` 在首次使用双 ROI 时**一次性**完成：对 AKAZE 模板图像调用 BinaryCorner 提取器，获得 N 个角点坐标及其对应的 3D 物点。此后每帧合并时直接复用，无需重复提取。
 
 ---
 
-## 5. 策略一：TinyTarget（ROI ≤ 800 px²）
+## 6. 策略一：TinyTarget（ROI ≤ 800 px²）
 
 **适用场景**：远距离微小矩形目标（如 4 角点标定板）。
 
 **模块映射**：`TinyTargetExtractor` (`src/feature/TinyTargetExtractor.cpp`)
 
-### 4.1 完整流水线
+### 6.1 完整流水线
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -465,7 +584,7 @@ MonoPnPSolver::solve(pts_2d, pts_3d, K)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 位姿解算
+### 6.2 位姿解算
 
 TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv::SOLVEPNP_ITERATIVE)` 求解 PnP：
 
@@ -475,13 +594,13 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 
 ---
 
-## 6. 策略二：BinaryCorner（ROI 801 ~ 40000 px²）
+## 7. 策略二：BinaryCorner（ROI 801 ~ 40000 px²）
 
 **适用场景**：中等尺寸多边形目标（如 10 角点标识板）。
 
 **模块映射**：`BinaryCornerExtractor` → `InitialPnPSolver` → `GPnPSolver`
 
-### 5.1 完整流水线
+### 7.1 完整流水线
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -555,7 +674,7 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 位姿解算
+### 7.2 位姿解算
 
 **首帧**：
 1. 若 `use_initial_pnp=true`，运行 `InitialPnPSolver`（RANSAC PnP 300 次迭代 + ITERATIVE 精化），成功后作为 GPNP 的 warm-start
@@ -574,13 +693,13 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 
 ---
 
-## 7. 策略三：AKAZE_GPNP（ROI ≥ 40001 px² / 无检测）
+## 8. 策略三：AKAZE_GPNP（ROI ≥ 40001 px² / 无检测）
 
 **适用场景**：大尺寸 / 全图纹理丰富的目标（传统 AKAZE 特征匹配方案）。
 
 **模块映射**：`AkazeGpnpExtractor` → `OpticalFlowTracker` → `StereoProjector` → `TemplateMatcher` → `MadDisparityFilter` → `InitialPnPSolver` → `GPnPSolver`
 
-### 6.1 完整流水线
+### 8.1 完整流水线
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -660,7 +779,7 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 关键模块说明
+### 8.2 关键模块说明
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
@@ -672,7 +791,7 @@ TinyTarget **不走 GPNP 优化**，而是直接用 OpenCV 的 `cv::solvePnP(cv:
 | `InitialPnPSolver` | `src/pose/InitialPnPSolver.cpp` | RANSAC PnP (300 iter, 8.0px) → ITERATIVE 精化 |
 | `GPnPSolver` | `src/pose/GPnPSolver.cpp` | Eigen LM 优化，交叉射线残差，7 维参数空间 |
 
-### 6.3 位姿有效性检查
+### 8.3 位姿有效性检查
 
 GPNP 输出位姿需通过以下全部校验：
 
@@ -683,9 +802,9 @@ GPNP 输出位姿需通过以下全部校验：
 
 ---
 
-## 8. 五策略对比总结
+## 9. 五策略对比总结
 
-### 8.1 双目策略
+### 9.1 双目策略
 
 | 维度 | Dual-ROI | TinyTarget | BinaryCorner | AKAZE_GPNP |
 |------|----------|-----------|-------------|------------|
@@ -700,7 +819,7 @@ GPNP 输出位姿需通过以下全部校验：
 | **退化角色** | 独立路径（不退化为单策略） | 链末端（无后备） | AKAZE 的后备；可退化为 TinyTarget | 最优先策略；可退化为 BinaryCorner |
 | **可视化** | 5 面板（双 ROI 合并） | 标准 solvePnP 输出 | 5 面板 (二值/轴系/模板/立体/重投影) | 4 面板 (特征/立体/模板/坐标轴) |
 
-### 8.2 单目策略 (mono_mode = true)
+### 9.2 单目策略 (mono_mode = true)
 
 | 维度 | Mono Dual-ROI | Mono TinyTarget | Mono BinaryCorner | Mono AKAZE |
 |------|--------------|-----------------|-------------------|------------|
@@ -713,7 +832,7 @@ GPNP 输出位姿需通过以下全部校验：
 | **帧间缓存** | 无 warm-start | 无 warm-start | 无 warm-start | 无 warm-start |
 | **可视化** | 3 面板 (overview/corners/axes/reproj) | 单图关键点+坐标轴 | 单图关键点+坐标轴 | 单图关键点+坐标轴 |
 
-### 8.3 单/双目关键差异
+### 9.3 单/双目关键差异
 
 | 维度 | 双目 | 单目 |
 |------|------|------|
@@ -726,7 +845,7 @@ GPNP 输出位姿需通过以下全部校验：
 
 ---
 
-## 9. 核心数据结构
+## 10. 核心数据结构
 
 所有模块间数据传递使用强类型结构体，定义于 [`include/common/Types.hpp`](include/common/Types.hpp)：
 
@@ -749,6 +868,13 @@ GPNP 输出位姿需通过以下全部校验：
 | `YoloConfig` | YOLO 检测器配置: 模型路径、设备类型、置信度阈值等 |
 | `Detection` | YOLO 单次检测结果: class_id、confidence、bbox |
 
+输入系统新增数据结构，定义于 `include/input/`：
+
+| 结构体 | 文件 | 用途 |
+|--------|------|------|
+| `InputSystemConfig` | `InputConfig.hpp` | 输入系统顶层配置 (图像源 + IMU + 高度计) |
+| `SensorPacket` | `InputTypes.hpp` | 统一帧数据包 (left/right 图像 + timestamp + 可选 IMU/高度) |
+
 `MonoPnPSolver`（`include/pose/MonoPnPSolver.hpp`）是单目位姿估计类：
 
 | 方法 | 说明 |
@@ -757,19 +883,46 @@ GPNP 输出位姿需通过以下全部校验：
 
 ---
 
-## 10. 配置文件
+## 11. 配置文件
 
 配置文件位于 [`config/tracker_config.json`](config/tracker_config.json)，结构如下：
 
 ```jsonc
 {
   "input": {
+    "_comment": "===== 旧版输入配置（input_system 不存在时使用）=====",
     "left": "data/delivery_area_2l/im0.png",
     "right": "data/delivery_area_2l/im1.png"
   },
+
+  "input_system": {
+    "_comment": "===== 新版输入系统（优先于 input.*）=====",
+    "_comment2": "type: file(静态双图), directory(双目序列), sequence(单目序列), camera(实时摄像头-未来)",
+    "max_frames": 0,
+    "image": {
+      "type": "sequence",
+      "directory_path": "data/output_frames",
+      "left_pattern": "left",
+      "right_pattern": "right",
+      "sequence_pattern": "frame"
+    },
+    "imu": {
+      "_comment": "IMU 传感器配置 (Phase 2, Linux only)",
+      "enabled": false,
+      "port": "/dev/ttyUSB0",
+      "baud_rate": 921600
+    },
+    "altimeter": {
+      "_comment": "高度计/雷达配置 (Phase 2, Linux only)",
+      "enabled": false,
+      "can_interface": "can0"
+    }
+  },
+
   "mono_mode": false,
   "output": {
-    "visualize": true
+    "visualize": true,
+    "verbose_console": true
   },
   "camera": {
     "fx": 541.764,
@@ -795,6 +948,7 @@ GPNP 输出位姿需通过以下全部校验：
     "_comment": "ROI 面积阈值: ≤ tiny_max → TinyTarget, ≥ akaze_min → AKAZE, else BinaryCorner",
     "akaze_min_area": 40001,
     "tiny_max_area": 800,
+    "dual_trigger_area": 490000,
     "akaze_gpnp": {
       "template_path": "data/delivery_area_2l/im0 - 副本.png",
       "template_real_width_mm": 500.0,
@@ -844,9 +998,28 @@ GPNP 输出位姿需通过以下全部校验：
 | `strategies.dual_roi.secondary_expand_pixels` | 10 | 双 ROI 模式下 class 1 ROI 的额外拓展像素 |
 | `strategies.dual_roi.akaze.scale` | 0.5 | 双 ROI 模式下 AKAZE 特征提取的缩放因子 |
 
+### 11.1 输入系统配置
+
+`input_system` 节用于替代旧版 `input.left` / `input.right`，提供多源输入抽象。
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `input_system.max_frames` | 2 | 最大处理帧数，`0` 表示无限 |
+| `input_system.image.type` | — | 图像源类型：`"file"` / `"directory"` / `"sequence"` |
+| `input_system.image.left_path` | — | (type=file) 左图文件路径 |
+| `input_system.image.right_path` | — | (type=file) 右图文件路径 |
+| `input_system.image.directory_path` | — | (type=directory/sequence) 图像目录路径 |
+| `input_system.image.left_pattern` | `"left"` | (type=directory) 左图文件名模式 |
+| `input_system.image.right_pattern` | `"right"` | (type=directory) 右图文件名模式 |
+| `input_system.image.sequence_pattern` | `"frame"` | (type=sequence) 图像文件名模式 |
+| `input_system.imu.enabled` | `false` | Phase 2：启用 IMU 传感器输入 |
+| `input_system.altimeter.enabled` | `false` | Phase 2：启用高度计传感器输入 |
+
+**向后兼容**：若配置文件中不存在 `input_system` 或 `input_system.image` 为空，则自动回退到 `input.left` / `input.right` 路径方式。旧版路径默认 `max_frames=2`（兼容 warm-start 需要同一帧运行两次的行为）。
+
 ---
 
-## 11. 工厂函数
+## 12. 工厂函数
 
 提供三个带参数校验的工厂函数，定义于 [`include/common/Config.hpp`](include/common/Config.hpp)：
 
@@ -879,7 +1052,7 @@ StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
 
 ---
 
-## 12. 构建与运行
+## 13. 构建与运行
 
 ### 依赖
 
@@ -920,7 +1093,7 @@ cmake --build . --config Release
 
 ---
 
-## 13. 项目目录结构
+## 14. 项目目录结构
 
 ```
 Steretracker/
@@ -928,11 +1101,11 @@ Steretracker/
 ├── PORTING_REPORT.md
 ├── FEATURE_EXTRACTION_SPEC.md
 ├── CMakeLists.txt
-├── main.cpp                    # 程序入口（手动/YOLO ROI + 调用 StereoTracker）
+├── main.cpp                    # 程序入口（手动/YOLO ROI + InputProvider + StereoTracker）
 ├── best.onnx                   # YOLO ONNX 模型
 │
 ├── config/
-│   └── tracker_config.json     # 默认配置文件
+│   └── tracker_config.json     # 默认配置文件（含 input_system）
 │
 ├── data/
 │   ├── 大图/                   # AKAZE 场景
@@ -959,6 +1132,15 @@ Steretracker/
 │   │   ├── TinyTargetExtractor.hpp  # 微小矩形目标角点提取
 │   │   ├── OpticalFlowTracker.hpp   # LK 光流 + FB 校验
 │   │   └── MadDisparityFilter.hpp   # MAD 视差滤波
+│   ├── input/                      # ★ 新增：输入系统
+│   │   ├── InputProvider.hpp       # 统一协调器
+│   │   ├── InputConfig.hpp         # 配置结构体 (InputSystemConfig)
+│   │   ├── InputTypes.hpp          # 统一数据包 (SensorPacket)
+│   │   ├── IStereoImageSource.hpp   # 图像源抽象接口
+│   │   ├── FileStereoSource.hpp    # 静态文件对实现
+│   │   ├── DirectoryStereoSource.hpp # 双目编号序列实现
+│   │   ├── SequenceSource.hpp      # 单目序列实现
+│   │   └── RingBuffer.hpp          # 线程安全环形缓冲区
 │   ├── matching/
 │   │   └── TemplateMatcher.hpp      # 三阶段模板匹配
 │   ├── pose/
@@ -978,6 +1160,11 @@ Steretracker/
 │   ├── detection/  (YoloDetector + YoloRoiProvider + RoiGenerator)
 │   ├── feature/    (AkazeExtractor + AkazeGpnpExtractor + BinaryCornerExtractor
 │   │                + TinyTargetExtractor + OpticalFlowTracker + MadDisparityFilter)
+│   ├── input/                       # ★ 新增：输入系统实现
+│   │   ├── InputProvider.cpp
+│   │   ├── FileStereoSource.cpp
+│   │   ├── DirectoryStereoSource.cpp
+│   │   └── SequenceSource.cpp
 │   ├── matching/   (TemplateMatcher)
 │   ├── pose/       (InitialPnPSolver + GPnPSolver + MonoPnPSolver)
 │   ├── stereo/     (StereoProjector)

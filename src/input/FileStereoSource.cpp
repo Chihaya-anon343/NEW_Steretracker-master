@@ -87,10 +87,14 @@ bool FileStereoSource::nextFrame(cv::Mat& left, cv::Mat& right,
                                   int64_t& timestamp_us) {
     if (!loaded_) return false;
 
-    // FileStereoSource 始终返回同一帧 ——
-    // 这使得现有 warm-start 循环（同一帧处理两次）无需修改。
-    left_img_.copyTo(left);
-    right_img_.copyTo(right);
+    // 首帧 deep copy（保证调用方可独立修改），后续帧 shallow copy（共享内存）
+    if (!frame_returned_) {
+        left_img_.copyTo(left);
+        right_img_.copyTo(right);
+    } else {
+        left  = left_img_;
+        right = right_img_;
+    }
     timestamp_us = nowUs();
     frame_returned_ = true;
     return true;

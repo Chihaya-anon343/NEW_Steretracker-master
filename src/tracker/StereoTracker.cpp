@@ -22,6 +22,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
+#include <future>
 
 namespace gpnp {
 
@@ -472,6 +473,32 @@ void StereoTracker::finalizePose(PipelineResult& result, const PoseEstimate& pos
     result.gpnp_success = pose.success;
     result.gpnp_n_pts = pose.num_points;
 
+    // 帧间运动模型校验（防止误匹配导致的位姿跳变）
+    constexpr double kMaxDeltaTranslationMm = 1000.0;  // 单帧最大位移 [mm]
+    constexpr double kMaxDeltaRotationDeg  = 45.0;     // 单帧最大旋转角度 [度]
+
+    bool pose_rejected = false;
+    if (pose.success && state_.has_cache) {
+        double delta_t = (pose.t - state_.t_prev).norm();
+        // 计算两旋转矩阵之间的角度: θ = arccos((trace(R_new * R_prev⁻¹) - 1) / 2)
+        Eigen::Matrix3d R_diff = pose.R * state_.R_prev.transpose();
+        double trace_r = R_diff.trace();
+        double cos_theta = std::max(-1.0, std::min(1.0, (trace_r - 1.0) / 2.0));
+        double delta_r_rad = std::acos(cos_theta);
+        double delta_r_deg = delta_r_rad * 180.0 / M_PI;
+
+        if (delta_t > kMaxDeltaTranslationMm || delta_r_deg > kMaxDeltaRotationDeg) {
+            pose_rejected = true;
+            result.gpnp_success = false;
+            if (verbose_console_) {
+                std::cout << "  [MotionReject] 帧间运动超限 — "
+                          << "ΔT=" << delta_t << " mm (max=" << kMaxDeltaTranslationMm << "), "
+                          << "ΔR=" << delta_r_deg << "° (max=" << kMaxDeltaRotationDeg << "°)"
+                          << std::endl;
+            }
+        }
+    }
+
     if (pose.success) {
         cv::Mat R_cv(3, 3, CV_64F);
         for (int r = 0; r < 3; ++r) for (int c = 0; c < 3; ++c)
@@ -485,6 +512,11 @@ void StereoTracker::finalizePose(PipelineResult& result, const PoseEstimate& pos
                       << pose.t(2) << "] mm  n_pts=" << pose.num_points << std::endl;
         }
 
+        state_.R_prev = pose.R;
+        state_.t_prev = pose.t;
+        state_.has_cache = true;
+    } else if (pose_rejected) {
+        // 运动超限：拒绝位姿但仍更新缓存（下一帧从当前位置继续，防止级联失败）
         state_.R_prev = pose.R;
         state_.t_prev = pose.t;
         state_.has_cache = true;
@@ -1117,17 +1149,21 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     cv::Mat left_c1_color  = left_color(cv::Rect(left_sec.x, left_sec.y, left_sec.width, left_sec.height)).clone();
     cv::Mat right_c1_color = right_color(cv::Rect(right_sec.x, right_sec.y, right_sec.width, right_sec.height)).clone();
 
-    // 3. BinaryCorner extraction on class 0 (edge corners, with rotation alignment)
-    PipelineResult result_bc = binary_extractor_->extract(
-        left_c0_gray, right_c0_gray, left_c0_color, right_c0_color);
+    // 3+4. BC + AK extraction in parallel (independent extractors, distinct image regions)
+    auto fut_bc = std::async(std::launch::async, [&]() {
+        return binary_extractor_->extract(
+            left_c0_gray, right_c0_gray, left_c0_color, right_c0_color);
+    });
+    auto fut_ak = std::async(std::launch::async, [&]() {
+        return dual_akaze_extractor_->extract(
+            left_c1_gray, right_c1_gray, left_c1_color, right_c1_color);
+    });
 
+    PipelineResult result_bc = fut_bc.get();
     int n_bc = static_cast<int>(result_bc.pts_left_match.size());
     if (verbose_console_) std::cout << "[DualRoi] BinaryCorner on class 0: " << n_bc << " corners" << std::endl;
 
-    // 4. AKAZE extraction on class 1 (center texture features, dual-ROI params)
-    PipelineResult result_ak = dual_akaze_extractor_->extract(
-        left_c1_gray, right_c1_gray, left_c1_color, right_c1_color);
-
+    PipelineResult result_ak = fut_ak.get();
     int m_ak_match = static_cast<int>(result_ak.pts_left_match.size());
     if (verbose_console_)
         std::cout << "[DualRoi] AKAZE on class 1: " << m_ak_match << " template matches"
@@ -1580,13 +1616,19 @@ PipelineResult StereoTracker::processDualRoiMono(const cv::Mat& left_img,
     cv::Mat left_c1_gray  = left_gray(cv::Rect(left_sec.x, left_sec.y, left_sec.width, left_sec.height)).clone();
     cv::Mat left_c1_color = left_color(cv::Rect(left_sec.x, left_sec.y, left_sec.width, left_sec.height)).clone();
 
-    // 3. BC extraction on class 0 (mono)
-    PipelineResult result_bc = binary_extractor_->extractMono(left_c0_gray, left_c0_color);
+    // 3+4. BC + AK extraction in parallel (mono, independent extractors, distinct image regions)
+    auto fut_bc = std::async(std::launch::async, [&]() {
+        return binary_extractor_->extractMono(left_c0_gray, left_c0_color);
+    });
+    auto fut_ak = std::async(std::launch::async, [&]() {
+        return dual_akaze_extractor_->extractMono(left_c1_gray, left_c1_color);
+    });
+
+    PipelineResult result_bc = fut_bc.get();
     int n_bc = static_cast<int>(result_bc.pts_left_match.size());
     if (verbose_console_) std::cout << "[DualRoi][Mono] BinaryCorner on class 0: " << n_bc << " corners" << std::endl;
 
-    // 4. AK extraction on class 1 (mono)
-    PipelineResult result_ak = dual_akaze_extractor_->extractMono(left_c1_gray, left_c1_color);
+    PipelineResult result_ak = fut_ak.get();
     int m_ak_match = static_cast<int>(result_ak.pts_left_match.size());
     if (verbose_console_)
         std::cout << "[DualRoi][Mono] AKAZE on class 1: " << m_ak_match << " template matches"
