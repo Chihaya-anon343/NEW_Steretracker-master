@@ -66,6 +66,8 @@ set(SOURCES
     src/pose/MonoPnPSolver.cpp
     src/utils/PoseUtils.cpp
     src/visualization/Visualizer.cpp
+    src/tracker/TrackerBase.cpp
+    src/tracker/MonoTracker.cpp
     src/tracker/StereoTracker.cpp
     src/detection/RoiGenerator.cpp
     src/detection/YoloRoiProvider.cpp

@@ -7,6 +7,7 @@
  */
 
 #include "tracker/StereoTracker.hpp"
+#include "tracker/MonoTracker.hpp"
 #include "detection/YoloRoiProvider.hpp"
 #include "common/GeometryUtils.hpp"
 #include "feature/AkazeGpnpExtractor.hpp"
@@ -205,15 +206,28 @@ int main(int argc, char** argv) {
     fs.release();
 
     // ========================================================================
-    // ② 构造输出目录（按图像名分类）
+    // ② 构造输出目录
     // ========================================================================
     namespace fsp = std::filesystem;
-    std::string img_name = fsp::path(left_path).stem().string();
-    {
-        auto pos = img_name.find(" - ");
-        if (pos != std::string::npos) img_name = img_name.substr(0, pos);
+    std::string output_dir;
+    if (use_input_system) {
+        // 从实际输入源目录名派生
+        std::string src_dir = input_sys_cfg.image.directory_path;
+        if (!src_dir.empty()) {
+            std::string folder = fsp::path(src_dir).filename().string();
+            if (folder.empty()) folder = fsp::path(src_dir).parent_path().filename().string();
+            output_dir = "output/" + (folder.empty() ? "sequence" : folder);
+        } else {
+            output_dir = "output/sequence";
+        }
+    } else {
+        std::string img_name = fsp::path(left_path).stem().string();
+        {
+            auto pos = img_name.find(" - ");
+            if (pos != std::string::npos) img_name = img_name.substr(0, pos);
+        }
+        output_dir = "output/" + img_name;
     }
-    std::string output_dir = "output/" + img_name;
     if (visualize) fsp::create_directories(output_dir);
     std::cout << "输出目录: " << output_dir << std::endl;
 
@@ -267,47 +281,51 @@ int main(int argc, char** argv) {
         }
 
         // ====================================================================
-        // 初始化 StereoTracker
+        // 初始化 Tracker（单目/双目 分支）
         // ====================================================================
 
-        std::cout << "初始化 StereoTracker（预加载 3 种提取器）..." << std::endl;
-        StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
-                              binary_cfg, binary_template_dir,
-                              tiny_cfg, tiny_template_dir);
-        tracker.setOutputDir(output_dir);
-        tracker.setVerboseConsole(verbose_console);
+        std::unique_ptr<TrackerBase> tracker;
 
         if (mono_mode) {
-            StereoTracker::MonoConfig mono_cfg;
-            mono_cfg.enabled = true;
-            mono_cfg.akaze_min_area = akaze_min_area;
-            mono_cfg.tiny_max_area = tiny_max_area;
-            tracker.setMonoConfig(mono_cfg);
+            std::cout << "初始化 MonoTracker（单目模式）..." << std::endl;
+            auto t = std::make_unique<MonoTracker>(K, template_path, tracker_cfg,
+                                                    binary_cfg, binary_template_dir,
+                                                    tiny_cfg, tiny_template_dir);
+            t->setOutputDir(output_dir);
+            t->setVerboseConsole(verbose_console);
+            tracker = std::move(t);
             std::cout << "单目模式已启用（仅左图）" << std::endl;
+        } else {
+            std::cout << "初始化 StereoTracker（双目模式）..." << std::endl;
+            auto t = std::make_unique<StereoTracker>(K, R_rl, t_rl, template_path, tracker_cfg,
+                                                      binary_cfg, binary_template_dir,
+                                                      tiny_cfg, tiny_template_dir);
+            t->setOutputDir(output_dir);
+            t->setVerboseConsole(verbose_console);
+            tracker = std::move(t);
         }
 
         // ====================================================================
-        // ④ 逐帧处理（单目 / 双目分支）
+        // ④ 逐帧处理
         // ====================================================================
         auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) {
             PipelineResult result;
 
             if (mono_mode) {
-                // 单目路径
+                auto* mt = static_cast<MonoTracker*>(tracker.get());
                 RoiGroup left_group;
                 if (use_manual_roi) {
                     left_group = RoiGroup{manual_rl, {}, false};
                 } else if (yolo_ok) {
-                    auto [lg, rg] = yolo.detect(L, R);
-                    left_group = lg;
+                    left_group = yolo.detectMono(L);
                     if (!left_group.valid()) {
                         std::cout << "[Frame " << frame << "] YOLO未检测到目标" << std::endl;
                         return;
                     }
                 }
-                result = tracker.processMono(L, visualize, &left_group);
+                result = mt->process(L, visualize, &left_group);
             } else {
-                // 双目路径
+                auto* st = static_cast<StereoTracker*>(tracker.get());
                 RoiGroup lg, rg;
                 if (use_manual_roi) {
                     lg = RoiGroup{manual_rl, {}, false};
@@ -329,7 +347,7 @@ int main(int argc, char** argv) {
                                   << "x" << lg.secondary.height << ")" << std::endl;
                     }
                 }
-                result = tracker.process(L, R, visualize, &lg, &rg);
+                result = st->process(L, R, visualize, &lg, &rg);
             }
 
             // ---- 输出 ----
@@ -398,7 +416,7 @@ int main(int argc, char** argv) {
         }
 
         if (verbose_console)
-            tracker.printLogs();
+            tracker->printLogs();
 
     } catch (const std::exception& e) {
         std::cerr << "致命错误: " << e.what() << std::endl;
