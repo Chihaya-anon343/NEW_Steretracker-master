@@ -103,15 +103,15 @@ RoiRect TrackerBase::validateRoi(const RoiRect* roi, const cv::Size& img_size,
 // ============================================================
 
 std::pair<cv::Mat, cv::Mat> TrackerBase::loadImage(const cv::Mat& img) {
-    cv::Mat gray;
-    cv::Mat color = img.clone();
-    if (img.channels() == 3)
+    cv::Mat gray, color;
+    if (img.channels() == 3) {
+        color = img.clone();
         cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
-    else {
-        gray = img;
+    } else {
+        gray = img.clone();
         cv::cvtColor(img, color, cv::COLOR_GRAY2BGR);
     }
-    return {gray, color};
+    return {color, gray};
 }
 
 // ============================================================

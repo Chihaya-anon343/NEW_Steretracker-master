@@ -9,6 +9,8 @@
 #include "common/LogConfig.hpp"
 #include "common/Types.hpp"
 #include "feature/FeatureExtractor.hpp"
+#include "feature/BinaryCornerExtractor.hpp"
+#include "feature/TinyTargetExtractor.hpp"
 #include "visualization/Visualizer.hpp"
 
 #include <opencv2/core.hpp>
@@ -19,8 +21,6 @@
 namespace gpnp {
 
 class AkazeGpnpExtractor;
-class BinaryCornerExtractor;
-class TinyTargetExtractor;
 
 class TrackerBase {
 public:

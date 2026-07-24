@@ -10,9 +10,11 @@
 #include "feature/TinyTargetExtractor.hpp"
 
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/calib3d.hpp>
 
 #include <algorithm>
+#include <future>
 #include <iostream>
 #include <unordered_set>
 
@@ -132,9 +134,9 @@ void MonoTracker::prepareDualBcTemplate() {
 }
 
 // ============================================================
-// MONO DUAL-ROI METHODS INJECTION POINT
-// (will be appended below via bash)
+// processDualRoi
 // ============================================================
+
 PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                                                   const RoiGroup& left_group,
                                                   bool visualize) {
@@ -406,21 +408,12 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     return result;
 }
 
-void StereoTracker::clearCache() { state_ = TrackingState{}; }
-
-// ============================================================================
-// 单目模式 —— 仅左图特征提取 + PnP 解算
-// ============================================================================
-
 PipelineResult MonoTracker::process(const cv::Mat& left_img,
                                            bool visualize,
                                            const RoiGroup* left_group) {
     PipelineResult result;
     result.success = false;
 
-        std::cerr << "[Mono] mono mode not enabled, set MonoConfig::enabled=true" << std::endl;
-        return result;
-    }
 
     if (left_img.empty()) {
         std::cerr << "[Mono] empty left image" << std::endl;
@@ -585,24 +578,5 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     state_.frame_count++;
     return result;
 }
-
-// ============================================================================
-// ROI 辅助函数 —— 校验、裁剪、坐标偏移
-// ============================================================================
-
-RoiRect StereoTracker::validateRoi(const RoiRect* roi, const cv::Size& img_size,
-                                     const std::string& name) {
-    if (roi == nullptr || !roi->valid()) return RoiRect{};
-    int x = roi->x, y = roi->y, w = roi->width, h = roi->height;
-    if (x < 0 || y < 0 || w <= 0 || h <= 0)
-        throw std::invalid_argument(name + " invalid: x=" + std::to_string(x) +
-            ",y=" + std::to_string(y) + ",w=" + std::to_string(w) + ",h=" + std::to_string(h));
-    if (x + w > img_size.width || y + h > img_size.height)
-        throw std::invalid_argument(name + " out of bounds (" +
-            std::to_string(img_size.width) + "x" + std::to_string(img_size.height) + "): " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(w) + "," + std::to_string(h));
-    return RoiRect{x, y, w, h};
-}
-
 
 } // namespace gpnp

@@ -875,6 +875,81 @@ PipelineResult StereoTracker::process(const std::string& left_path,
 // ============================================================================
 // Dual-ROI Strategy: BinaryCorner (class 0 edges) + AKAZE (class 1 center)
 // ============================================================================
+// prepareDualBcTemplate — 从 AKAZE 模板提取 BC 角点（双目双ROI用）
+// ============================================================================
+
+void StereoTracker::prepareDualBcTemplate() {
+    if (dual_bc_template_ready_) return;
+
+    const cv::Mat& tmpl_img = akaze_extractor_->templateData().gray_image;
+    if (tmpl_img.empty()) {
+        std::cerr << "[DualRoi] AKAZE template image empty, cannot prepare BC template" << std::endl;
+        dual_bc_template_ready_ = true;
+        return;
+    }
+
+    int tw = tmpl_img.cols, th = tmpl_img.rows;
+    cv::Mat binary;
+    cv::threshold(tmpl_img, binary, 0, 255, cv::THRESH_OTSU | cv::THRESH_BINARY);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (contours.empty()) {
+        std::cerr << "[DualRoi] No contours found in AKAZE template binary" << std::endl;
+        dual_bc_template_ready_ = true;
+        return;
+    }
+
+    auto* largest = &contours[0];
+    for (auto& c : contours)
+        if (cv::contourArea(c) > cv::contourArea(*largest)) largest = &c;
+
+    int target_n = binary_extractor_->lastCornersBeforeReorder().empty()
+        ? 10 : static_cast<int>(binary_extractor_->lastCornersBeforeReorder().size());
+    if (target_n < 3) target_n = 10;
+
+    double peri = cv::arcLength(*largest, true);
+    double lo = 0.0, hi = peri * 0.1;
+    std::vector<cv::Point2f> corners;
+    for (int iter = 0; iter < 25; ++iter) {
+        double mid = (lo + hi) * 0.5;
+        std::vector<cv::Point2f> approx;
+        cv::approxPolyDP(*largest, approx, mid, true);
+        int sz = static_cast<int>(approx.size());
+        if (sz < target_n) hi = mid;
+        else if (sz > target_n) lo = mid;
+        else { corners = approx; break; }
+    }
+    if (corners.size() != static_cast<size_t>(target_n)) {
+        double eps = (lo + hi) * 0.5;
+        cv::approxPolyDP(*largest, corners, eps, true);
+    }
+    if (corners.empty()) {
+        std::cerr << "[DualRoi] Failed to extract corners from AKAZE template" << std::endl;
+        dual_bc_template_ready_ = true;
+        return;
+    }
+
+    cv::Point2f center(tw / 2.0f, th / 2.0f);
+    auto order = BinaryCornerExtractor::reorderByGeometry(corners, center, 0.0, -1.0);
+    dual_bc_tmpl_corners_.reserve(order.size());
+    for (int idx : order) dual_bc_tmpl_corners_.push_back(corners[idx]);
+
+    double real_w = config_.template_real_width_mm;
+    double real_h = config_.template_real_height_mm;
+    dual_bc_tmpl_pts3d_.reserve(dual_bc_tmpl_corners_.size());
+    for (const auto& c : dual_bc_tmpl_corners_)
+        dual_bc_tmpl_pts3d_.emplace_back(
+            c.x / static_cast<double>(tw) * real_w,
+            c.y / static_cast<double>(th) * real_h, 0.0);
+
+    dual_bc_template_ready_ = true;
+    if (verbose_console_)
+        std::cout << "[DualRoi] BC template prepared: " << dual_bc_tmpl_corners_.size()
+                  << " corners on AKAZE template (" << tw << "x" << th << ")"
+                  << "  real_size=" << real_w << "x" << real_h << "mm"
+                  << std::endl;
+}
 
 
 PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
@@ -1416,3 +1491,4 @@ void StereoTracker::offsetResultToOriginal(PipelineResult& result,
 
 
 
+} // namespace gpnp
