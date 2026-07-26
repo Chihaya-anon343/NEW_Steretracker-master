@@ -31,6 +31,9 @@ public:
     /// 初始化检测器和 ROI 生成器。失败时返回 false。
     bool initialize(const YoloConfig& yolo_cfg, const RoiGenerator::Config& roi_cfg);
 
+    /// 设置近距离回退配置
+    void setCloseRangeConfig(const RoiGenerator::CloseRangeConfig& cfg);
+
     /// 若 YOLO 已准备好推理则返回 true。
     bool isReady() const;
 

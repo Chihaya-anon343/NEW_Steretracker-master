@@ -29,8 +29,18 @@ public:
         int dual_trigger_area{490000};  ///< class 0 面积超过此值时触发双 ROI (700×700)
     };
 
+    /// 近距离回退配置（class0 丢失, class1 有效时触发）
+    struct CloseRangeConfig {
+        bool enabled = false;
+        int class1_min_area = 100;       ///< class1 ROI 最小面积阈值
+        float roi_expand_ratio = 3.0f;   ///< class1 ROI 外扩倍数
+        int min_expand_pixels = 200;     ///< 最少外扩像素
+    };
+
     RoiGenerator();
     explicit RoiGenerator(const Config& cfg);
+
+    void setCloseRangeConfig(const CloseRangeConfig& cfg) { close_range_cfg_ = cfg; }
 
     /// 从检测结果生成指定类别的单个 ROI。
     /// @param class_id  目标类别进行过滤；-1 表示使用 config_.target_class_id。
@@ -52,6 +62,11 @@ public:
         const cv::Size& left_img_size,
         const cv::Size& right_img_size) const;
 
+    /// 近距离回退：class 0 失败时尝试用 class 1 替代。
+    /// 对 class1 ROI 外扩后作为 primary 返回。
+    RoiGroup tryCloseRange(const std::vector<Detection>& detections,
+                           const cv::Size& image_size) const;
+
     /// 从分别的检测集生成左右 RoiGroup 对。
     /// 当两侧 class 0 面积均 > 700*700 时支持双 ROI 模式。
     std::pair<RoiGroup, RoiGroup> generateStereoGroup(
@@ -62,6 +77,7 @@ public:
 
 private:
     Config config_;
+    CloseRangeConfig close_range_cfg_;
 
     /// 将单个检测结果转换为扩展并裁剪后的 RoiRect。
     static RoiRect detectionToRoi(const Detection& det, const cv::Size& img_size,

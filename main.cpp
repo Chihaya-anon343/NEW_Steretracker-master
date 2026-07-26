@@ -88,6 +88,16 @@ int main(int argc, char** argv) {
     int tiny_max_area  = fs["strategies"]["tiny_max_area"];
     int dual_trigger_area = fs["strategies"]["dual_trigger_area"];
 
+    // 近距离回退配置（class0 丢失时用 class1）
+    RoiGenerator::CloseRangeConfig close_range_cfg;
+    cv::FileNode cr_node = fs["strategies"]["close_range"];
+    if (!cr_node.empty()) {
+        close_range_cfg.enabled          = static_cast<int>(cr_node["enabled"]) != 0;
+        close_range_cfg.class1_min_area  = cr_node["class1_min_area"];
+        close_range_cfg.roi_expand_ratio = cr_node["roi_expand_ratio"];
+        close_range_cfg.min_expand_pixels = cr_node["min_expand_pixels"];
+    }
+
     // 双 ROI 配置（class 1 ROI 拓展像素 + AKAZE 提取参数）
     int dual_expand = 10;
     double dual_akaze_scale = 0.5;
@@ -100,32 +110,40 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ========================================================================
+    // 运行模式 — normal (InputProvider+简洁) / debug (旧路径+详细)
+    // ========================================================================
+    std::string run_mode = "normal";
+    {
+        cv::FileNode mn = fs["mode"];
+        if (!mn.empty()) run_mode = static_cast<std::string>(mn);
+    }
+    bool verbose_console  = (run_mode == "debug");
+    bool use_input_system = (run_mode == "normal");
+
     // 输入输出
     std::string left_path  = fs["input"]["left"];
     std::string right_path = fs["input"]["right"];
     bool visualize = static_cast<int>(fs["output"]["visualize"]) != 0;
-    bool verbose_console = true;  // 默认详细输出
-    {
-        cv::FileNode vn = fs["output"]["verbose_console"];
-        if (!vn.empty()) verbose_console = static_cast<int>(vn) != 0;
-    }
 
-    // 手动 ROI 配置（若 enabled=true 则跳过 YOLO，直接使用指定 ROI）
+    // 手动 ROI 配置 — 仅 debug 模式生效
     bool use_manual_roi = false;
     RoiRect manual_rl, manual_rr;
-    cv::FileNode manual_node = fs["manual_roi"];
-    if (!manual_node.empty()) {
-        int enabled = manual_node["enabled"];
-        if (enabled) {
-            use_manual_roi = true;
-            manual_rl.x      = manual_node["left"]["x"];
-            manual_rl.y      = manual_node["left"]["y"];
-            manual_rl.width  = manual_node["left"]["width"];
-            manual_rl.height = manual_node["left"]["height"];
-            manual_rr.x      = manual_node["right"]["x"];
-            manual_rr.y      = manual_node["right"]["y"];
-            manual_rr.width  = manual_node["right"]["width"];
-            manual_rr.height = manual_node["right"]["height"];
+    if (run_mode == "debug") {
+        cv::FileNode manual_node = fs["manual_roi"];
+        if (!manual_node.empty()) {
+            int enabled = manual_node["enabled"];
+            if (enabled) {
+                use_manual_roi = true;
+                manual_rl.x      = manual_node["left"]["x"];
+                manual_rl.y      = manual_node["left"]["y"];
+                manual_rl.width  = manual_node["left"]["width"];
+                manual_rl.height = manual_node["left"]["height"];
+                manual_rr.x      = manual_node["right"]["x"];
+                manual_rr.y      = manual_node["right"]["y"];
+                manual_rr.width  = manual_node["right"]["width"];
+                manual_rr.height = manual_node["right"]["height"];
+            }
         }
     }
 
@@ -137,11 +155,10 @@ int main(int argc, char** argv) {
     }
 
     // ========================================================================
-    // ①-b 解析 input_system 配置（若存在则优先于 input.left / input.right）
+    // ①-b 解析 input_system 配置（normal 模式用）
     // ========================================================================
     input::InputSystemConfig input_sys_cfg;
-    bool use_input_system = false;
-    int max_frames = 2;  // 默认 2 帧（兼容 warm-start）
+    int max_frames = (run_mode == "debug") ? 2 : 0;
 
     cv::FileNode input_sys_node = fs["input_system"];
     if (!input_sys_node.empty()) {
@@ -149,57 +166,26 @@ int main(int argc, char** argv) {
         if (!img_node.empty()) {
             std::string img_type = img_node["type"];
             if (img_type == "file") {
-                std::string lpath = img_node["left_path"];
-                std::string rpath = img_node["right_path"];
-                if (!lpath.empty() && !rpath.empty()) {
-                    input_sys_cfg.image.type = input::ImageSourceType::File;
-                    input_sys_cfg.image.left_path = lpath;
-                    input_sys_cfg.image.right_path = rpath;
-                    use_input_system = true;
-                }
+                input_sys_cfg.image.type = input::ImageSourceType::File;
+                input_sys_cfg.image.left_path = static_cast<std::string>(img_node["left_path"]);
+                input_sys_cfg.image.right_path = static_cast<std::string>(img_node["right_path"]);
             } else if (img_type == "directory") {
-                std::string dir_path = img_node["directory_path"];
-                if (!dir_path.empty()) {
-                    input_sys_cfg.image.type = input::ImageSourceType::Directory;
-                    input_sys_cfg.image.directory_path = dir_path;
-                    input_sys_cfg.image.left_pattern = static_cast<std::string>(img_node["left_pattern"]);
-                    input_sys_cfg.image.right_pattern = static_cast<std::string>(img_node["right_pattern"]);
-                    if (input_sys_cfg.image.left_pattern.empty())
-                        input_sys_cfg.image.left_pattern = "left";
-                    if (input_sys_cfg.image.right_pattern.empty())
-                        input_sys_cfg.image.right_pattern = "right";
-                    use_input_system = true;
-                }
+                input_sys_cfg.image.type = input::ImageSourceType::Directory;
+                input_sys_cfg.image.directory_path = static_cast<std::string>(img_node["directory_path"]);
+                input_sys_cfg.image.left_pattern = static_cast<std::string>(img_node["left_pattern"]);
+                input_sys_cfg.image.right_pattern = static_cast<std::string>(img_node["right_pattern"]);
+                if (input_sys_cfg.image.left_pattern.empty()) input_sys_cfg.image.left_pattern = "left";
+                if (input_sys_cfg.image.right_pattern.empty()) input_sys_cfg.image.right_pattern = "right";
             } else if (img_type == "sequence") {
-                std::string dir_path = img_node["directory_path"];
-                if (!dir_path.empty()) {
-                    input_sys_cfg.image.type = input::ImageSourceType::Sequence;
-                    input_sys_cfg.image.directory_path = dir_path;
-                    input_sys_cfg.image.sequence_pattern = static_cast<std::string>(img_node["sequence_pattern"]);
-                    if (input_sys_cfg.image.sequence_pattern.empty())
-                        input_sys_cfg.image.sequence_pattern = "frame";
-                    use_input_system = true;
-                }
+                input_sys_cfg.image.type = input::ImageSourceType::Sequence;
+                input_sys_cfg.image.directory_path = static_cast<std::string>(img_node["directory_path"]);
+                input_sys_cfg.image.sequence_pattern = static_cast<std::string>(img_node["sequence_pattern"]);
+                if (input_sys_cfg.image.sequence_pattern.empty()) input_sys_cfg.image.sequence_pattern = "frame";
             }
         }
-        max_frames = static_cast<int>(input_sys_node["max_frames"]);
-        if (max_frames <= 0) max_frames = 999999;  // 0 = unlimited
-
-        // IMU / Altimeter config (Phase 2)
-        cv::FileNode imu_node = input_sys_node["imu"];
-        if (!imu_node.empty()) {
-            input_sys_cfg.imu.enabled = static_cast<int>(imu_node["enabled"]) != 0;
-            if (input_sys_cfg.imu.enabled) {
-                input_sys_cfg.imu.port = static_cast<std::string>(imu_node["port"]);
-                input_sys_cfg.imu.baud_rate = imu_node["baud_rate"];
-            }
-        }
-        cv::FileNode alt_node = input_sys_node["altimeter"];
-        if (!alt_node.empty()) {
-            input_sys_cfg.altimeter.enabled = static_cast<int>(alt_node["enabled"]) != 0;
-            if (input_sys_cfg.altimeter.enabled) {
-                input_sys_cfg.altimeter.can_interface = static_cast<std::string>(alt_node["can_interface"]);
-            }
+        if (use_input_system) {
+            max_frames = static_cast<int>(input_sys_node["max_frames"]);
+            if (max_frames <= 0) max_frames = 999999;
         }
     }
 
@@ -278,6 +264,7 @@ int main(int argc, char** argv) {
             yolo_cfg.roi_expand_ratio = expand;
             RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
             yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
+            if (yolo_ok) yolo.setCloseRangeConfig(close_range_cfg);
         }
 
         // ====================================================================

@@ -564,7 +564,33 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     if (visualize && pose_ok) {
         std::string prefix = "_f" + std::to_string(state_.frame_count);
 
-        if (winning_strategy == "AkazeGpnp") {
+        // Normal 模式 (verbose_console_=false): 仅三维坐标轴叠加图
+        if (!verbose_console_) {
+            cv::Mat vis = result.left_color.clone();
+            for (const auto& pt : result.pts_left_match)
+                cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 1, 1);
+            if (result.success) {
+                cv::Mat K_cv = (cv::Mat_<double>(3,3) <<
+                    camera_.K(0,0), camera_.K(0,1), camera_.K(0,2),
+                    camera_.K(1,0), camera_.K(1,1), camera_.K(1,2),
+                    camera_.K(2,0), camera_.K(2,1), camera_.K(2,2));
+                cv::Mat rvec, R_cv = (cv::Mat_<double>(3,3) <<
+                    result.R(0,0), result.R(0,1), result.R(0,2),
+                    result.R(1,0), result.R(1,1), result.R(1,2),
+                    result.R(2,0), result.R(2,1), result.R(2,2));
+                cv::Rodrigues(R_cv, rvec);
+                cv::Mat tvec = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
+                std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,100}};
+                std::vector<cv::Point2d> img_pts;
+                cv::projectPoints(axis, rvec, tvec, K_cv, cv::Mat(), img_pts);
+                if (img_pts.size() == 4) {
+                    cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0,0,255), 3);
+                    cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0,255,0), 3);
+                    cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255,0,0), 3);
+                }
+            }
+            cv::imwrite(output_dir_ + "/stereo" + prefix + ".png", vis);
+        } else if (winning_strategy == "AkazeGpnp") {
             if (!visualizer_) visualizer_ = std::make_unique<Visualizer>(camera_.K, output_dir_);
             cv::Mat tmpl_color = template_.color_image;
             if (tmpl_color.empty()) {
@@ -1266,6 +1292,34 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     if (visualize && pose.success) {
         std::string prefix = "_f" + std::to_string(state_.frame_count);
 
+        // Normal 模式: 仅三维坐标轴叠加图
+        if (!verbose_console_) {
+            cv::Mat vis = result.left_color.clone();
+            for (const auto& pt : result.pts_left_match)
+                cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 1, 1);
+            if (result.gpnp_success) {
+                cv::Mat K_cv = (cv::Mat_<double>(3,3) <<
+                    camera_.K(0,0), camera_.K(0,1), camera_.K(0,2),
+                    camera_.K(1,0), camera_.K(1,1), camera_.K(1,2),
+                    camera_.K(2,0), camera_.K(2,1), camera_.K(2,2));
+                cv::Mat rvec, R_cv = (cv::Mat_<double>(3,3) <<
+                    result.R(0,0), result.R(0,1), result.R(0,2),
+                    result.R(1,0), result.R(1,1), result.R(1,2),
+                    result.R(2,0), result.R(2,1), result.R(2,2));
+                cv::Rodrigues(R_cv, rvec);
+                cv::Mat tvec = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
+                std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,100}};
+                std::vector<cv::Point2d> img_pts;
+                cv::projectPoints(axis, rvec, tvec, K_cv, cv::Mat(), img_pts);
+                if (img_pts.size() == 4) {
+                    cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0,0,255), 3);
+                    cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0,255,0), 3);
+                    cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255,0,0), 3);
+                }
+            }
+            cv::imwrite(output_dir_ + "/stereo_dualroi" + prefix + ".png", vis);
+        } else {
+
         const cv::Scalar BC_COLOR(0, 0, 255);    // red: BinaryCorner corners (class 0 edges)
         const cv::Scalar AK_COLOR(0, 255, 0);    // green: AKAZE features (class 1 center)
         int ak_count = total_use - bc_total;
@@ -1417,6 +1471,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         if (verbose_console_)
             std::cout << "  [DualRoi] Visualized: " << bc_total << " BC + "
                       << ak_count << " AK corners" << std::endl;
+        } // end else (full debug viz)
     }
 
     result.n_matched = total_use;

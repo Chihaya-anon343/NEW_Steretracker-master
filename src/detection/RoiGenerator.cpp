@@ -4,6 +4,7 @@
  */
 
 #include "detection/RoiGenerator.hpp"
+#include "common/LogConfig.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -67,6 +68,9 @@ RoiGroup RoiGenerator::generateGroup(const std::vector<Detection>& detections,
     // 1. 始终先尝试 class 0
     RoiRect class0_roi = generate(detections, image_size, 0);
     if (!class0_roi.valid()) {
+        // 近距离回退：class0 未检测到，尝试 class1
+        RoiGroup fallback = tryCloseRange(detections, image_size);
+        if (fallback.valid()) return fallback;
         return RoiGroup{};
     }
 
@@ -85,6 +89,47 @@ RoiGroup RoiGenerator::generateGroup(const std::vector<Detection>& detections,
     }
 
     return RoiGroup{class0_roi, {}, false};
+}
+
+// ============================================================================
+// 近距离回退：class0 丢失，class1 有效 → 外扩 class1 ROI
+// ============================================================================
+
+RoiGroup RoiGenerator::tryCloseRange(const std::vector<Detection>& detections,
+                                      const cv::Size& image_size) const {
+    if (!close_range_cfg_.enabled) return RoiGroup{};
+
+    RoiRect class1_roi = generate(detections, image_size, 1);
+    if (!class1_roi.valid()) return RoiGroup{};
+
+    int area = class1_roi.width * class1_roi.height;
+    if (area < close_range_cfg_.class1_min_area) return RoiGroup{};
+
+    // 外扩 class1 ROI 以模拟丢失的 class0 全目标范围
+    int expand_w = std::max(static_cast<int>(class1_roi.width  * (close_range_cfg_.roi_expand_ratio - 1.0f) / 2),
+                            close_range_cfg_.min_expand_pixels / 2);
+    int expand_h = std::max(static_cast<int>(class1_roi.height * (close_range_cfg_.roi_expand_ratio - 1.0f) / 2),
+                            close_range_cfg_.min_expand_pixels / 2);
+
+    RoiRect expanded;
+    expanded.x      = std::max(0, class1_roi.x - expand_w);
+    expanded.y      = std::max(0, class1_roi.y - expand_h);
+    expanded.width  = std::min(image_size.width  - expanded.x, class1_roi.width  + 2 * expand_w);
+    expanded.height = std::min(image_size.height - expanded.y, class1_roi.height + 2 * expand_h);
+
+    if (g_verbose_console) {
+        int expanded_area = expanded.width * expanded.height;
+        std::cout << "[RoiGenerator] Close-range fallback: class0 not detected,"
+                  << " class1=" << class1_roi.width << "x" << class1_roi.height
+                  << " expanded=" << expanded.width << "x" << expanded.height
+                  << " (area=" << expanded_area;
+        if (expanded_area >= 40001)      std::cout << " → AKAZE chain)";
+        else if (expanded_area > 800)    std::cout << " → BC chain)";
+        else                             std::cout << " → TT)";
+        std::cout << std::endl;
+    }
+
+    return RoiGroup{expanded, {}, false};
 }
 
 // ============================================================================

@@ -15,43 +15,30 @@
                           └────────┬────────┘
                                    │
                     ┌──────────────▼──────────────────┐
-                    │  input_system 节存在？            │
+                    │  mode ?                          │
                     └──────┬──────────────┬───────────┘
-                      true │              │ false
+                    normal │              │ debug
                            ▼              ▼
                     ┌──────────────┐  ┌──────────────────────┐
-                    │ InputProvider │  │ cv::imread 加载       │
-                    │ (File / Dir   │  │ 旧版 input.left /     │
-                    │  / Sequence)  │  │ input.right 路径      │
+                    │ InputProvider │  │ cv::imread + 手动/YOLO│
+                    │ (File/Dir/Seq)│  │ verbose_console=true  │
+                    │ quiet+简洁可视│  │ 完整中间过程可视化     │
                     └──────┬───────┘  └──────────┬───────────┘
                            │                     │
                            └──────┬──────────────┘
                                   ▼
                     ┌──────────────────────────────┐
                     │      逐 帧 循 环             │
-                    │  (InputProvider 或 旧版循环)  │
                     └──────────────┬───────────────┘
                                    │
                     ┌──────────────▼──────────────────┐
-                    │  manual_roi.enabled ?            │
+                    │  mono_mode ?                     │
                     └──────┬──────────────┬───────────┘
                       true │              │ false
                            ▼              ▼
-                    ┌──────────────┐  ┌──────────────────────┐
-                    │ 手动 RoiGroup │  │ YOLO ONNX 目标检测    │
-                    │ (primary 固定)│  │ 输出左右 RoiGroup      │
-                    └──────┬───────┘  │ (可含双 ROI)           │
-                           │          └──────────┬───────────┘
-                           └──────┬───────────────┘
-                                  ▼
-                    ┌──────────────────────────────┐
-                    │  mono_mode ?                  │
-                    └──────┬──────────────┬─────────┘
-                      true │              │ false
-                           ▼              ▼
                     ┌──────────────────────────────────┐
-                    │ StereoTracker::processMono()      │
-                    │  ├─ is_dual? → processDualRoiMono │
+                    │ MonoTracker::process()            │
+                    │  ├─ is_dual? → processDualRoi     │
                     │  ├─ 否则 → configureStrategy      │
                     │  └─ extractMono() + MonoPnP       │
                     └──────────────┬───────────────────┘
@@ -61,7 +48,6 @@
                     │  ├─ is_dual? → processDualRoi    │
                     │  ├─ 否则 → configureStrategy     │
                     │  └─ 特征提取 + 退化 + GPNP       │
-                    │     (全部内部自动完成)            │
                     └──────────────┬───────────────────┘
                                    │
                     ┌──────────────▼──────────────┐
@@ -69,36 +55,47 @@
                     └─────────────────────────────┘
 ```
 
-帧循环中 `main.cpp` 仅负责获取 ROI（手动配置或 YOLO 检测），根据 `mono_mode` 配置调用 `tracker.processMono()` 或 `tracker.process()`，所有策略选择和特征提取由 `StereoTracker` 内部自动完成。ROI 优先级：**手动 ROI > YOLO 检测**。
+系统通过顶层 `mode` 字段（`"normal"` 或 `"debug"`）控制运行行为：
 
-图像加载通过**输入系统**（见[§2](#2-输入系统-input-system)）统一管理：若配置文件中存在 `input_system` 节，优先使用 `InputProvider` 多源抽象；否则回退到旧版 `input.left` / `input.right` 直接 `cv::imread` 加载。
+| | Normal | Debug |
+|---|---|---|
+| 图像源 | `InputProvider` (input_system 节) | `cv::imread` (input 节) |
+| ROI | YOLO 检测 | 手动 ROI 或 YOLO |
+| 终端输出 | 每帧一行简介 | 详细统计 |
+| 可视化 | 仅三维坐标轴叠加 | 各策略完整中间面板 |
+
+两种模式均支持 `mono_mode: true/false`。YOLO 检测失败时跳过该帧，不走全图回退。
 
 ---
 
-## 2. 输入系统 (Input System)
+## 2. 运行模式 (Run Mode)
 
-**适用场景**：统一管理多源图像输入（文件/目录/序列/摄像头），为后续多传感器融合（IMU + 高度计）提供基础架构。
-
-**模块映射**：`InputProvider` + `IStereoImageSource` + 三种具体源实现 + `RingBuffer<T>`
+**适用场景**：通过顶层 `mode` 字段一键切换 normal（生产）和 debug（调试）模式。
 
 ### 2.1 概述
 
-输入系统是 Phase 1 新增模块，提供可配置、可扩展的图像源抽象层。配置文件中的 `input_system` 节**优先于**旧版 `input.left` / `input.right` 路径，实现新旧路径无缝兼容。
+系统通过顶层 `mode: "normal"` 或 `mode: "debug"` 控制全部运行时行为。两模式互斥：
 
 ```cpp
-// main.cpp 中的双路径逻辑
-if (use_input_system) {
-    // 新版：InputProvider 数据驱动的帧循环
+// main.cpp 中的模式分发
+bool normal_mode = (mode == "normal");
+bool use_input_system = normal_mode;
+bool verbose_console  = !normal_mode;   // debug → verbose
+
+if (normal_mode) {
     input_provider.initialize(input_sys_cfg);
-    while (input_provider.getNextPacket(packet) && frame < max_frames) {
-        processFrame(frame, packet.left_image, packet.right_image);
-    }
+    // input_system 驱动 + 简洁输出 + 简单可视化
 } else {
-    // 旧版：cv::imread 加载 + 固定帧数循环（向后兼容）
-    for (int frame = 1; frame <= max_frames; ++frame)
-        processFrame(frame, left_img, right_img);
+    left_img = cv::imread(left_path);
+    // cv::imread 驱动 + 详细输出 + 完整可视化
 }
 ```
+
+### 2.2 输入系统 (InputProvider)
+
+**适用场景**：Normal 模式下的多源图像输入（文件/目录/序列/摄像头），为后续多传感器融合（IMU + 高度计）提供基础架构。
+
+**模块映射**：`InputProvider` + `IStereoImageSource` + 三种具体源实现 + `RingBuffer<T>`
 
 ### 2.2 架构
 
@@ -256,11 +253,29 @@ public:
 
 **适用场景**：仅左图可用（如单目相机），右图数据不存在或无效。
 
-**模块映射**：`StereoTracker::processMono()` / `processDualRoiMono()` + `MonoPnPSolver` + 各提取器的 `extractMono()`
+**模块映射**：`MonoTracker` (继承 `TrackerBase`) + `MonoPnPSolver` + 各提取器的 `extractMono()`
 
 ### 4.1 概述
 
-单目模式通过配置文件中的 `mono_mode: true` 启用。与双目路径相比，单目路径的核心差异：
+单目模式通过配置文件中的 `mono_mode: true` 启用。此时 `main.cpp` 创建 `MonoTracker` 而非 `StereoTracker`。类层次结构：
+
+```
+TrackerBase (共享)
+├── camera_ / config_ / template_ / 3 extractors / strategy chain
+├── configureStrategyChain / validateRoi / loadImage / finalizePose
+│
+├── MonoTracker : TrackerBase     ← mono_mode=true
+│   ├── mono_pnp_ (MonoPnPSolver)
+│   └── process()  [原 processMono]
+│       └── processDualRoi()  [原 processDualRoiMono]
+│
+└── StereoTracker : TrackerBase   ← 默认
+    ├── gpnp_solver_ / initial_pnp_ / mad_filter_
+    └── process()
+        └── processDualRoi()
+```
+
+`MonoTracker` 构造时不创建 `GPnPSolver` / `InitialPnPSolver` / `MadDisparityFilter`，实现真正的模块隔离。
 
 | 维度 | 双目 | 单目 |
 |------|------|------|
@@ -273,25 +288,15 @@ public:
 | Warm-start | 前一帧位姿缓存 | **无** |
 | ROI 输入 | `RoiGroup*` (含 primary + secondary) | `RoiGroup*`（同双目，支持双 ROI） |
 
-单目配置结构体 `MonoConfig`（`include/tracker/StereoTracker.hpp:72-76`）：
-
-```cpp
-struct MonoConfig {
-    bool enabled = false;             ///< true → processMono() 生效
-    int akaze_min_area = 40001;
-    int tiny_max_area = 800;
-};
-```
-
 ### 4.2 入口与分发
 
-`processMono()` 是单目帧处理的唯一入口，内部根据 ROI 类型分发：
+`MonoTracker::process()` 是单目帧处理的唯一入口，内部根据 ROI 类型分发：
 
 ```
-processMono(left_img, visualize, left_group)
+process(left_img, visualize, left_group)          ← 统一 API
   │
   ├── left_group->is_dual == true
-  │   └── processDualRoiMono(left_img, left_group, visualize)
+  │   └── processDualRoi(left_img, left_group, visualize)
   │       (单目双 ROI：BC class 0 + AK class 1 → MonoPnP)
   │
   └── left_group->is_dual == false 或 nullptr
@@ -384,7 +389,7 @@ processMono(left_img, visualize, left_group)
 
 **与双目 Dual-ROI 的关键差异**：
 
-| 步骤 | 双目 `processDualRoi()` | 单目 `processDualRoiMono()` |
+| 步骤 | 双目 `processDualRoi()` | 单目 `MonoTracker::processDualRoi()` |
 |------|------------------------|---------------------------|
 | BC 提取 | `extract()` — 左右图双路提取 + 立体配对 | `extractMono()` — 仅左图 |
 | AK 提取 | `extract()` — AKAZE + 光流 + 投影 | `extractMono()` — AKAZE + 模板匹配 |
@@ -837,11 +842,12 @@ GPNP 输出位姿需通过以下全部校验：
 | 维度 | 双目 | 单目 |
 |------|------|------|
 | 启用方式 | 默认 | `mono_mode: true` |
-| API 入口 | `process(left, right, ...)` | `processMono(left, ...)` |
-| ROI 参数 | `RoiGroup*` (含 primary + secondary) | `RoiGroup*`（同双目） |
-| 去畸变 | 双目极线校正 (可选) | 无 |
-| PnP 求解 | `GPnPSolver` (LM 7维) | `MonoPnPSolver` (EPnP + ITERATIVE) |
-| 退化约束 | 立体射线 + 重投影 | 仅重投影 |
+| 使用的类 | `StereoTracker : TrackerBase` | `MonoTracker : TrackerBase` |
+| API 入口 | `process(left, right, ...)` | `process(left, ...)` (统一名) |
+| PnP 求解器 | `GPnPSolver` (Eigen LM) + `InitialPnPSolver` | `MonoPnPSolver` (EPnP) |
+| 双目模块 | 有 (光流/投影/MAD滤波/立体验证) | **无** (不链接 GPnPSolver/InitialPnP/MadFilter) |
+| 构造参数 | 需要基线 `R_rl` / `t_rl` | 仅需 `K` 矩阵 |
+| YOLO | `yolo.detect(L, R)` | `yolo.detectMono(L)` (仅左图推理) |
 
 ---
 
@@ -863,7 +869,6 @@ GPNP 输出位姿需通过以下全部校验：
 | `TrackingState` | 帧间状态: 上帧位姿缓存、帧计数、日志列表 |
 | `RoiRect` | ROI 矩形: (x, y, width, height) |
 | `RoiGroup` | 双 ROI 组: primary (class 0) + secondary (class 1) + is_dual 标志 |
-| `MonoConfig` | 单目模式配置: enabled, akaze_min_area, tiny_max_area (定义于 `StereoTracker.hpp`) |
 | `MadFilterResult` | MAD 滤波输出: 过滤后点集、filter_mask、劣化标志 |
 | `YoloConfig` | YOLO 检测器配置: 模型路径、设备类型、置信度阈值等 |
 | `Detection` | YOLO 单次检测结果: class_id、confidence、bbox |
@@ -889,14 +894,16 @@ GPNP 输出位姿需通过以下全部校验：
 
 ```jsonc
 {
+  "mode": "normal",
+
   "input": {
-    "_comment": "===== 旧版输入配置（input_system 不存在时使用）=====",
+    "_comment": "===== Debug 模式使用 =====",
     "left": "data/delivery_area_2l/im0.png",
     "right": "data/delivery_area_2l/im1.png"
   },
 
   "input_system": {
-    "_comment": "===== 新版输入系统（优先于 input.*）=====",
+    "_comment": "===== Normal 模式使用 =====",
     "_comment2": "type: file(静态双图), directory(双目序列), sequence(单目序列), camera(实时摄像头-未来)",
     "max_frames": 0,
     "image": {
@@ -921,8 +928,7 @@ GPNP 输出位姿需通过以下全部校验：
 
   "mono_mode": false,
   "output": {
-    "visualize": true,
-    "verbose_console": true
+    "visualize": true
   },
   "camera": {
     "fx": 541.764,
@@ -991,14 +997,23 @@ GPNP 输出位姿需通过以下全部校验：
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
+| `mode` | `"normal"` | 运行模式：`"normal"` = 生产（InputProvider + 简洁输出）, `"debug"` = 调试（旧路径 + 详细输出） |
 | `mono_mode` | `false` | 设为 `true` 启用单目模式（仅左图，EPnP 位姿解算） |
 | `strategies.akaze_min_area` | 40001 | ROI ≥ 此值时选择 AKAZE_GPNP 策略 |
 | `strategies.tiny_max_area` | 800 | ROI ≤ 此值时选择 TinyTarget 策略 |
-| `manual_roi.enabled` | `true` | 设为 `true` 跳过 YOLO 检测，直接使用硬编码 ROI |
-| `strategies.dual_roi.secondary_expand_pixels` | 10 | 双 ROI 模式下 class 1 ROI 的额外拓展像素 |
-| `strategies.dual_roi.akaze.scale` | 0.5 | 双 ROI 模式下 AKAZE 特征提取的缩放因子 |
 
-### 11.1 输入系统配置
+### 11.1 Normal 模式与 Debug 模式
+
+| 维度 | Normal (`mode: "normal"`) | Debug (`mode: "debug"`) |
+|------|--------------------------|------------------------|
+| 图像源 | `input_system` 节 → `InputProvider` | `input` 节 → `cv::imread` |
+| ROI | YOLO 检测（自动） | 手动 ROI 或 YOLO |
+| 终端输出 | 每帧一行 `[Frame N] Strategy n=X r=[...] t=[...]` | 详细统计（特征点/匹配/视差/GPNP/耗时） |
+| 可视化 | 仅三维坐标轴叠加图 | 各策略完整中间过程面板 |
+| `verbose_console` | `false`（自动） | `true`（自动） |
+| 适用场景 | 生产/批处理/序列 | 调试/单帧分析 |
+
+### 11.2 输入系统配置
 
 `input_system` 节用于替代旧版 `input.left` / `input.right`，提供多源输入抽象。
 
@@ -1017,6 +1032,139 @@ GPNP 输出位姿需通过以下全部校验：
 
 **向后兼容**：若配置文件中不存在 `input_system` 或 `input_system.image` 为空，则自动回退到 `input.left` / `input.right` 路径方式。旧版路径默认 `max_frames=2`（兼容 warm-start 需要同一帧运行两次的行为）。
 
+### 11.3 使用手册
+
+#### Normal 模式 + 单目 (mode=normal, mono_mode=true)
+
+图像序列逐帧处理，依赖 YOLO 检测 ROI。终端简洁输出、仅保存三维轴图。
+
+```jsonc
+{
+  "mode": "normal",
+  "mono_mode": true,
+  "output": { "visualize": true },
+  "input_system": {
+    "max_frames": 0,
+    "image": {
+      "type": "sequence",
+      "directory_path": "data/sequence/",
+      "sequence_pattern": "frame"
+    }
+  }
+  // camera, yolo, strategies ... 照常配置
+}
+```
+
+运行：`./GPNP`。终端每帧一行：
+```
+[Frame 0] BinaryCorner  n=10  r=[...]  t=[...]
+[Frame 1] BinaryCorner  n=10  r=[...]  t=[...]
+```
+可视化输出：`output/<目录名>/mono_f0.png, mono_f1.png ...`（原图+红色特征点+RGB坐标轴）
+
+---
+
+#### Normal 模式 + 双目 (mode=normal, mono_mode=false)
+
+与单目类似，但需要左右成对的图像文件。
+
+```jsonc
+{
+  "mode": "normal",
+  "mono_mode": false,
+  "output": { "visualize": true },
+  "input_system": {
+    "max_frames": 0,
+    "image": {
+      "type": "directory",
+      "directory_path": "data/stereo_seq/",
+      "left_pattern": "left",
+      "right_pattern": "right"
+    }
+  }
+}
+```
+
+图像目录结构：
+```
+data/stereo_seq/
+  left_0000.png    right_0000.png
+  left_0001.png    right_0001.png
+  ...
+```
+可视化输出：`output/<目录名>/stereo_f0.png ...`
+
+---
+
+#### Debug 模式 + 单目 (mode=debug, mono_mode=true)
+
+手动指定 ROI 或 YOLO，终端详细输出，完整中间可视化。
+
+```jsonc
+{
+  "mode": "debug",
+  "mono_mode": true,
+  "output": { "visualize": true },
+  "input": {
+    "left": "data/test/left.png",
+    "right": "data/test/right.png"
+  },
+  "manual_roi": {
+    "enabled": true,
+    "left":  { "x": 416, "y": 113, "width": 300, "height": 300 },
+    "right": { "x": 410, "y": 113, "width": 300, "height": 300 }
+  }
+}
+```
+
+`manual_roi.enabled: true` → 跳过 YOLO，使用指定坐标作为 ROI。  
+`manual_roi.enabled: false` → 走 YOLO 检测。
+
+终端输出示例（详细）：
+```
+===== 第 1 帧 (单目) =====
+  [StereoTracker] Strategy chain: BinaryCorner → TinyTarget (roi_area=90000)
+  [Mono] Trying extractor: BinaryCorner
+  [BinaryCorner] Extracted 10 corners (L), ...
+  特征点: 10  匹配: 10  模板: 10  GPNP: 成功  耗时: 45ms
+```
+
+---
+
+#### Debug 模式 + 双目 (mode=debug, mono_mode=false)
+
+与 Debug 单目类似，但需要左右图各指定一个 ROI。
+
+```jsonc
+{
+  "mode": "debug",
+  "mono_mode": false,
+  "input": {
+    "left": "data/delivery_area_2l/im0.png",
+    "right": "data/delivery_area_2l/im1.png"
+  },
+  "manual_roi": {
+    "enabled": false
+  }
+}
+```
+
+终端输出包含双目专有信息（投影数、视差中位数等）。可视化输出完整多面板图（二值图/轴系/模板/立体/重投影）。
+
+---
+
+#### 模式对照速查表
+
+| | Normal 单目 | Normal 双目 | Debug 单目 | Debug 双目 |
+|---|---|---|---|---|
+| `mode` | normal | normal | debug | debug |
+| `mono_mode` | true | false | true | false |
+| `input_system` | **必填** | **必填** | 不需要 | 不需要 |
+| `input` | 不需要 | 不需要 | **必填** | **必填** |
+| ROI 来源 | YOLO | YOLO | 手动/YOLO | 手动/YOLO |
+| 终端输出 | 简洁 | 简洁 | 详细 | 详细 |
+| 可视化 | 三维轴图 | 三维轴图 | 多面板 | 多面板 |
+
 ---
 
 ## 12. 工厂函数
@@ -1034,20 +1182,23 @@ GPNP 输出位姿需通过以下全部校验：
 ```cpp
 using namespace gpnp;
 
-// 相机参数
 Eigen::Matrix3d K = ...;
-Eigen::Matrix3d R_rl = Eigen::Matrix3d::Identity();
-Eigen::Vector3d t_rl(baseline_mm, 0.0, 0.0);
-
-// 创建配置（校验嵌入式在工厂函数内）
 auto tracker_cfg = makeTrackerConfig(0.5, 4, true, 500.0, 500.0,
                                       40001, 800, 10, 0.5);
 auto yolo_cfg = makeYoloConfig("best.onnx", DeviceType::CPU, 0.5f);
 
-// 初始化 tracker
-StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
-                      binary_cfg, binary_template_dir,
-                      tiny_cfg, tiny_template_dir);
+// 单目模式
+if (mono_mode) {
+    MonoTracker tracker(K, template_path, tracker_cfg,
+                        binary_cfg, binary_template_dir,
+                        tiny_cfg, tiny_template_dir);
+    tracker.process(left_img, visualize, &left_group);
+} else {
+    StereoTracker tracker(K, R_rl, t_rl, template_path, tracker_cfg,
+                          binary_cfg, binary_template_dir,
+                          tiny_cfg, tiny_template_dir);
+    tracker.process(left_img, right_img, visualize, &left_group, &right_group);
+}
 ```
 
 ---
@@ -1150,7 +1301,9 @@ Steretracker/
 │   ├── stereo/
 │   │   └── StereoProjector.hpp      # 视差→深度→投影
 │   ├── tracker/
-│   │   └── StereoTracker.hpp        # 核心协调器（策略链 + 退化 + PnP 分发 + 双 ROI）
+│   │   ├── TrackerBase.hpp        # 单/双目 共享基类
+│   │   ├── MonoTracker.hpp        # 单目 tracker (无 GPnP/InitialPnP/MAD)
+│   │   └── StereoTracker.hpp      # 双目 tracker (保留全部立体模块)
 │   ├── visualization/
 │   │   └── Visualizer.hpp           # 多面板调试图像
 │   └── utils/
@@ -1168,7 +1321,7 @@ Steretracker/
 │   ├── matching/   (TemplateMatcher)
 │   ├── pose/       (InitialPnPSolver + GPnPSolver + MonoPnPSolver)
 │   ├── stereo/     (StereoProjector)
-│   ├── tracker/    (StereoTracker)
+│   ├── tracker/    (TrackerBase + MonoTracker + StereoTracker)
 │   ├── visualization/ (Visualizer)
 │   └── utils/      (PoseUtils)
 │

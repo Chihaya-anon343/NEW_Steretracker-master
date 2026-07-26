@@ -32,6 +32,10 @@ bool YoloRoiProvider::initialize(const YoloConfig& yolo_cfg,
     }
 }
 
+void YoloRoiProvider::setCloseRangeConfig(const RoiGenerator::CloseRangeConfig& cfg) {
+    if (roi_gen_) roi_gen_->setCloseRangeConfig(cfg);
+}
+
 bool YoloRoiProvider::isReady() const {
     return detector_ != nullptr && roi_gen_ != nullptr;
 }

@@ -1,13 +1,9 @@
 {
-  "input": {
-    "_comment": "===== 旧版输入配置（input_system 不存在时使用）=====",
-    "left": "data/大图/cj01_image_0032 _rot180.jpg",
-    "right": "data/大图/cj01_image_0032 _rot180.jpg"
-  },
+  "mode": "debug",
 
+  "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
-    "_comment": "===== 新版输入系统（优先于 input.*）=====",
-    "_comment2": "type: file(静态双图), directory(双目序列), sequence(单目序列), camera(实时摄像头-未来)",
+    "_comment": "type: file / directory / sequence",
     "max_frames": 0,
     "image": {
       "type": "sequence",
@@ -19,29 +15,41 @@
       "sequence_pattern": "frame"
     },
     "imu": {
-      "_comment": "IMU 传感器配置 (Phase 2, Linux only)",
+      "_comment": "Phase 2, Linux only",
       "enabled": false,
       "port": "/dev/ttyUSB0",
       "baud_rate": 921600,
       "protocol": "custom"
     },
     "altimeter": {
-      "_comment": "高度计/雷达配置 (Phase 2, Linux only)",
+      "_comment": "Phase 2, Linux only",
       "enabled": false,
       "can_interface": "can0",
       "type": "can"
     }
   },
-  "output": {
-    "visualize": true,
-    "verbose_console": false
+
+  "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
+  "input": {
+    "_comment": "Debug 模式图像路径",
+    "left": "data/大图/cj01_image_0032 _rot180.jpg",
+    "right": "data/大图/cj01_image_0032 _rot180.jpg"
   },
+
+  "manual_roi": {
+    "_comment": "enabled=true 跳过 YOLO (仅 debug 模式生效)",
+    "enabled": false,
+    "left":  { "x": 416, "y": 113, "width": 300, "height": 300 },
+    "right": { "x": 410, "y": 113, "width": 300, "height": 300 }
+  },
+
+  "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
+  "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
   "mono_mode": true,
 
-  "TODO": {
-    "BINARY CORNER": "修改模板的点顺序,使得各角度模板的点顺序确定,都选择黑色块的点作为第一个点.用各角度的模板找到对应角度后,将点对应到0角度的模板点上,然后进行PNP",
-    "实验计划":"确认BinaryCorner策略下,特征点与模板点的匹配方式,应该是以角度选择第一个点,然后以逆时针进行排序.确定的排序应该是模板的顺序,不过现在已经把所有模板的第一个点都确定为黑块红点了",
-    "续":"这样设计好后,提取点的顺序与0角度模板的点顺序已经完成了(即都是黑块红点为第一个点,逆时针)"
+  "output": {
+    "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
+    "visualize": true
   },
 
   "camera": {
@@ -60,18 +68,19 @@
     "roi_min_size": 0
   },
 
-  "manual_roi": {
-    "_comment": "设为 true 则跳过 YOLO，直接使用下方 ROI；设为 false 则走正常 YOLO 流程",
-    "enabled": false,
-    "left":   { "x": 416, "y": 113, "width": 300, "height": 300 },
-    "right":  { "x": 410, "y": 113, "width": 300, "height": 300 }
-  },
-
   "strategies": {
-    "_comment": "ROI area thresholds: <= tiny_max → TinyTarget, >= akaze_min → AKAZE, else BinaryCorner",
+    "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, >= akaze_min -> AKAZE, else BinaryCorner",
     "akaze_min_area": 40001,
     "tiny_max_area": 400,
     "dual_trigger_area": 490000,
+
+    "close_range": {
+      "_comment": "近距离回退: class0 未检测到 + class1 有效时触发",
+      "enabled": true,
+      "class1_min_area": 100,
+      "roi_expand_ratio": 3.0,
+      "min_expand_pixels": 200
+    },
 
     "akaze_gpnp": {
       "template_path": "data/大图/img_1.png",
@@ -104,7 +113,7 @@
     },
 
     "dual_roi": {
-      "_comment": "双ROI模式下class 1 ROI的四周拓展像素数 + AKAZE提取参数",
+      "_comment": "双ROI class1 拓展像素 + AKAZE scale",
       "secondary_expand_pixels": 50,
       "akaze": {
         "scale": 1
