@@ -1,0 +1,185 @@
+@startuml
+
+title Steretracker — 双目/单目视觉定位系统架构
+
+' ──────────────────────────────────────────────
+' 输入层
+' ──────────────────────────────────────────────
+
+package "输入系统" {
+    abstract IStereoImageSource {
+        + open(uri) : bool
+        + nextFrame(left, right, ts) : bool
+        + close()
+    }
+
+    class FileStereoSource {
+        + nextFrame() : 同一帧重复返回
+    }
+
+    class DirectoryStereoSource {
+        + nextFrame() : 逐帧推进
+    }
+
+    class SequenceSource {
+        + nextFrame() : left=当前帧 right=clone
+    }
+
+    class InputProvider {
+        + initialize(config) : bool
+        + getNextPacket(packet) : bool
+    }
+
+    IStereoImageSource <|-- FileStereoSource
+    IStereoImageSource <|-- DirectoryStereoSource
+    IStereoImageSource <|-- SequenceSource
+    InputProvider --> IStereoImageSource
+}
+
+' ──────────────────────────────────────────────
+' 检测层
+' ──────────────────────────────────────────────
+
+package "检测" {
+    class YoloDetector {
+        + detect(img, detections) : Status
+    }
+
+    class RoiGenerator {
+        + generateGroup(detections) : RoiGroup
+        + generateStereoGroup(L,R) : pair
+    }
+
+    class YoloRoiProvider {
+        + detect(L, R) : pair
+        + detectMono(L) : RoiGroup
+    }
+
+    YoloRoiProvider --> YoloDetector
+    YoloRoiProvider --> RoiGenerator
+}
+
+' ──────────────────────────────────────────────
+' 特征提取层
+' ──────────────────────────────────────────────
+
+package "特征提取" {
+    abstract FeatureExtractor {
+        + name() : string
+        + strategyType() : StrategyType
+        + extract(Lg,Rg,Lc,Rc) : PipelineResult
+        + extractMono(gray,color) : PipelineResult
+    }
+
+    class AkazeGpnpExtractor {
+        + extract() : AKAZE,光流,投影,匹配
+        + extractMono() : AKAZE,匹配
+    }
+
+    class BinaryCornerExtractor {
+        + extract() : Otsu,模板匹配,角点提取
+        + extractMono() : 同上仅左图
+    }
+
+    class TinyTargetExtractor {
+        + extract() : Otsu,评分,minAreaRect
+        + extractMono() : 同上仅左图
+    }
+
+    FeatureExtractor <|-- AkazeGpnpExtractor
+    FeatureExtractor <|-- BinaryCornerExtractor
+    FeatureExtractor <|-- TinyTargetExtractor
+}
+
+' ──────────────────────────────────────────────
+' PnP 求解层
+' ──────────────────────────────────────────────
+
+package "位姿解算" {
+    class MonoPnPSolver {
+        + solve(pts2d, pts3d, K) : PoseEstimate
+    }
+    note right of MonoPnPSolver : EPnP RANSAC + ITERATIVE
+
+    class InitialPnPSolver {
+        + solve(match, pts3d, K) : PoseEstimate
+    }
+    note right of InitialPnPSolver : RANSAC PnP 300iter + 精化
+
+    class GPnPSolver {
+        + solve(result, pts3d, R, t) : PoseEstimate
+    }
+    note right of GPnPSolver : Eigen LM 7维优化\n交叉射线残差
+}
+
+' ──────────────────────────────────────────────
+' Tracker 层 (核心)
+' ──────────────────────────────────────────────
+
+package "Tracker 核心" {
+    class TrackerBase {
+        # camera_ : StereoCameraParams
+        # config_ : TrackerConfig
+        # template_ : TemplateData
+        # extractor_ : FeatureExtractor
+        # state_ : TrackingState
+        + configureStrategyChain(roi_area)
+        + validateRoi(roi, img, name)
+        + loadImage(img)
+        + finalizePose(pose)
+        + addLogEntry(result)
+        + printLogs()
+    }
+
+    class MonoTracker {
+        - mono_pnp_ : MonoPnPSolver
+        + process(L, viz, group) : PipelineResult
+        - processDualRoi(L, group, viz)
+    }
+
+    class StereoTracker {
+        - gpnp_solver_ : GPnPSolver
+        - initial_pnp_ : InitialPnPSolver
+        - mad_filter_ : MadDisparityFilter
+        + process(L, R, viz, lg, rg) : PipelineResult
+        - processDualRoi(L,R,lg,rg,viz)
+    }
+
+    TrackerBase <|-- MonoTracker
+    TrackerBase <|-- StereoTracker
+    TrackerBase --> FeatureExtractor
+    MonoTracker --> MonoPnPSolver
+    StereoTracker --> InitialPnPSolver
+    StereoTracker --> GPnPSolver
+}
+
+' ──────────────────────────────────────────────
+' 策略链
+' ──────────────────────────────────────────────
+
+note as StrategyNote
+  **策略链（面积→策略→退化）**
+  ROI >= 40001  →  AKAZE
+    退化 ↓
+  ROI 801~40000  →  BinaryCorner
+    退化 ↓
+  ROI <= 800  →  TinyTarget
+end note
+
+' ──────────────────────────────────────────────
+' 主流程
+' ──────────────────────────────────────────────
+
+class "main.cpp" as main {
+    + 解析 tracker_config.json
+    + mode=normal? InputProvider : cv::imread
+    + mono_mode? MonoTracker : StereoTracker
+    + 逐帧 processFrame()
+}
+
+main --> InputProvider
+main --> YoloRoiProvider
+main --> MonoTracker
+main --> StereoTracker
+
+@enduml

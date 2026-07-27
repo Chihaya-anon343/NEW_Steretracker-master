@@ -1,185 +1,190 @@
 @startuml
 
-title Steretracker — 双目/单目视觉定位系统架构
+title Steretracker 系统需求规格 (System Requirements Specification)
 
 ' ──────────────────────────────────────────────
-' 输入层
+' 样式定制，确保需求图在类图语法下也美观、易读
 ' ──────────────────────────────────────────────
-
-package "输入系统" {
-    abstract IStereoImageSource {
-        + open(uri) : bool
-        + nextFrame(left, right, ts) : bool
-        + close()
-    }
-
-    class FileStereoSource {
-        + nextFrame() : 同一帧重复返回
-    }
-
-    class DirectoryStereoSource {
-        + nextFrame() : 逐帧推进
-    }
-
-    class SequenceSource {
-        + nextFrame() : left=当前帧 right=clone
-    }
-
-    class InputProvider {
-        + initialize(config) : bool
-        + getNextPacket(packet) : bool
-    }
-
-    IStereoImageSource <|-- FileStereoSource
-    IStereoImageSource <|-- DirectoryStereoSource
-    IStereoImageSource <|-- SequenceSource
-    InputProvider --> IStereoImageSource
+skinparam class {
+    BackgroundColor White
+    BorderColor #1976D2
+    ArrowColor #37474F
+    FontSize 13
 }
 
-' ──────────────────────────────────────────────
-' 检测层
-' ──────────────────────────────────────────────
+' ====================================================================
+' SYS-REQ-000: 顶层需求
+' ====================================================================
 
-package "检测" {
-    class YoloDetector {
-        + detect(img, detections) : Status
-    }
+class "SYS-REQ-000\nSteretracker 双目/单目视觉定位系统\n\n提供基于 YOLO 检测 → 策略选择 → 特征提取 → 位姿解算 流水线的\n双目/单目视觉定位能力，面向无人机视觉定位场景" as SYS_REQ_000
 
-    class RoiGenerator {
-        + generateGroup(detections) : RoiGroup
-        + generateStereoGroup(L,R) : pair
-    }
+' ====================================================================
+' SYS-REQ-100: 图像输入系统 (绿色)
+' ====================================================================
 
-    class YoloRoiProvider {
-        + detect(L, R) : pair
-        + detectMono(L) : RoiGroup
-    }
+class "SYS-REQ-100\n图像输入系统\n\n支持多种图像源输入，以统一数据包格式向后续流水线提供帧数据" as SYS_REQ_100 #E8F5E9
 
-    YoloRoiProvider --> YoloDetector
-    YoloRoiProvider --> RoiGenerator
-}
+class "SYS-REQ-110\n多源图像加载\n\n支持三种图像源类型：\n(1) file — 静态双目文件对, 每次返回同一帧\n(2) directory — 双目编号图像序列, 按文件名排序逐帧推进\n(3) sequence — 单目图像序列, right=left.clone()\n通过统一接口 IStereoImageSource 抽象,\n由 InputProvider 创建并管理生命周期" as SYS_REQ_110 #E8F5E9
 
-' ──────────────────────────────────────────────
-' 特征提取层
-' ──────────────────────────────────────────────
+class "SYS-REQ-120\n统一数据包封装 (SensorPacket)\n\n每一帧封装为 SensorPacket 结构体, 包含:\n- timestamp_us (图像时间戳, 微秒)\n- left_image / right_image (OpenCV Mat)\n- imu / height (Phase 2 预留, 当前置空)\n- valid 标志位\n支持 RingBuffer 线程安全缓冲区缓存" as SYS_REQ_120 #E8F5E9
 
-package "特征提取" {
-    abstract FeatureExtractor {
-        + name() : string
-        + strategyType() : StrategyType
-        + extract(Lg,Rg,Lc,Rc) : PipelineResult
-        + extractMono(gray,color) : PipelineResult
-    }
+class "SYS-REQ-130\n双目/单目模式切换\n\n通过配置文件 mono_mode 字段控制:\n- false: 创建 StereoTracker (双目), 需要左右成对图像\n- true:  创建 MonoTracker (单目), 仅使用左图\n两种模式均支持 normal/debug 运行模式和双 ROI 策略" as SYS_REQ_130 #E8F5E9
 
-    class AkazeGpnpExtractor {
-        + extract() : AKAZE,光流,投影,匹配
-        + extractMono() : AKAZE,匹配
-    }
+class "SYS-REQ-140\n未来传感器扩展预留\n\n在 InputProvider 中预留 IMU (IImuSource) 和高度计\n(IAltimeterSource) 接口创建方法, Phase 2 实现时间对齐与融合.\nSensorPacket 已预留 imu/height 字段,\nRingBuffer 已提供多传感器时间对齐基础设施" as SYS_REQ_140 #E8F5E9
 
-    class BinaryCornerExtractor {
-        + extract() : Otsu,模板匹配,角点提取
-        + extractMono() : 同上仅左图
-    }
+' ====================================================================
+' SYS-REQ-200: 目标检测与 ROI 生成 (橙色)
+' ====================================================================
 
-    class TinyTargetExtractor {
-        + extract() : Otsu,评分,minAreaRect
-        + extractMono() : 同上仅左图
-    }
+class "SYS-REQ-200\n目标检测与 ROI 生成\n\n通过 YOLO ONNX 模型检测目标, 生成单/双 ROI 区域,\n为后续特征提取提供精准的目标区域裁剪" as SYS_REQ_200 #FFF3E0
 
-    FeatureExtractor <|-- AkazeGpnpExtractor
-    FeatureExtractor <|-- BinaryCornerExtractor
-    FeatureExtractor <|-- TinyTargetExtractor
-}
+class "SYS-REQ-210\nYOLO ONNX 目标检测\n\n基于 ONNX Runtime 运行 YOLO 推理 (best.onnx):\n- 支持可配置的置信度阈值 (conf_threshold)\n- 支持目标类别过滤 (target_class_id)\n- 支持 CPU/GPU 设备类型切换\n- 检测失败时跳过该帧, 不走全图回退" as SYS_REQ_210 #FFF3E0
 
-' ──────────────────────────────────────────────
-' PnP 求解层
-' ──────────────────────────────────────────────
+class "SYS-REQ-220\n单 ROI 生成\n\nRoiGenerator 对 YOLO 检测结果:\n- 按面积筛选: 优先选择 class 0 最大边界框\n- 按 roi_expand_ratio 外扩 ROI 边界\n- 确保 ROI 不小于 roi_min_size\n- 输出 RoiRect (x, y, width, height)" as SYS_REQ_220 #FFF3E0
 
-package "位姿解算" {
-    class MonoPnPSolver {
-        + solve(pts2d, pts3d, K) : PoseEstimate
-    }
-    note right of MonoPnPSolver : EPnP RANSAC + ITERATIVE
+class "SYS-REQ-230\n双 ROI 生成\n\n当 class 0 检测框面积 > dual_trigger_area (默认 490000 px²)\n且存在 class 1 检测时, 生成双 ROI 组:\n- primary (class 0): 目标整体边缘区域, 用于 BinaryCorner 角点提取\n- secondary (class 1): 目标中心纹理区域, 用于 AKAZE 特征提取\n- is_dual 标志位 = true\nsecondary ROI 可按 secondary_expand_pixels 额外拓展" as SYS_REQ_230 #FFF3E0
 
-    class InitialPnPSolver {
-        + solve(match, pts3d, K) : PoseEstimate
-    }
-    note right of InitialPnPSolver : RANSAC PnP 300iter + 精化
+class "SYS-REQ-240\n近距离回退机制\n\n当 class 0 未检测到但 class 1 有效区域面积 > class1_min_area 时:\n- 将 class 1 检测框按 roi_expand_ratio 扩展,\n  且不低于 min_expand_pixels\n- 生成对应的单 ROI 作为后备输入\n该机制仅在 close_range.enabled=true 时生效" as SYS_REQ_240 #FFF3E0
 
-    class GPnPSolver {
-        + solve(result, pts3d, R, t) : PoseEstimate
-    }
-    note right of GPnPSolver : Eigen LM 7维优化\n交叉射线残差
-}
+' ====================================================================
+' SYS-REQ-300: 特征提取策略 (蓝色)
+' ====================================================================
 
-' ──────────────────────────────────────────────
-' Tracker 层 (核心)
-' ──────────────────────────────────────────────
+class "SYS-REQ-300\n特征提取策略\n\n根据 ROI 面积自动选择最优特征提取策略,\n支持退化后备链以确保鲁棒性" as SYS_REQ_300 #E3F2FD
 
-package "Tracker 核心" {
-    class TrackerBase {
-        # camera_ : StereoCameraParams
-        # config_ : TrackerConfig
-        # template_ : TemplateData
-        # extractor_ : FeatureExtractor
-        # state_ : TrackingState
-        + configureStrategyChain(roi_area)
-        + validateRoi(roi, img, name)
-        + loadImage(img)
-        + finalizePose(pose)
-        + addLogEntry(result)
-        + printLogs()
-    }
+class "SYS-REQ-310\n不同距离下的目标分类\n\n基于 ROI 面积分级, 模拟距离远近：\n- 远距离：ROI 面积 <= 800 | 策略：TinyTarget | 4角点\n- 中距离：ROI 面积 801 ~ 40000 | 策略：BinaryCorner | N角点\n- 近距离：ROI 面积 >= 40001 | 策略：AKAZE_GPNP | AKAZE+光流\n面积阈值可通过配置项 akaze_min_area / tiny_max_area 调整.\n越远面积越小, 对应越简单的特征模型; 越近面积越大, 对应越丰富的特征" as SYS_REQ_310 #E3F2FD
 
-    class MonoTracker {
-        - mono_pnp_ : MonoPnPSolver
-        + process(L, viz, group) : PipelineResult
-        - processDualRoi(L, group, viz)
-    }
+class "SYS-REQ-320\nAKAZE_GPNP 策略 (近距离 / 大面积)\n\n适用于 ROI 面积 >= akaze_min_area (默认 40001 px²):\n- AKAZE 特征检测 + 61 维二值描述子\n- LK 金字塔光流 L→R 追踪 + Forward-Backward 一致性校验\n- 立体投影 (视差→深度→右图重投影)\n- 三阶段模板匹配: Ratio Test → Cross-Check → Homography RANSAC\n- MAD 视差异常点滤波\n- 位姿解算: InitialPnP (首帧) → GPnPSolver (Eigen LM 7维)" as SYS_REQ_320 #E3F2FD
 
-    class StereoTracker {
-        - gpnp_solver_ : GPnPSolver
-        - initial_pnp_ : InitialPnPSolver
-        - mad_filter_ : MadDisparityFilter
-        + process(L, R, viz, lg, rg) : PipelineResult
-        - processDualRoi(L,R,lg,rg,viz)
-    }
+class "SYS-REQ-330\nBinaryCorner 策略 (中距离 / 中等面积)\n\n适用于 ROI 面积 801 ~ akaze_min_area-1 (默认 4 万 px²):\n- Otsu 二值化 → 保留最大连通域 → 形态学平滑\n- 模板匹配 (IoU) → 旋转回正\n- approxPolyDP 二分搜索 N 角点 → 逆旋转还原\n- 模板角点重排序 (reorderByGeometry 极角对齐)\n- 立体配对: 左右图独立提取 + 视差计算\n- 位姿解算: InitialPnP/深度估算(首帧) → GPnPSolver (后续帧)" as SYS_REQ_330 #E3F2FD
 
-    TrackerBase <|-- MonoTracker
-    TrackerBase <|-- StereoTracker
-    TrackerBase --> FeatureExtractor
-    MonoTracker --> MonoPnPSolver
-    StereoTracker --> InitialPnPSolver
-    StereoTracker --> GPnPSolver
-}
+class "SYS-REQ-340\nTinyTarget 策略 (远距离 / 小面积)\n\n适用于 ROI 面积 <= tiny_max_area (默认 800 px²):\n- Otsu 二值化 → 模板匹配 (IoU, 遍历所有模板角度)\n- 超分辨率放大 (xscale_factor) → 高斯模糊 → 二值化 → 形态学\n- 连通域评分 (面积/矩形度/中心距/长宽比)\n- minAreaRect → 4 顶点 → cornerSubPix 亚像素精化\n- 角度对齐 (4 象限量化: 0/90/180/270°)\n- 位姿解算: cv::solvePnP(ITERATIVE) — 不走 GPNP,\n  用 4 个正方形物点直接求解" as SYS_REQ_340 #E3F2FD
 
-' ──────────────────────────────────────────────
-' 策略链
-' ──────────────────────────────────────────────
+class "SYS-REQ-350\n双 ROI 混合特征点提取法\n\n当 is_dual=true 时触发, 不走单策略链, 而是并行提取并合并:\n(1) class 0 ROI (primary): BinaryCorner 提取 N 个边缘角点\n    及对应 3D 物点 (dual_bc_tmpl_pts3d_)\n(2) class 1 ROI (secondary): AKAZE 提取 M 个纹理特征点\n    及对应 3D 物点 (模板关键点 → trainIdx 查找)\n(3) 合并阶段:\n    - BC 角点[i] <-> dual_bc_tmpl_pts3d_[i]\n    - AK 匹配点[i] <-> ak_pts3d[good_matches[i].trainIdx]\n    - 坐标变换: class1-local → class0-local → 全图坐标\n(4) 位姿解算:\n    双目 → InitialPnP(首帧) + GPnPSolver (Eigen LM) + 立体射线约束\n    单目 → MonoPnPSolver (EPnP RANSAC + ITERATIVE)\n模板预处理: prepareDualBcTemplate() 首次一次性从 AKAZE 模板\n图像提取 BC 角点及 3D 物点, 后续帧直接复用" as SYS_REQ_350 #E3F2FD
 
-note as StrategyNote
-  **策略链（面积→策略→退化）**
-  ROI >= 40001  →  AKAZE
-    退化 ↓
-  ROI 801~40000  →  BinaryCorner
-    退化 ↓
-  ROI <= 800  →  TinyTarget
-end note
+class "SYS-REQ-360\n退化后备链\n\n当主策略特征提取失败时, 自动降级到低一级精度策略:\n- AKAZE_GPNP 降级链：AKAZE → BinaryCorner → TinyTarget (终止)\n- BinaryCorner 降级链：BinaryCorner → TinyTarget (终止)\n- TinyTarget 降级链：无后备 (链末端)\n\n退化触发条件:\n- AKAZE: 关键点 < 4 个\n- BinaryCorner: 角点提取为空\n- 退化后使用对应后备策略的 PnP 解算路径\n所有策略失败则输出 \"All strategies failed\", 不中断整个序列处理" as SYS_REQ_360 #E3F2FD
 
-' ──────────────────────────────────────────────
-' 主流程
-' ──────────────────────────────────────────────
+' ====================================================================
+' SYS-REQ-400: 位姿估计 (紫色)
+' ====================================================================
 
-class "main.cpp" as main {
-    + 解析 tracker_config.json
-    + mode=normal? InputProvider : cv::imread
-    + mono_mode? MonoTracker : StereoTracker
-    + 逐帧 processFrame()
-}
+class "SYS-REQ-400\n位姿估计\n\n根据策略和模式选择对应 PnP 求解器,\n输出目标相对于左相机的旋转矩阵 R 和平移向量 t" as SYS_REQ_400 #F3E5F5
 
-main --> InputProvider
-main --> YoloRoiProvider
-main --> MonoTracker
-main --> StereoTracker
+class "SYS-REQ-410\n双目 GPnP 非线性优化 (GPnPSolver)\n\n基于 Eigen Levenberg-Marquardt 算法,\n优化 7 维参数空间 [qx, qy, qz, qw, tx, ty, tz]:\n- 残差: 双目交叉射线 (cross-product) 残差\n- Jacobian: Eigen 自动数值差分\n- 初值: 首帧由 InitialPnP 或视差深度估算提供,\n        后续帧用上一帧位姿 warm-start\n- 约束: 重投影误差 + 立体射线交叉残差\n适用于 BinaryCorner / AKAZE_GPNP / Dual-ROI 策略" as SYS_REQ_410 #F3E5F5
+
+class "SYS-REQ-420\n单目 EPnP 位姿解算 (MonoPnPSolver)\n\n基于 OpenCV solvePnP 求解, 无立体约束:\n- 阶段 1: cv::solvePnPRansac(SOLVEPNP_EPNP)\n          300 次迭代, 8.0px 重投影误差, 0.99 置信度\n- 阶段 2: cv::solvePnP(SOLVEPNP_ITERATIVE, useExtrinsicGuess=true)\n          仅对 RANSAC 内点子集精化\n- 无帧间缓存, 无 warm-start\n适用于所有单目模式策略 (含 Mono Dual-ROI)" as SYS_REQ_420 #F3E5F5
+
+class "SYS-REQ-430\n初始位姿估计\n\n(1) InitialPnPSolver: RANSAC PnP (300 次迭代, 8.0px)\n    → ITERATIVE 精化, 成功后作为 GPnP warm-start\n(2) 视差深度估算: 若 InitialPnP 失败或 use_initial_pnp=false,\n    由视差中位数估算 depth = f·b / median_disp,\n    clamp 至 [50, 5000] mm, 作为初值 (0, 0, depth)\n首帧使用上述初始值, 后续帧直接 warm-start 上一帧位姿" as SYS_REQ_430 #F3E5F5
+
+class "SYS-REQ-440\n位姿有效性校验\n\n所有位姿输出需通过以下校验:\n(1) t.z > 0 — 相机在目标平面前方\n(2) 10 < |t| < 20000 mm — 深度在合理范围\n(3) R, t 所有分量有限 (无 NaN/Inf)\n(4) 旋转矩阵行列式 ≈ 1.0\n校验失败则标记该帧为失败, 不输出位姿" as SYS_REQ_440 #F3E5F5
+
+' ====================================================================
+' SYS-REQ-500: 输出与可视化 (粉红色)
+' ====================================================================
+
+class "SYS-REQ-500\n输出与可视化\n\n提供控制台日志输出和可视化图像保存,\n输出内容由运行模式 (normal/debug) 控制" as SYS_REQ_500 #FFEBEE
+
+class "SYS-REQ-510\n控制台日志输出\n\nNormal 模式: 每帧一行简洁摘要\n  [Frame N] StrategyName  n=X  r=[rx,ry,rz]  t=[tx,ty,tz]\n  失败时输出 [Frame N] FAILED\nDebug 模式: 详细统计信息\n  特征点 匹配 投影 模板匹配 视差 GPNP 状态 耗时\nYOLO 检测失败时输出提示并跳过该帧" as SYS_REQ_510 #FFEBEE
+
+class "SYS-REQ-520\n可视化图像保存\n\n当 visualize=true 时保存到 output/ 目录:\nNormal 模式: 仅三维坐标轴叠加图\n  单目: output/<dir>/mono_fN.png\n  双目: output/<dir>/stereo_fN.png\nDebug 模式: 各策略完整中间面板\n  AKAZE: 特征/立体/模板/坐标轴 4 面板\n  BinaryCorner: 二值/轴系/模板/立体/重投影 5 面板\n  Dual-ROI: 双ROI合并 5 面板 (双目) / 3 面板 (单目)\n  TinyTarget: 标准 solvePnP 输出" as SYS_REQ_520 #FFEBEE
+
+class "SYS-REQ-530\n帧处理日志表格\n\nTrackerBase 内部维护 TrackingState 日志列表,\n包含每帧特征数、匹配数、视差中位数、耗时等统计信息.\n通过 printLogs() 在 Debug 模式结束时输出汇总表格" as SYS_REQ_530 #FFEBEE
+
+' ====================================================================
+' SYS-REQ-600: 配置与运行模式 (黄色)
+' ====================================================================
+
+class "SYS-REQ-600\n配置与运行模式\n\n通过 JSON 配置文件统一管理所有参数,\n支持 normal/debug 两种运行模式" as SYS_REQ_600 #FFF9C4
+
+class "SYS-REQ-610\nJSON 配置文件驱动\n\n所有参数集中在 config/tracker_config.json:\n- mode: 运行模式 (normal/debug)\n- mono_mode: 单目/双目切换\n- camera: 相机内参 (fx/fy/cx/cy/baseline_mm)\n- yolo: ONNX 模型路径/置信度/目标类别/ROI扩展\n- strategies: 各策略参数 (面积阈值/模板路径/角点数/缩放等)\n- input / input_system: 图像源路径/类型/帧数限制\n- output: 可视化开关\n支持命令行参数指定配置文件路径: ./GPNP [config_path]" as SYS_REQ_610 #FFF9C4
+
+class "SYS-REQ-620\nNormal / Debug 双模式\n\n* Normal模式: InputProvider图像源 | YOLO自动检测ROI | 简洁输出摘要 | 三维叠加图\n* Debug模式: cv::imread图像源 | 手动/YOLO检测ROI | 详细运行统计 | 完整中间面板\n两模式互斥, 通过顶层 mode 字段一键切换" as SYS_REQ_620 #FFF9C4
+
+class "SYS-REQ-630\n参数校验工厂函数\n\n提供三个带参数校验的工厂函数:\n(1) makeStereoCameraParams(K, R_rl, t_rl)\n    校验 K 为标准内参形式, R_rl det=1.0, 无 NaN/Inf\n(2) makeTrackerConfig(scale, min_pts, ...)\n    校验 0<scale<=1, min_pts>=3, 模板尺寸/面积阈值为正\n(3) makeYoloConfig(model_path, device, conf)\n    校验模型路径非空, conf/iou 在 (0,1], 输入尺寸为正\n校验失败时抛出异常, 阻止系统在不合理参数下运行" as SYS_REQ_630 #FFF9C4
+
+' ====================================================================
+' SYS-REQ-700: 非功能需求 (灰色)
+' ====================================================================
+
+class "SYS-REQ-700\n非功能需求\n\n系统的质量属性与运行约束" as SYS_REQ_700 #E0E0E0
+
+class "SYS-REQ-710\n运行环境\n\n- 语言标准: C++17\n- 操作系统: Windows 11 / Linux\n- 核心依赖: OpenCV 4.x (core/features2d/calib3d/imgproc/imgcodecs)\n           Eigen 3.x (线性代数, LM 优化)\n           ONNX Runtime (YOLO 模型推理)\n- 构建系统: CMake 3.x" as SYS_REQ_710 #E0E0E0
+
+class "SYS-REQ-720\n实时性要求\n\n- 单帧处理时间目标: < 100ms (不含 YOLO 推理)\n- YOLO 推理在 CPU 上\n- GPNP 优化最大迭代次数可配置\n- 支持 ONNX Runtime 推理线程数配置\n当前为离线/准实时处理, 不要求硬实时约束" as SYS_REQ_720 #E0E0E0
+
+class "SYS-REQ-730\n鲁棒性要求\n\n(1) 退化鲁棒性: 单策略失败不中断流水线, 自动降级到后备策略\n(2) 异常安全性: 逐帧 try-catch, 单帧异常不导致整个序列崩溃\n(3) 输入鲁棒性: 输入图像为空时抛出清晰错误信息, YOLO 检测失败时跳过该帧\n(4) 数值鲁棒性: 位姿校验过滤 NaN/Inf/异常深度, MAD 滤波剔除视差异常点\n(5) 配置鲁棒性: 缺失配置项使用合理默认值, 参数越界由工厂函数提前拦截" as SYS_REQ_730 #E0E0E0
+
+class "SYS-REQ-740\n可扩展性要求\n\n(1) 输入系统: IStereoImageSource 接口支持新增图像源类型\n(2) 传感器融合: SensorPacket 预留 IMU/高度计字段\n(3) 特征提取器: FeatureExtractor 基类支持新增策略\n(4) PnP 求解器: 可通过 TrackerBase 派生新 Tracker 类替换位姿解算" as SYS_REQ_740 #E0E0E0
+
+
+' ====================================================================
+' 关系树：主线追踪 (<<trace>>)
+' ====================================================================
+
+SYS_REQ_000 -down-> SYS_REQ_100 : <<trace>>
+SYS_REQ_000 -down-> SYS_REQ_200 : <<trace>>
+SYS_REQ_000 -down-> SYS_REQ_300 : <<trace>>
+SYS_REQ_000 -down-> SYS_REQ_400 : <<trace>>
+SYS_REQ_000 -down-> SYS_REQ_500 : <<trace>>
+SYS_REQ_000 -down-> SYS_REQ_600 : <<trace>>
+SYS_REQ_000 -down-> SYS_REQ_700 : <<trace>>
+
+SYS_REQ_100 -down-> SYS_REQ_110 : <<trace>>
+SYS_REQ_100 -down-> SYS_REQ_120 : <<trace>>
+SYS_REQ_100 -down-> SYS_REQ_130 : <<trace>>
+SYS_REQ_100 -down-> SYS_REQ_140 : <<trace>>
+
+SYS_REQ_200 -down-> SYS_REQ_210 : <<trace>>
+SYS_REQ_200 -down-> SYS_REQ_220 : <<trace>>
+SYS_REQ_200 -down-> SYS_REQ_230 : <<trace>>
+SYS_REQ_200 -down-> SYS_REQ_240 : <<trace>>
+
+SYS_REQ_300 -down-> SYS_REQ_310 : <<trace>>
+SYS_REQ_300 -down-> SYS_REQ_320 : <<trace>>
+SYS_REQ_300 -down-> SYS_REQ_330 : <<trace>>
+SYS_REQ_300 -down-> SYS_REQ_340 : <<trace>>
+SYS_REQ_300 -down-> SYS_REQ_350 : <<trace>>
+SYS_REQ_300 -down-> SYS_REQ_360 : <<trace>>
+
+SYS_REQ_400 -down-> SYS_REQ_410 : <<trace>>
+SYS_REQ_400 -down-> SYS_REQ_420 : <<trace>>
+SYS_REQ_400 -down-> SYS_REQ_430 : <<trace>>
+SYS_REQ_400 -down-> SYS_REQ_440 : <<trace>>
+
+SYS_REQ_500 -down-> SYS_REQ_510 : <<trace>>
+SYS_REQ_500 -down-> SYS_REQ_520 : <<trace>>
+SYS_REQ_500 -down-> SYS_REQ_530 : <<trace>>
+
+SYS_REQ_600 -down-> SYS_REQ_610 : <<trace>>
+SYS_REQ_600 -down-> SYS_REQ_620 : <<trace>>
+SYS_REQ_600 -down-> SYS_REQ_630 : <<trace>>
+
+SYS_REQ_700 -down-> SYS_REQ_710 : <<trace>>
+SYS_REQ_700 -down-> SYS_REQ_720 : <<trace>>
+SYS_REQ_700 -down-> SYS_REQ_730 : <<trace>>
+SYS_REQ_700 -down-> SYS_REQ_740 : <<trace>>
+
+' ====================================================================
+' 跨层依赖关联 
+' ====================================================================
+
+SYS_REQ_230 -down-> SYS_REQ_350 : <<trace>>
+note on link: 双ROI检测触发\n混合特征点提取
+
+SYS_REQ_310 -down-> SYS_REQ_320 : <<refine>>
+note on link: 面积分级\n触发策略选择
+
+SYS_REQ_310 -down-> SYS_REQ_330 : <<refine>>
+SYS_REQ_310 -down-> SYS_REQ_340 : <<refine>>
+
+SYS_REQ_130 -down-> SYS_REQ_410 : <<trace>>
+note on link: 双目模式触发 GPnP
+
+SYS_REQ_130 -down-> SYS_REQ_420 : <<trace>>
+note on link: 单目模式触发 EPnP
+
+SYS_REQ_620 -down-> SYS_REQ_510 : <<refine>>
+SYS_REQ_620 -down-> SYS_REQ_520 : <<refine>>
+note on link: 运行模式\n控制输出粒度
 
 @enduml
