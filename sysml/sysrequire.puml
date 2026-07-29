@@ -1,6 +1,6 @@
 @startuml
 
-title Steretracker 系统需求规格 (System Requirements Specification) - V2 (原子化重构)
+title Steretracker 系统需求规格 (System Requirements Specification) - V3 (五状态模型)
 
 ' ──────────────────────────────────────────────
 ' 样式定制
@@ -15,7 +15,7 @@ skinparam class {
 ' ====================================================================
 ' SYS-REQ-000: 顶层需求
 ' ====================================================================
-class "SYS-REQ-000\nSteretracker 双目/单目视觉定位系统\n\n提供基于 YOLO 检测 → 策略选择 → 特征提取 → 位姿解算 流水线的\n双目/单目视觉定位能力，面向无人机视觉定位场景" as SYS_REQ_000
+class "SYS-REQ-000\nSteretracker 双目/单目视觉定位系统\n\n提供基于 YOLO 检测 → 五状态分级 → 策略选择 → 特征提取 → 位姿解算 流水线的\n双目/单目视觉定位能力，面向无人机视觉定位场景" as SYS_REQ_000
 
 ' ====================================================================
 ' SYS-REQ-100: 图像输入系统 (绿色)
@@ -32,42 +32,70 @@ class "SYS-REQ-122\nSensorPacket 预留字段\n\n- imu (IMU 数据)\n- height (�
 class "SYS-REQ-123\n线程安全缓冲\n\n支持使用 RingBuffer 作为线程安全的帧缓冲队列" as SYS_REQ_123 #E8F5E9
 
 class "SYS-REQ-130\n双目/单目模式切换\n\n通过配置文件 mono_mode 字段在系统初始化时全局切换" as SYS_REQ_130 #E8F5E9
-class "SYS-REQ-131\n双目模式 (mono_mode: false)\n\n创建 StereoTracker 实例，需要左右成对图像" as SYS_REQ_131 #E8F5E9
-class "SYS-REQ-132\n单目模式 (mono_mode: true)\n\n创建 MonoTracker 实例，仅使用左图" as SYS_REQ_132 #E8F5E9
+class "SYS-REQ-131\n双目模式 (mono_mode: false)\n\n创建 StereoTracker 实例，需要左右成对图像\n使用 GPnPSolver + InitialPnP + MadFilter" as SYS_REQ_131 #E8F5E9
+class "SYS-REQ-132\n单目模式 (mono_mode: true)\n\n创建 MonoTracker 实例，仅使用左图\n使用 MonoPnPSolver (EPnP)" as SYS_REQ_132 #E8F5E9
 
 class "SYS-REQ-140\n未来传感器扩展预留\n\nInputProvider 中已为 Phase 2 融合预留接口与数据结构" as SYS_REQ_140 #E8F5E9
 
 ' ====================================================================
 ' SYS-REQ-200: 目标检测与 ROI 生成 (橙色)
 ' ====================================================================
-class "SYS-REQ-200\n目标检测与 ROI 生成\n\n通过 YOLO ONNX 模型检测目标, 生成单/双 ROI 区域,\n为后续特征提取提供精准的目标区域裁剪" as SYS_REQ_200 #FFF3E0
+class "SYS-REQ-200\n目标检测与 ROI 生成\n\n通过 YOLO ONNX 模型检测目标, 生成单/双 ROI 区域,\n根据检测结果与面积完成五状态分级" as SYS_REQ_200 #FFF3E0
 class "SYS-REQ-210\nYOLO ONNX 目标检测\n\n基于 ONNX Runtime 运行 YOLO 推理 (best.onnx)" as SYS_REQ_210 #FFF3E0
 class "SYS-REQ-211\nYOLO 推理配置\n\n- 支持可配置的置信度阈值 (conf_threshold)\n- 支持目标类别过滤 (target_class_id)\n- 支持 CPU/GPU 设备类型切换" as SYS_REQ_211 #FFF3E0
 
 class "SYS-REQ-220\n单 ROI 生成\n\nRoiGenerator 对 YOLO 检测结果，生成单个感兴趣区域" as SYS_REQ_220 #FFF3E0
-class "SYS-REQ-221\n单 ROI 生成规则\n\n- 按面积筛选: 优先选择 class 0 最大边界框\n- 按 roi_expand_ratio 外扩 ROI 边界\n- 确保 ROI 不小于 roi_min_size" as SYS_REQ_221 #FFF3E0
+class "SYS-REQ-221\n单 ROI 生成规则\n\n- 按面积筛选: 优先选择 class 0 最大边界框\n- 按 roi_expand_ratio 外扩 ROI 边界\n- 确保 ROI 不小于 roi_min_size\n- 忽略 class 1 检测结果" as SYS_REQ_221 #FFF3E0
 
-class "SYS-REQ-230\n双 ROI 生成\n\n当检测到 class 0 和 class 1 两个目标时，生成双 ROI 组" as SYS_REQ_230 #FFF3E0
-class "SYS-REQ-231\n双 ROI 触发条件\n\n- class 0 检测框面积 > dual_trigger_area (默认 490000 px²)\n- 且场景中存在 class 1 检测框" as SYS_REQ_231 #FFF3E0
+class "SYS-REQ-230\n双 ROI 生成\n\n当检测到 class 0 和 class 1 两个目标，且 class 0 面积达标时，生成双 ROI 组" as SYS_REQ_230 #FFF3E0
+class "SYS-REQ-231\n双 ROI 触发条件\n\n- class 0 检测框面积 > dual_trigger_area (占位值: 490000 px²)\n- 且场景中存在 class 1 检测框" as SYS_REQ_231 #FFF3E0
 class "SYS-REQ-232\n双 ROI 内容定义\n\n- primary (class 0): 目标整体边缘区域, 用于 BinaryCorner\n- secondary (class 1): 目标中心纹理区域, 用于 AKAZE" as SYS_REQ_232 #FFF3E0
-class "SYS-REQ-233\n双 ROI 降级\n\n若不满足触发条件，即使检测到两个目标，仍按单 ROI (class 0) 处理" as SYS_REQ_233 #FFF3E0
+class "SYS-REQ-233\n双 ROI 降级\n\n若不满足触发条件 (面积不足或无 class 1)，即使检测到两个目标，\n仍按单 ROI (class 0) 处理，忽略 class 1" as SYS_REQ_233 #FFF3E0
 
+class "SYS-REQ-240\nYOLO 无检测处理\n\nYOLO 未检测到任何目标时，直接跳过当前帧，不触发策略退化链\n(策略退化仅在特征提取失败时发生，检测失败与特征失败是两个独立阶段)" as SYS_REQ_240 #FFF3E0
+
+class "SYS-REQ-250\n近距离 class1 回退 (CloseRange)\n\n当 class 0 丢失但 class 1 存在且面积 ≥ class1_min_area 时，\n使用 class 1 生成 ROI 并按面积走标准策略链" as SYS_REQ_250 #FFF3E0
 
 ' ====================================================================
-' SYS-REQ-300: 特征提取策略 (蓝色)
+' SYS-REQ-300: 特征提取策略 (蓝色) — 五状态模型
 ' ====================================================================
-class "SYS-REQ-300\n特征提取策略\n\n根据 ROI 面积自动选择最优特征提取策略, 支持退化后备链" as SYS_REQ_300 #E3F2FD
-class "SYS-REQ-310\n不同距离下的目标分类\n\n基于 ROI 面积分级, 模拟远、中、近、极近距离，选择不同策略" as SYS_REQ_310 #E3F2FD
-class "SYS-REQ-311\n远距离策略 (TinyTarget)\n\n- 触发条件: ROI 面积 <= 800\n- 提取特征: 4个角点 (minAreaRect)" as SYS_REQ_311 #E3F2FD
-class "SYS-REQ-312\n中距离策略 (BinaryCorner)\n\n- 触发条件: ROI 面积 801 ~ 40000\n- 提取特征: N个角点 (approxPolyDP)" as SYS_REQ_312 #E3F2FD
-class "SYS-REQ-313\n近距离策略 (AKAZE_GPNP)\n\n- 触发条件: ROI 面积 40001 ~ 99998\n- 提取特征: AKAZE + 光流" as SYS_REQ_313 #E3F2FD
-class "SYS-REQ-314\n极近距离策略 (Dual-ROI)\n\n- 触发条件: ROI 面积 >= 99999 (且满足双ROI条件)\n- 提取特征: AKAZE + BinaryCorner 混合" as SYS_REQ_314 #E3F2FD
+class "SYS-REQ-300\n五状态目标分级与特征提取策略\n\n根据 YOLO 检测结果 (class 存在情况) 与 ROI 面积\n将目标分为五种状态，选择对应策略。\n双眼共享判定逻辑，差异仅在位姿解算器。" as SYS_REQ_300 #E3F2FD
 
-class "SYS-REQ-320\nAKAZE_GPNP 策略细节\n\n适用于近距离 (ROI > 40k)，提取 AKAZE 特征点并进行位姿解算" as SYS_REQ_320 #E3F2FD
-class "SYS-REQ-330\nBinaryCorner 策略细节\n\n适用于中距离 (ROI 0.8k~40k)，提取轮廓角点进行位姿解算" as SYS_REQ_330 #E3F2FD
-class "SYS-REQ-340\nTinyTarget 策略细节\n\n适用于远距离 (ROI < 0.8k)，提取包围盒4顶点进行位姿解算" as SYS_REQ_340 #E3F2FD
-class "SYS-REQ-350\n双 ROI 混合特征点提取法\n\n当 is_dual=true 时触发, 不走单策略链, 而是并行提取并合并" as SYS_REQ_350 #E3F2FD
-class "SYS-REQ-360\n退化后备链\n\n当主策略特征提取失败时, 自动降级到低一级精度策略" as SYS_REQ_360 #E3F2FD
+class "SYS-REQ-310\nState 1 — 远 (Distant)\n\n条件: 有 class 0, 面积 ≤ tiny_max_area (占位值: 800)\n策略: TinyTarget (4角点 minAreaRect)\n双目: cv::solvePnP(ITERATIVE)\n单目: MonoPnPSolver (EPnP)" as SYS_REQ_311 #E3F2FD
+
+class "SYS-REQ-320\nState 2 — 中 (Medium)\n\n条件: 有 class 0, 面积 tiny_max_area < A ≤ akaze_min_area (占位值: 801~40000)\n策略: BinaryCorner (N角点 approxPolyDP)\n双目: InitialPnP → GPnPSolver (warm-start)\n单目: MonoPnPSolver (EPnP)" as SYS_REQ_312 #E3F2FD
+
+class "SYS-REQ-330\nState 3 — 中近 (Medium-Close)\n\n条件: 有 class 0, 面积 akaze_min_area < A ≤ dual_trigger_area (占位值: 40001~489999)\n      或 有 class 0 (无 class 1), 面积 ≥ dual_trigger_area\n策略: AKAZE 单ROI (class 0)，忽略 class 1\n双目: InitialPnP → GPnPSolver (warm-start) + 光流 + 投影 + MAD\n单目: MonoPnPSolver (EPnP)，无光流/投影/MAD\n\n说明: 此状态下无论 class 1 是否存在均走 AKAZE 单ROI" as SYS_REQ_313 #E3F2FD
+
+class "SYS-REQ-340\nState 4 — 近 (Close)\n\n条件: 有 class 0 且有 class 1, 面积 ≥ dual_trigger_area (占位值: 490000)\n策略: Dual-ROI 混合 (BC class0 + AK class1 并行合并)\n双目: InitialPnP → GPnPSolver (warm-start)\n单目: MonoPnPSolver (EPnP)\n\n退化为独立路径，不参与策略退化链" as SYS_REQ_314 #E3F2FD
+
+class "SYS-REQ-350\nState 5 — 极近 (Very-Close)\n\n条件: 无 class 0 但有 class 1, class 1 面积 ≥ class1_min_area\n策略: CloseRange 回退 — 用 class 1 生成 ROI → 按面积重分类 → 走标准策略链\n目的: 近距离 class 0 遮挡/出画面时利用 class 1 继续定位" as SYS_REQ_315 #FFF3E0
+
+class "SYS-REQ-360\n策略退化后备链\n\n当主策略特征提取失败时, 自动降级到低一级精度策略:\nAKAZE_GPNP → BinaryCorner → TinyTarget (终止)\nDual-ROI (State 4) 为独立路径，不进入退化链\nYOLO 无检测时跳过帧，不走退化链" as SYS_REQ_360 #E3F2FD
+
+' ====================================================================
+' SYS-REQ-400: 位姿解算 (红色)
+' ====================================================================
+class "SYS-REQ-400\n位姿解算系统\n\n根据模式 (双眼/单目) 与策略选择不同求解器，\n输出 6-DOF 位姿 [R|t] 并通过有效性校验" as SYS_REQ_400 #FFEBEE
+
+class "SYS-REQ-410\nGPnPSolver (双目通用)\n\nEigen Levenberg-Marquardt 非线性优化\n最小化双目交叉射线残差\n7 维参数空间 [qx,qy,qz,qw,tx,ty,tz]\n支持帧间 warm-start" as SYS_REQ_410 #FFEBEE
+
+class "SYS-REQ-420\nInitialPnPSolver (双目首帧)\n\nRANSAC PnP (300 iter, 8.0px) → ITERATIVE 精化\n为 GPnPSolver 提供初值\n失败时回退: 视差估算深度 或 默认 5000mm" as SYS_REQ_420 #FFEBEE
+
+class "SYS-REQ-430\nMonoPnPSolver (单目通用)\n\nOpenCV EPnP + ITERATIVE 精化\n仅重投影误差约束\n每帧独立求解，无帧间缓存" as SYS_REQ_430 #FFEBEE
+
+class "SYS-REQ-440\n位姿有效性校验\n\n所有求解器输出须通过:\n- t.z > 0 (相机在目标前方)\n- 10 < |t| < 20000 mm (深度合理)\n- R, t 各分量有限 (无 NaN/Inf)" as SYS_REQ_440 #FFEBEE
+
+' ====================================================================
+' SYS-REQ-500: 可视化与输出 (紫色)
+' ====================================================================
+class "SYS-REQ-500\n可视化与输出\n\n根据运行模式 (normal/debug) 提供不同粒度的可视化与终端输出" as SYS_REQ_500 #F3E5F5
+
+class "SYS-REQ-510\nNormal 模式输出\n\n- 终端: 每帧一行 [Frame N] Strategy n=X r=[...] t=[...]\n- 可视化: 仅三维坐标轴叠加到原图\n- 输出目录: output/<输入源目录名>/" as SYS_REQ_510 #F3E5F5
+
+class "SYS-REQ-520\nDebug 模式输出\n\n- 终端: 详细统计 (特征点/匹配/视差/GPNP/耗时)\n- 可视化: 各策略完整中间面板\n  - AKAZE: 4面板 (特征/立体/模板/坐标轴)\n  - BinaryCorner: 5面板 (二值/轴系/模板/立体/重投影)\n  - TinyTarget: solvePnP 输出\n  - Dual-ROI: 5面板 (双ROI合并)\n  - 单目: 3面板 (overview/corners/axes/reproj)\n- 输出目录: output/<图像文件名>/" as SYS_REQ_520 #F3E5F5
+
+class "SYS-REQ-530\n输出目录命名规则\n\n- normal 模式: output/<输入源目录名>/\n- debug 模式: output/<图像文件名(去除' - '后缀)>/\n- 若 visualize=true, 自动创建目录" as SYS_REQ_530 #F3E5F5
 
 ' ====================================================================
 ' SYS-REQ-600: 配置与运行模式 (黄色)
@@ -77,20 +105,27 @@ class "SYS-REQ-610\nJSON 配置文件驱动\n\n所有参数集中在 config/trac
 class "SYS-REQ-620\nNormal / Debug 双模式\n\n通过顶层 mode 字段一键切换，两种模式在图像源、ROI、输出和可视化上均有不同" as SYS_REQ_620 #FFF9C4
 class "SYS-REQ-621\nNormal 模式\n\n- 图像源: InputProvider (实时/序列)\n- ROI: YOLO 自动检测\n- 输出: 每帧一行简洁摘要\n- 可视化: 仅三维坐标轴叠加图" as SYS_REQ_621 #FFF9C4
 class "SYS-REQ-622\nDebug 模式\n\n- 图像源: cv::imread (静态)\n- ROI: 手动或 YOLO\n- 输出: 详细统计信息\n- 可视化: 完整中间过程面板" as SYS_REQ_622 #FFF9C4
-class "SYS-REQ-630\n参数校验工厂函数\n\n提供带参数校验的工厂函数 (make...Params)，校验失败时抛出异常" as SYS_REQ_630 #FFF9C4
+class "SYS-REQ-630\n参数校验工厂函数\n\n提供带参数校验的工厂函数 (make...)，校验失败时抛出异常" as SYS_REQ_630 #FFF9C4
 
-' ... (其余400, 500, 700系列由于结构已较为清晰，保持原状以维持图表简洁性)
-' ... (此处省略，以突出核心修改)
+class "SYS-REQ-640\n阈值为占位值\n\ntiny_max_area / akaze_min_area / dual_trigger_area 三个阈值\n为早期测试遗留值，需在实际场景中重新标定。\n当前仅起占位作用，不影响系统结构。" as SYS_REQ_640 #FFF9C4
 
 ' ====================================================================
-' 关系树（已更新，仅展示部分核心变更）
+' SYS-REQ-700: 构建与部署 (灰色)
 ' ====================================================================
-SYS_REQ_000 -down-> SYS_REQ_100
-SYS_REQ_000 -down-> SYS_REQ_200
-SYS_REQ_000 -down-> SYS_REQ_300
-SYS_REQ_000 -down-> SYS_REQ_600
+class "SYS-REQ-700\n构建与部署\n\nCMake + C++17 项目，依赖 OpenCV / Eigen / ONNX Runtime" as SYS_REQ_700 #ECEFF1
 
-' 100 系列拆分
+' ====================================================================
+' 关系树
+' ====================================================================
+SYS_REQ_000 -down-> SYS_REQ_100 : <<输入>>
+SYS_REQ_000 -down-> SYS_REQ_200 : <<检测>>
+SYS_REQ_000 -down-> SYS_REQ_300 : <<策略>>
+SYS_REQ_000 -down-> SYS_REQ_400 : <<位姿>>
+SYS_REQ_000 -down-> SYS_REQ_500 : <<输出>>
+SYS_REQ_000 -down-> SYS_REQ_600 : <<配置>>
+SYS_REQ_000 -down-> SYS_REQ_700 : <<构建>>
+
+' 100 系列
 SYS_REQ_100 -down-> SYS_REQ_110
 SYS_REQ_110 -down-> SYS_REQ_111
 SYS_REQ_110 -down-> SYS_REQ_112
@@ -104,7 +139,7 @@ SYS_REQ_130 -down-> SYS_REQ_131
 SYS_REQ_130 -down-> SYS_REQ_132
 SYS_REQ_100 -down-> SYS_REQ_140
 
-' 200 系列拆分
+' 200 系列
 SYS_REQ_200 -down-> SYS_REQ_210
 SYS_REQ_210 -down-> SYS_REQ_211
 SYS_REQ_200 -down-> SYS_REQ_220
@@ -113,30 +148,50 @@ SYS_REQ_200 -down-> SYS_REQ_230
 SYS_REQ_230 -down-> SYS_REQ_231
 SYS_REQ_230 -down-> SYS_REQ_232
 SYS_REQ_230 -down-> SYS_REQ_233
+SYS_REQ_200 -down-> SYS_REQ_240
+SYS_REQ_200 -down-> SYS_REQ_250
 
-' 300 系列拆分
-SYS_REQ_300 -down-> SYS_REQ_310
-SYS_REQ_310 -down-> SYS_REQ_311 : <<refine>>
-SYS_REQ_310 -down-> SYS_REQ_312 : <<refine>>
-SYS_REQ_310 -down-> SYS_REQ_313 : <<refine>>
-SYS_REQ_310 -down-> SYS_REQ_314 : <<refine>>
-SYS_REQ_300 -down-> SYS_REQ_320
-SYS_REQ_300 -down-> SYS_REQ_330
-SYS_REQ_300 -down-> SYS_REQ_340
-SYS_REQ_300 -down-> SYS_REQ_350
-SYS_REQ_300 -down-> SYS_REQ_360
+' 300 系列 — 五状态 + 退化
+SYS_REQ_300 -down-> SYS_REQ_311 : <<State 1 远>>
+SYS_REQ_300 -down-> SYS_REQ_312 : <<State 2 中>>
+SYS_REQ_300 -down-> SYS_REQ_313 : <<State 3 中近>>
+SYS_REQ_300 -down-> SYS_REQ_314 : <<State 4 近>>
+SYS_REQ_300 -down-> SYS_REQ_315 : <<State 5 极近>>
+SYS_REQ_300 -down-> SYS_REQ_360 : <<退化链>>
 
-' 600 系列拆分
+' 400 系列
+SYS_REQ_400 -down-> SYS_REQ_410
+SYS_REQ_400 -down-> SYS_REQ_420
+SYS_REQ_400 -down-> SYS_REQ_430
+SYS_REQ_400 -down-> SYS_REQ_440
+
+' 500 系列
+SYS_REQ_500 -down-> SYS_REQ_510
+SYS_REQ_500 -down-> SYS_REQ_520
+SYS_REQ_500 -down-> SYS_REQ_530
+
+' 600 系列
 SYS_REQ_600 -down-> SYS_REQ_610
 SYS_REQ_600 -down-> SYS_REQ_620
 SYS_REQ_620 -down-> SYS_REQ_621 : <<refine>>
 SYS_REQ_620 -down-> SYS_REQ_622 : <<refine>>
 SYS_REQ_600 -down-> SYS_REQ_630
+SYS_REQ_600 -down-> SYS_REQ_640
 
-' 跨层关联关系更新
+' 跨层关联
+SYS_REQ_130 -left-> SYS_REQ_300 : <<trace>>
+note on link: 五种目标状态在双目/单目下\n共享判定逻辑，差异仅在位姿解算器
+
 SYS_REQ_233 -down-> SYS_REQ_220 : <<trace>>
 note on link: 双ROI不满足条件\n降级为单ROI处理
 
+SYS_REQ_250 -down-> SYS_REQ_300 : <<trace>>
+note on link: State 5 极近\nclass1→按面积重分类→走标准策略链
 
+SYS_REQ_311 -down-> SYS_REQ_400 : <<uses>>
+SYS_REQ_312 -down-> SYS_REQ_400 : <<uses>>
+SYS_REQ_313 -down-> SYS_REQ_400 : <<uses>>
+SYS_REQ_314 -down-> SYS_REQ_400 : <<uses>>
+SYS_REQ_315 -down-> SYS_REQ_400 : <<uses>>
 
 @enduml
