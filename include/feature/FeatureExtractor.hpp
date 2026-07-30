@@ -83,6 +83,10 @@ public:
 
     /// 返回此策略使用的模板数据。
     virtual const TemplateData& templateData() const = 0;
+
+    /// 切换 class0 / class1 的 3D 物理尺寸（仅 BC/TT 需要）。
+    /// 默认空实现（AKAZE 忽略）。
+    virtual void setUseClass1(bool /*v*/) {}
 };
 
 } // namespace gpnp

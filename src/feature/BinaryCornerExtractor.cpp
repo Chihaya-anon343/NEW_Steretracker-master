@@ -102,7 +102,12 @@ BinaryCornerExtractor::BinaryCornerExtractor(const Config& config,
 // ============================================================================
 
 void BinaryCornerExtractor::initPts3dFromTemplates() {
-    if (config_.pixel_to_meter_scale <= 0.0) return;
+    double scale = use_class1_ ? config_.pixel_to_meter_scale_class1
+                               : config_.pixel_to_meter_scale_class0;
+    // class1 fallback: 0 → use class0 value
+    if (use_class1_ && scale <= 0.0)
+        scale = config_.pixel_to_meter_scale_class0;
+    if (scale <= 0.0) return;
 
     // 查找 0° 模板
     const TemplateData* tmpl_0 = nullptr;
@@ -111,7 +116,7 @@ void BinaryCornerExtractor::initPts3dFromTemplates() {
     }
     if (tmpl_0 == nullptr) return;
 
-    double s_mm_per_px = config_.pixel_to_meter_scale * 1000.0;  // m/px → mm/px
+    double s_mm_per_px = scale * 1000.0;  // m/px → mm/px
     const auto& tc = tmpl_0->corners;
     template_data_.pts_3d.clear();
     template_data_.pts_3d.reserve(tc.size());
@@ -122,7 +127,15 @@ void BinaryCornerExtractor::initPts3dFromTemplates() {
 
     if (g_verbose_console)
         std::cout << "[BinaryCorner] 3D pts (mm): " << template_data_.pts_3d.size()
-                  << " (angle=0, scale=" << s_mm_per_px << " mm/px)" << std::endl;
+                  << " (angle=0, scale=" << s_mm_per_px << " mm/px"
+                  << "  use_class1=" << (use_class1_ ? "true" : "false") << ")"
+                  << std::endl;
+}
+
+void BinaryCornerExtractor::setUseClass1(bool v) {
+    if (use_class1_ == v) return;
+    use_class1_ = v;
+    initPts3dFromTemplates();
 }
 
 // ============================================================================

@@ -39,8 +39,13 @@ TinyTargetExtractor::TinyTargetExtractor(const Config& config,
 // ============================================================================
 
 void TinyTargetExtractor::initPts3d() {
-    if (config_.square_size_m <= 0.0) return;
-    double half_mm = config_.square_size_m * 1000.0 / 2.0;  // m → mm
+    double sz = use_class1_ ? config_.square_size_m_class1
+                            : config_.square_size_m_class0;
+    // class1 fallback: 0 → use class0 value
+    if (use_class1_ && sz <= 0.0)
+        sz = config_.square_size_m_class0;
+    if (sz <= 0.0) return;
+    double half_mm = sz * 1000.0 / 2.0;  // m → mm
     template_data_.pts_3d = {
         {-half_mm, -half_mm, 0.0},  // 左上
         { half_mm, -half_mm, 0.0},  // 右上
@@ -50,7 +55,14 @@ void TinyTargetExtractor::initPts3d() {
 
     if (g_verbose_console)
         std::cout << "[TinyTarget] 3D pts (mm): half=" << half_mm
-                  << "  square_size_m=" << config_.square_size_m << std::endl;
+                  << "  square_size_m=" << sz
+                  << "  use_class1=" << (use_class1_ ? "true" : "false") << std::endl;
+}
+
+void TinyTargetExtractor::setUseClass1(bool v) {
+    if (use_class1_ == v) return;
+    use_class1_ = v;
+    initPts3d();
 }
 
 // ============================================================================

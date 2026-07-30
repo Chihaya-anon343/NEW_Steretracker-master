@@ -39,7 +39,8 @@ public:
         int kernel_size = 3;                  ///< 形态学核大小（强制为奇数）
         double scale = 1.0;                   ///< 内部放大系数，用于亚像素精度
         cv::Size target_size{100, 100};       ///< 模板匹配归一化尺寸
-        double pixel_to_meter_scale = 0.0;    ///< 比例：1 模板像素 = ? 米
+        double pixel_to_meter_scale_class0 = 0.0;  ///< class0 比例：1 模板像素 = ? 米
+        double pixel_to_meter_scale_class1 = 0.0;  ///< class1 比例（0 则回退 class0）
         int roi_pad_pixels = 0;               ///< 在所有方向上扩展 ROI N 个像素
         double otsu_ratio = 1.3;              ///< Otsu 阈值乘数（>1 = 更严格）
     };
@@ -77,6 +78,8 @@ public:
                                 const cv::Mat& color) override;
 
     const TemplateData& templateData() const override { return template_data_; }
+
+    void setUseClass1(bool v) override;
 
     // ---- 提取后状态 ----
 
@@ -161,7 +164,7 @@ private:
     // 日志记录
     void logStep(const std::string& step, const std::string& info);
 
-    /// 一次性从 0° 模板 + pixel_to_meter_scale 计算 pts_3d
+    /// 一次性从 0° 模板 + pixel_to_meter_scale_* 计算 pts_3d
     void initPts3dFromTemplates();
 
     // ========================================================================
@@ -170,6 +173,7 @@ private:
 
     Config config_;
     cv::Mat kernel_;
+    bool use_class1_ = false;                    ///< 当前使用 class1 尺寸
     std::vector<TemplateData> templates_;       ///< 来自 NewMuBan 的角点模板
     TemplateData template_data_;                 ///< 存储用于 PnP 的 pts_3d
 

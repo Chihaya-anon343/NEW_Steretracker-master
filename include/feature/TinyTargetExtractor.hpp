@@ -33,7 +33,8 @@ public:
     struct Config {
         cv::Size target_size{50, 50};         ///< 模板匹配归一化尺寸
         int scale_factor = 4;                 ///< 超分辨率放大因子（2~8）
-        double square_size_m = 0.20;          ///< 目标物理边长（米）
+        double square_size_m_class0 = 0.20;   ///< class0 目标物理边长（米）
+        double square_size_m_class1 = 0.04;   ///< class1 目标物理边长（米，0 则回退 class0）
         int roi_pad_pixels = 0;               ///< ROI 四周扩展像素数
     };
 
@@ -64,6 +65,8 @@ public:
                                 const cv::Mat& color) override;
 
     const TemplateData& templateData() const override { return template_data_; }
+
+    void setUseClass1(bool v) override;
 
     // ---- Post-extraction state ----
 
@@ -105,6 +108,7 @@ private:
                                             int win_size);
 
     Config config_;
+    bool use_class1_ = false;                    ///< 当前使用 class1 尺寸
     std::vector<TemplateData> templates_;       ///< 来自 NewMuBan 的角点模板
     TemplateData template_data_;                 ///< 存储用于 GPNP 的 pts_3d
 
