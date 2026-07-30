@@ -516,12 +516,8 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     }
 
     // 单目 PnP 解算（EPnP，无 GPNP / warm-start）
-    // Align 3D points with 2D matches using good_matches trainIdx
-    // Use the winning extractor's pts_3d (e.g. BinaryCorner/TinyTarget),
-    // falling back to AKAZE template_ only if the extractor has no pts_3d.
-    const auto& pnp_pts_3d = winning_ext && !winning_ext->templateData().pts_3d.empty()
-        ? winning_ext->templateData().pts_3d
-        : template_.pts_3d;
+    // winners_ext 有效的 extractor 一定有自己的 pts_3d（构造时已初始化）
+    const auto& pnp_pts_3d = winning_ext->templateData().pts_3d;
     std::vector<Eigen::Vector3d> matched_pts_3d;
     matched_pts_3d.reserve(result.good_matches.size());
     for (const auto& m : result.good_matches) {

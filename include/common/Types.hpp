@@ -307,6 +307,7 @@ struct RoiGroup {
     RoiRect primary;        ///< Class 0 ROI（始终被现有策略使用）
     RoiRect secondary;      ///< Class 1 ROI（仅当 is_dual == true 时有效）
     bool is_dual{false};    ///< 当次级 ROI 存在且有效时为 true
+    bool is_class1{false};  ///< 近距离回退：primary 是 class1 外扩的（极近），BC/Tiny 需用 class1 尺寸
 
     /// 如果主 ROI 有效（最低要求）则返回 true。
     bool valid() const { return primary.valid(); }

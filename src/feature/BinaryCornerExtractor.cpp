@@ -92,6 +92,37 @@ BinaryCornerExtractor::BinaryCornerExtractor(const Config& config,
         std::cerr << "[BinaryCorner] WARNING: No templates loaded from "
                   << template_dir << std::endl;
     }
+
+    // 一次性初始化 3D 模板点（0° 模板 × pixel_to_meter_scale）
+    initPts3dFromTemplates();
+}
+
+// ============================================================================
+// initPts3dFromTemplates — 一次性从 0° 模板 + pixel_to_meter_scale 计算 pts_3d
+// ============================================================================
+
+void BinaryCornerExtractor::initPts3dFromTemplates() {
+    if (config_.pixel_to_meter_scale <= 0.0) return;
+
+    // 查找 0° 模板
+    const TemplateData* tmpl_0 = nullptr;
+    for (const auto& t : templates_) {
+        if (t.angle == 0) { tmpl_0 = &t; break; }
+    }
+    if (tmpl_0 == nullptr) return;
+
+    double s_mm_per_px = config_.pixel_to_meter_scale * 1000.0;  // m/px → mm/px
+    const auto& tc = tmpl_0->corners;
+    template_data_.pts_3d.clear();
+    template_data_.pts_3d.reserve(tc.size());
+    for (const auto& pt : tc) {
+        template_data_.pts_3d.emplace_back(pt.x * s_mm_per_px,
+                                           pt.y * s_mm_per_px, 0.0);
+    }
+
+    if (g_verbose_console)
+        std::cout << "[BinaryCorner] 3D pts (mm): " << template_data_.pts_3d.size()
+                  << " (angle=0, scale=" << s_mm_per_px << " mm/px)" << std::endl;
 }
 
 // ============================================================================
@@ -251,21 +282,7 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
         }
     }
 
-    // 5d. 生成 3D 物方点（平面靶标，z=0）—— 单位为毫米（GPNP 单位制）。
-    //     始终使用 0° 模板角点，使得 PnP 可解算出有意义的旋转。
-    if (tmpl_0 != nullptr && config_.pixel_to_meter_scale > 0.0) {
-        double s_mm_per_px = config_.pixel_to_meter_scale * 1000.0;  // m/px → mm/px
-        const auto& tc = tmpl_0->corners;
-        template_data_.pts_3d.clear();
-        template_data_.pts_3d.reserve(tc.size());
-        for (const auto& pt : tc) {
-            template_data_.pts_3d.emplace_back(pt.x * s_mm_per_px,
-                                               pt.y * s_mm_per_px, 0.0);
-        }
-        if (g_verbose_console)
-            std::cout << "[BinaryCorner] 3D pts (mm): " << template_data_.pts_3d.size()
-                      << " (angle=0, scale=" << s_mm_per_px << " mm/px)" << std::endl;
-    }
+    // 3D 物方点已在构造时由 initPts3dFromTemplates() 初始化。
 
     // desc_left 保持为空（无 AKAZE 描述子）
     // pts_left_used/pts_right_used/pts_right_projected 保持为空
@@ -1089,16 +1106,7 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
             result.good_matches.emplace_back(i, i, 0.0f);
         }
 
-        // 3D 物方点
-        if (config_.pixel_to_meter_scale > 0.0) {
-            double s_mm = config_.pixel_to_meter_scale * 1000.0;
-            const auto& tc = tmpl_0->corners;
-            template_data_.pts_3d.clear();
-            template_data_.pts_3d.reserve(tc.size());
-            for (const auto& pt : tc) {
-                template_data_.pts_3d.emplace_back(pt.x * s_mm, pt.y * s_mm, 0.0);
-            }
-        }
+
     }
 
     result.n_matched = static_cast<int>(result.good_matches.size());

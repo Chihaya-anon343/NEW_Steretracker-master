@@ -108,6 +108,9 @@ private:
     std::vector<TemplateData> templates_;       ///< 来自 NewMuBan 的角点模板
     TemplateData template_data_;                 ///< 存储用于 GPNP 的 pts_3d
 
+    /// 基于 square_size_m 一次性初始化 3D 物方点（构造时调用）
+    void initPts3d();
+
     // 提取后状态
     int last_best_angle_ = -1;
     double last_best_overlap_ = 0.0;

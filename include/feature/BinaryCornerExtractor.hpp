@@ -161,6 +161,9 @@ private:
     // 日志记录
     void logStep(const std::string& step, const std::string& info);
 
+    /// 一次性从 0° 模板 + pixel_to_meter_scale 计算 pts_3d
+    void initPts3dFromTemplates();
+
     // ========================================================================
     // 状态
     // ========================================================================
@@ -168,7 +171,7 @@ private:
     Config config_;
     cv::Mat kernel_;
     std::vector<TemplateData> templates_;       ///< 来自 NewMuBan 的角点模板
-    TemplateData template_data_;                 ///< 空占位符（无 AKAZE 模板）
+    TemplateData template_data_;                 ///< 存储用于 PnP 的 pts_3d
 
     // 提取后状态
     const TemplateData* last_matched_template_ = nullptr;

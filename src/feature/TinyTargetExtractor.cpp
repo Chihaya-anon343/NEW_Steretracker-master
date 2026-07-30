@@ -29,6 +29,28 @@ TinyTargetExtractor::TinyTargetExtractor(const Config& config,
         std::cerr << "[TinyTarget] WARNING: No templates loaded from "
                   << template_dir << std::endl;
     }
+
+    // 一次性初始化 3D 模板点（基于 square_size_m）
+    initPts3d();
+}
+
+// ============================================================================
+// initPts3d — 一次性计算矩形目标的 4 个 3D 角点
+// ============================================================================
+
+void TinyTargetExtractor::initPts3d() {
+    if (config_.square_size_m <= 0.0) return;
+    double half_mm = config_.square_size_m * 1000.0 / 2.0;  // m → mm
+    template_data_.pts_3d = {
+        {-half_mm, -half_mm, 0.0},  // 左上
+        { half_mm, -half_mm, 0.0},  // 右上
+        { half_mm,  half_mm, 0.0},  // 右下
+        {-half_mm,  half_mm, 0.0},  // 左下
+    };
+
+    if (g_verbose_console)
+        std::cout << "[TinyTarget] 3D pts (mm): half=" << half_mm
+                  << "  square_size_m=" << config_.square_size_m << std::endl;
 }
 
 // ============================================================================
@@ -141,16 +163,7 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
     for (int i = 0; i < 4; ++i)
         result.good_matches.emplace_back(i, i, 0.0f);
 
-    // 4d. 生成3D物体点（矩形目标，z=0）— 单位为毫米
-    {
-        double half_mm = config_.square_size_m * 1000.0 / 2.0;  // m → mm
-        template_data_.pts_3d = {
-            {-half_mm, -half_mm, 0.0},  // 左上
-            { half_mm, -half_mm, 0.0},  // 右上
-            { half_mm,  half_mm, 0.0},  // 右下
-            {-half_mm,  half_mm, 0.0},  // 左下
-        };
-    }
+    // 3D 物方点已在构造时由 initPts3d() 初始化。
 
     result.timing["tiny_target"] = 0.0;
 
@@ -463,16 +476,7 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
     for (int i = 0; i < 4; ++i)
         result.good_matches.emplace_back(i, i, 0.0f);
 
-    // 3D 物点（mm）
-    {
-        double half_mm = config_.square_size_m * 1000.0 / 2.0;
-        template_data_.pts_3d = {
-            {-half_mm, -half_mm, 0.0},
-            { half_mm, -half_mm, 0.0},
-            { half_mm,  half_mm, 0.0},
-            {-half_mm,  half_mm, 0.0},
-        };
-    }
+    // 3D 物方点已在构造时由 initPts3d() 初始化。
 
     result.timing["tiny_target"] = 0.0;
 

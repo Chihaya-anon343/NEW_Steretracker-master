@@ -129,7 +129,7 @@ RoiGroup RoiGenerator::tryCloseRange(const std::vector<Detection>& detections,
         std::cout << std::endl;
     }
 
-    return RoiGroup{expanded, {}, false};
+    return RoiGroup{expanded, {}, false, true};
 }
 
 // ============================================================================
