@@ -1186,6 +1186,192 @@ void StereoTracker::prepareDualBcTemplate() {
 
 > `akaze_extractor_` 和 `dual_akaze_extractor_` 是**两个不同的实例**，参数不同（scale, min_pts 等）。Dual-ROI 用的是 `dual_akaze_extractor_`。
 
+### 9.12 退化全景 ⚠️
+
+系统中共有 **13 类退化/fallback 机制**，按触发层级从高到低排列：
+
+#### 一、策略主退化链（最高层，跨策略降级）
+
+由 `configureStrategyChain()` 每帧配置，`process()`/`processMono()` 中的 fallback 循环驱动。退化方向始终**单向**，不可逆。
+
+```
+AKAZE_GPNP (State 3) ──失败──→ BinaryCorner (State 2) ──失败──→ TinyTarget (State 1) ──失败──→ 终止（无位姿输出）
+```
+
+| 退化步骤 | 触发条件 | 降级目标 |
+|---------|---------|---------|
+| AKAZE → BC | `success == false` 或 `n_kp_left < 3` | BinaryCorner |
+| BC → TT | 同上 | TinyTarget |
+| TT → 终止 | 同上 | 帧输出失败，无位姿 |
+
+> 退化不跨面积区间折返（如 TT 失败不会回到 BC）。
+
+#### 二、Dual-ROI (State 4) — 独立路径，不参与退化链
+
+```
+Dual-ROI (BC + AK 并行提取) ──任一失败──→ 直接返回失败（不降级）
+```
+
+| 退化情况 | 触发条件 | 行为 |
+|---------|---------|------|
+| BC 提取失败 | `result_bc.success == false` | 整体失败，不 fallback |
+| AK 提取失败 | `result_ak.success == false` | 整体失败，不 fallback |
+| 合并点数不足 | `total_use < 4` | 整体失败，不 fallback |
+| BC 模板角度偏差 | `|matched_angle| > 0.5°` | 用 `reorderByGeometry` 重排 3D 点（修正，不算退化） |
+
+> 代码证据：`processMono()` 中对 Dual-ROI 走 **EARLY RETURN**，不调用 `configureStrategyChain()`，也不进入 fallback 循环。
+
+#### 三、State 5 极近 — class1 回退重分类
+
+```
+class0 丢失 + class1 存在 + 面积 ≥ class1_min_area
+    → 用 class1 生成 ROI → 按面积重新判定 State 1~4 → 走对应策略链
+```
+
+| 退化情况 | 触发条件 | 行为 |
+|---------|---------|------|
+| class0→class1 回退 | 无 class0，有 class1，面积 ≥ `class1_min_area` | 重分类后走标准策略链 |
+| class1 面积不足 | 面积 < `class1_min_area` | 不回退，直接 skip 帧 |
+
+> 回退时 BC/TT 的 `is_class1=true` 影响 3D 点物理尺寸计算。
+
+#### 四、YOLO 检测层 — 帧级 skip（非退化，不触发策略链）
+
+| 情况 | 触发条件 | 行为 |
+|------|---------|------|
+| 无任何检测 | 无 class0 且无 class1 | **skip 帧** — 不触发任何策略 |
+| 模型加载失败 | ONNX 初始化失败 | 整个跟踪不可用 (`Status::ModelLoadFailed`) |
+| 推理失败 | 单帧 ONNX 异常 | 该帧无 ROI (`Status::InferenceFailed`) |
+
+> YOLO 无检测 **不是退化**，不进入策略退化链。退化链仅在 "有 ROI 但特征提取失败" 时触发。
+
+#### 五、AKAZE 模板匹配 — 三阶段子退化
+
+`TemplateMatcher::match()` 内部三阶段：
+
+```
+Stage 1 (Ratio Test, Lowe=0.75) ──<4 matches──→ 直接失败
+Stage 2 (Cross-Check)           ──<4 matches──→ 直接失败
+Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结果（不算完全失败）
+```
+
+#### 六、BinaryCorner — 内部子退化
+
+| 子退化 | 触发条件 | 降级行为 |
+|--------|---------|---------|
+| 连通域过少 | `connectedComponentsWithStats` → `num_labels ≤ 1` | 保留原始二值图，不做连通域筛选 |
+| 旋转回退 | `warpAffine(INTER_CUBIC)` 旋转灰度图 + Otsu + floodFill 失败 | 降级到 `warpAffine(INTER_NEAREST)` 旋转二值图 + 纯形态学 |
+| 角点数不精确 | `approxPolyDP` 8 次二分搜索未命中目标角点数 | 取 `best_diff` 最近似的多边形 |
+| 左右模板匹配容差 | 左图匹配角度在右图搜索 | 15° 容差范围搜索 |
+
+#### 七、TinyTarget — 内部子退化（退化链终点，无后备）
+
+| 子退化 | 触发条件 | 行为 |
+|--------|---------|------|
+| 连通域面积过滤 | `area < 200`（×4 超分空间） | 跳过该连通域 |
+| 连通域评分 | 4 维加权评分（矩形度 0.25 + 面积 0.30 + 中心距 0.30 + 长宽比 0.15）仅取最高分 | 无合格 → `success=false` → 触发策略链终止 |
+| 策略链终点 | TT 失败 | **无 further fallback**，输出空位姿 |
+
+#### 八、光流追踪 — 点级退化（仅双目 AKAZE）
+
+| 退化 | 触发条件 | 行为 |
+|------|---------|------|
+| FB 校验失败 | `Forward-Backward error ≥ 1.0px` | 该点被丢弃 |
+| 全部点丢弃 | 所有点 FB 失败 | `num_valid = 0`，AKAZE 立体匹配失败 |
+
+#### 九、MAD 视差滤波 — 点集退化（仅双目 AKAZE）
+
+| 退化 | 触发条件 | 行为 |
+|------|---------|------|
+| 离群值剔除 | `|disp_i - median| > 3.0 × MAD` | 该点从 GPnP 输入中移除 |
+| 点集退化标记 | 大量点被剔除 | `MadFilterResult::degraded = true` |
+
+> 调用位置：`runAkazePnP()` 中 GPnP 优化前。
+
+#### 十、立体投影 — 点级退化
+
+| 退化 | 触发条件 | 行为 |
+|------|---------|------|
+| 深度异常 | `disparity ≤ 0` 或投影后超出图像边界 | `valid_mask[i] = false`，该点丢弃 |
+
+#### 十一、PnP 求解器退化
+
+| 求解器 | 退化步骤 | 触发条件 | 降级行为 |
+|--------|---------|---------|---------|
+| InitialPnPSolver | RANSAC 失败 | `inliers < 4` | GPnP 用深度估算初值 `depth = f·b/median_disp, clamp[50,5000]` |
+| InitialPnPSolver | ITERATIVE 精化失败 | 精化后位姿不合法 | 仍用 RANSAC 结果 |
+| GPnPSolver | warm-start 失效 | 首帧或 `has_cache == false` | 用 InitialPnP 初值 |
+| GPnPSolver | LM 不收敛 | Eigen LM 未收敛 | 可能仍输出位姿（取决于监控信息） |
+| GPnPSolver/MonoPnPSolver | 位姿校验失败 | `t.z ≤ 0` / `|t| ∉ [10, 20000]` / NaN/Inf | `success = false` |
+| MonoPnPSolver | EPnP RANSAC 失败 | `inliers < 4` | 返回 `PoseEstimate{success=false}` |
+| MonoPnPSolver | ITERATIVE 精化异常 | `solvePnP` 抛出异常 | **非致命**，继续用 RANSAC 结果 |
+| TinyTarget solvePnP | 无 RANSAC，无 warm-start | ITERATIVE 失败 | 直接 `gpnp_success = false` |
+
+#### 十二、ROI 输入层退化
+
+| 情况 | 行为 |
+|------|------|
+| ROI 为 nullptr（`RoiGroup::valid() == false`） | `roi_area = 0` → 走 AKAZE 链（全图回退） |
+| Debug 手动 ROI 无效（尺寸 ≤ 0） | 回退到 YOLO 检测（如果可用） |
+
+#### 十三、Dual-ROI BC 模板退化
+
+| 退化 | 触发条件 | 行为 |
+|------|---------|------|
+| 模板未就绪 | 首次调用 `prepareDualBcTemplate()` | 现场从 AKAZE 模板灰度图提取 BC 角点（一次性） |
+| 灰度图二值化无连通域 | Otsu 后无有效区域 | `dual_bc_template_ready_` 为 true 但角点为空的边缘情况 |
+
+#### 退化全景图
+
+```
+                    YOLO 无检测 → SKIP 帧 (非退化)
+                         │
+                    YOLO 有检测
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+    有 class0       无 class0       无 class0
+    有/无 class1    有 class1       无 class1
+         │               │               │
+    按面积分级    State 5 回退    SKIP 帧 (非退化)
+         │         (重分类→State1~4)
+         │
+   ┌──┬──┼──┬────┐
+   │  │  │  │    │
+  St1 St2 St3  St4 (BC∥AK 独立路径)
+   │  │  │  │    │
+   TT BC AKAZE  BC∥AK ──任一失败→终止
+   │  │  │  (不参与退化链)
+   │  │  │
+   │  │  ├─RatioTest<4→失败
+   │  │  ├─CrossCheck<4→失败
+   │  │  ├─Homography空→回退Stage2
+   │  │  ├─光流FB≥1px→丢弃点
+   │  │  ├─MAD滤波→剔除离群点
+   │  │  └─立体投影异常→丢弃点
+   │  │
+   │  ├─连通域≤1→保留原图
+   │  ├─旋转回退→INTER_NEAREST
+   │  └─approxPolyDP→best_diff
+   │
+   ├─连通域<200→跳过
+   └─评分无合格→失败(终止)
+         │
+    ──→ PnP 求解器层退化 (RANSAC/LM/校验)
+```
+
+#### 退化设计关键特征总结
+
+| 特征 | 说明 |
+|------|------|
+| **退化方向** | 始终单向：AKAZE → BC → TT，不可逆 |
+| **Dual-ROI 隔离** | State 4 完全独立，不参与退化链，失败直接终止 |
+| **YOLO vs 特征退化分离** | YOLO 无检测 = skip 帧（不触发策略链）；特征提取失败 = 策略退化；两者互不触发 |
+| **单目退化面窄** | 单目无光流、无立体投影、无 MAD、无 warm-start — 比双目退化面缩窄约 5 类 |
+| **子退化不跨模块** | BC 内部旋转回退不影响策略链选择；AKAZE 匹配阶段回退不改变策略 |
+| **终止即终止** | TT 失败后无进一步 fallback，输出空位姿 |
+| **永不成环** | 任何退化路径都不会形成循环——退化图是有向无环图 (DAG) |
+
 ---
 
 ## 10. 文件索引速查
