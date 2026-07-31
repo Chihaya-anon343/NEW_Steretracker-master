@@ -99,7 +99,7 @@
       "target_width": 100,
       "target_height": 100,
       "pixel_to_meter_scale_class0": 0.004,
-      "pixel_to_meter_scale_class1": 0.0,
+      "pixel_to_meter_scale_class1": 0.0004,
       "roi_pad_pixels": 3,
       "otsu_ratio": 1
     },

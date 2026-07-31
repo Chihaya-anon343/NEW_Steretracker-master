@@ -453,6 +453,14 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     cv::Mat left_color_roi = left_color(cv::Rect(roi.x, roi.y, roi.width, roi.height));
     cv::Point2d left_offset(roi.x, roi.y);
 
+    // 根据输入类别选择 BC/TT 的 3D 模板尺寸
+    // is_class1=true：仅检测到 class1（近距离回退），使用 class1 尺寸参数
+    {
+        bool use_c1 = (left_group != nullptr && left_group->is_class1);
+        binary_extractor_->setUseClass1(use_c1);
+        tiny_extractor_->setUseClass1(use_c1);
+    }
+
     // 策略链选择
     configureStrategyChain(roi_area);
 

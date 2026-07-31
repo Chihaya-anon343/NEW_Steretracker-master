@@ -459,6 +459,14 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     roi_l = validateRoi(roi_l.valid() ? &roi_l : nullptr, left_gray.size(), "Left ROI");
     roi_r = validateRoi(roi_r.valid() ? &roi_r : nullptr, right_gray.size(), "Right ROI");
 
+    // 根据输入类别选择 BC/TT 的 3D 模板尺寸
+    // is_class1=true：仅检测到 class1（近距离回退），使用 class1 尺寸参数
+    {
+        bool use_c1 = left_grp.is_class1;
+        binary_extractor_->setUseClass1(use_c1);
+        tiny_extractor_->setUseClass1(use_c1);
+    }
+
     // Automatically select extraction strategy chain from ROI area
     int roi_area = roi_l.valid() ? roi_l.width * roi_l.height : 0;
     configureStrategyChain(roi_area);
