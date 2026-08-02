@@ -98,8 +98,9 @@ cmake --build . --config Release
 | -------- | ----------------------------------- | ------------------------- |
 | 图像源   | `InputProvider` (input_system 节) | `cv::imread` (input 节) |
 | ROI      | YOLO 检测                           | 手动 ROI 或 YOLO          |
-| 终端输出 | 每帧一行简介                        | 详细统计                  |
-| 可视化   | 仅三维坐标轴叠加                    | 各策略完整中间面板        |
+| 终端输出 | 每帧一行简介 (`[Frame N] Strategy n=... t=...`) | 详细统计                  |
+| 可视化   | 仅三维坐标轴叠加 (`mono_f{N}.png`)  | 各策略完整中间面板        |
+| 日志文件 | 可选 — `output.log_file: true` 时输出 `tracking_log.txt`（完整处理过程 + 配置摘要） | — |
 
 两种模式均支持 `mono_mode: true/false` 切换双目与单目。
 
@@ -250,6 +251,10 @@ TinyT.  BC      AKAZE     Dual-ROI
 | `close_range.class1_min_area` | class 1 最小面积阈值 |
 | `close_range.roi_expand_ratio` | ROI 外扩比例 |
 | `close_range.min_expand_pixels` | 最小外扩像素 |
+| `close_range.akaze_min_area` | class1-only 时的 AKAZE 策略阈值 (0=使用默认) |
+| `close_range.tiny_max_area` | class1-only 时的 TinyTarget 策略阈值 (0=使用默认) |
+
+> `close_range.akaze_min_area` 和 `close_range.tiny_max_area` 允许 class1-only 场景使用与 class0 不同的面积阈值来选择策略链。
 
 ---
 
@@ -374,14 +379,16 @@ RANSAC PnP (300 iter, 8.0px → 0.99 confidence) → ITERATIVE 精化。为 GPnP
 
 ### 6.3 MonoPnPSolver (单目通用)
 
-OpenCV EPnP → ITERATIVE 精化，仅重投影约束，每帧独立无缓存。
+OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无缓存。
+
+**ITERATIVE 发散回退**：精化前保存 RANSAC EPnP 结果；若精化后 `|t|` 超出 `[10, 100000]` mm，自动回退到 RANSAC 初值并输出 `[MonoPnP] ITERATIVE 发散，回退到 RANSAC EPnP 结果`。此机制解决极小 ROI（~30px²）下深度估计病态导致的精化发散问题。
 
 ### 6.4 位姿有效性校验
 
 所有求解器输出须通过:
 
 1. `t.z > 0` — 相机在目标前方
-2. `10 < |t| < 20000` mm — 深度合理
+2. `10 < |t| < 100000` mm — 深度合理（MonoPnP）；双目为 `[10, 20000]`
 3. R, t 各分量有限 (无 NaN/Inf)
 
 ### 6.5 求解器对比
@@ -412,12 +419,13 @@ OpenCV EPnP → ITERATIVE 精化，仅重投影约束，每帧独立无缓存。
 ### 7.2 Normal 模式
 
 - **终端**: 每帧一行 `[Frame N] Strategy n=X r=[rx,ry,rz] t=[tx,ty,tz]`
-- **可视化**: 三维坐标轴叠加到原图
+- **可视化**: 仅三维坐标轴叠加图 `mono_f{N}.png`（使用实际帧号 N）
+- **日志**: 若 `output.log_file: true`，输出 `tracking_log.txt`（包含配置摘要 + 完整处理过程，形如 debug 终端输出）
 
 ### 7.3 Debug 模式
 
 - **终端**: 详细统计 (特征点/匹配/投影/视差中位数/GPNP状态/耗时)
-- **可视化**: 各策略完整中间面板
+- **可视化**: 各策略完整中间面板（文件名使用实际帧号）
 
 | 策略 | 面板数 | 内容 |
 |------|--------|------|
@@ -425,7 +433,9 @@ OpenCV EPnP → ITERATIVE 精化，仅重投影约束，每帧独立无缓存。
 | BinaryCorner (双目) | 5 | 二值/轴系/模板/立体/重投影 |
 | TinyTarget (双目) | 标准 | solvePnP 输出 |
 | Dual-ROI (双目) | 5 | 双 ROI 合并 |
-| 单目 (所有策略) | 3 | overview/corners/axes(reproj) |
+| BinaryCorner (单目) | 6 | 二值/直立/轴系/模板/重投影 + overview |
+| TinyTarget (单目) | 3 | 轴系/重投影 + overview |
+| AKAZE (单目) | 3 | 轴系/匹配点 + overview |
 
 ---
 
@@ -488,11 +498,15 @@ TrackerBase
 |--------|--------|------|
 | `mode` | `"normal"` | 运行模式: `"normal"` / `"debug"` |
 | `mono_mode` | `false` | 启用单目模式 |
+| `output.visualize` | `true` | 是否保存可视化图像 |
+| `output.log_file` | `false` | Normal 模式下是否输出 TXT 日志文件 |
 | `strategies.tiny_max_area` | 800 | State 1/2 分界 (占位值) |
 | `strategies.akaze_min_area` | 40001 | State 2/3 分界 (占位值) |
 | `strategies.dual_trigger_area` | 490000 | State 3/4 分界 (占位值) |
 | `strategies.close_range.enabled` | — | 启用 State 5 class1 回退 |
 | `strategies.close_range.class1_min_area` | — | class 1 最小面积 |
+| `strategies.close_range.akaze_min_area` | 0 | class1-only 专用 AKAZE 阈值 |
+| `strategies.close_range.tiny_max_area` | 0 | class1-only 专用 TinyTarget 阈值 |
 
 > ⚠️ 三个面积阈值为占位值，需在实际场景中标定后修正。
 

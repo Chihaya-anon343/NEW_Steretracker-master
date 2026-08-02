@@ -32,6 +32,7 @@ public:
     void setOutputDir(const std::string& dir) { output_dir_ = dir; }
     void setVerboseConsole(bool v) { verbose_console_ = v; g_verbose_console = v; }
     void setVisualizeDetailed(bool v) { visualize_detailed_ = v; }
+    void setFrameNumber(int n) { current_frame_ = n; }
     bool verboseConsole() const { return verbose_console_; }
     const StereoCameraParams& cameraParams() const { return camera_; }
     const TrackerConfig& config() const { return config_; }
@@ -70,6 +71,7 @@ protected:
     std::string output_dir_;
     bool verbose_console_ = true;
     bool visualize_detailed_ = true;  ///< true=Debug 模式生成 per-strategy 面板; false=仅三维轴叠加图
+    int current_frame_ = 0;           ///< 当前输入帧号（用于可视化文件名）
     std::unique_ptr<Visualizer> visualizer_;
     TrackingState state_;
 };

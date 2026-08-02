@@ -350,6 +350,7 @@ int main(int argc, char** argv) {
                         return;
                     }
                 }
+                tracker->setFrameNumber(frame);
                 result = mt->process(L, visualize, &left_group);
             } else {
                 auto* st = static_cast<StereoTracker*>(tracker.get());
@@ -374,6 +375,7 @@ int main(int argc, char** argv) {
                                   << "x" << lg.secondary.height << ")" << std::endl;
                     }
                 }
+                tracker->setFrameNumber(frame);
                 result = st->process(L, R, visualize, &lg, &rg);
             }
 

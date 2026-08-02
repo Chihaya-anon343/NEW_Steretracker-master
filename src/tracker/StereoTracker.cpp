@@ -570,7 +570,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
 
     // ---- Visualization ----
     if (visualize && pose_ok) {
-        std::string prefix = "_f" + std::to_string(state_.frame_count);
+        std::string prefix = "_f" + std::to_string(current_frame_);
 
         // Normal 模式 (visualize_detailed_=false): 仅三维坐标轴叠加图
         if (!visualize_detailed_) {
@@ -1299,7 +1299,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     // ---- Visualization (dual-ROI) ----
     if (visualize && pose.success) {
-        std::string prefix = "_f" + std::to_string(state_.frame_count);
+        std::string prefix = "_f" + std::to_string(current_frame_);
 
         // Normal 模式: 仅三维坐标轴叠加图
         if (!visualize_detailed_) {

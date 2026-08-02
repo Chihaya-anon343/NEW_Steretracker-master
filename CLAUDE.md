@@ -64,10 +64,11 @@ main.cpp main()
 
 ```
 TrackerBase                              (include/tracker/TrackerBase.hpp)
-├── StereoTracker                        (include/tracker/StereoTracker.hpp)
-│   └── 双目 + 单目全功能 (含 processMono)
+├── MonoTracker                           (include/tracker/MonoTracker.hpp)
+│   └── 单目追踪器 (EPnP, 无立体)
 │
-└── (MonoTracker 概念上独立，但实际单目功能内嵌在 StereoTracker::processMono)
+├── StereoTracker                        (include/tracker/StereoTracker.hpp)
+│   └── 双目追踪器 (GPnP + 光流 + MAD)
 
 FeatureExtractor                          (include/feature/FeatureExtractor.hpp)
 ├── AkazeGpnpExtractor                   (include/feature/AkazeGpnpExtractor.hpp)
@@ -75,7 +76,7 @@ FeatureExtractor                          (include/feature/FeatureExtractor.hpp)
 └── TinyTargetExtractor                  (include/feature/TinyTargetExtractor.hpp)
 ```
 
-> **注意**：`MonoTracker` 在 README 中描述为 TrackerBase 的子类，但实际代码中单目功能由 `StereoTracker` 的 `processMono()` 方法承载。`StereoTracker` 内部持有 `MonoPnPSolver` 成员。
+> **注意**：单目模式使用独立的 `MonoTracker` 类（继承自 `TrackerBase`）。`MonoTracker` 和 `StereoTracker` 是并列关系，各自持有独立的 PnP 求解器和可视化逻辑。
 
 ---
 
@@ -148,7 +149,8 @@ main() main.cpp:22-272
 | 图像源 | InputProvider (input_system 节) | cv::imread (input 节) |
 | ROI 来源 | 始终 YOLO | 手动 ROI 或 YOLO |
 | verbose_console | false (简洁) | true (详细) |
-| 可视化 | 仅坐标轴叠加 | 各策略多面板中间结果 |
+| 可视化 | 仅坐标轴叠加 (`mono_f{N}.png`，使用实际帧号) | 各策略多面板中间结果 (使用实际帧号) |
+| 日志文件 | 可选 (`output.log_file: true` → `tracking_log.txt`) | 终端打印 ASCII 表格 |
 | input_system 配置 | **必填** | 不需要 |
 | input 配置 | 不需要 | **必填** |
 | 帧循环 | 多帧 (InputProvider 驱动) | 固定2帧 |
@@ -199,7 +201,7 @@ struct PipelineResult {
     double total_time_ms = 0.0;
 
     // === 额外标志 (用于Dual-ROI合并) ===
-    bool is_class1 = false;                         // TinyTarget/BC中指示class1目标
+    bool is_class1 = false;                         // class1-only 回退帧标志 (同时用于 LogEntry)
 };
 ```
 
@@ -250,7 +252,7 @@ struct TemplateData {
 | `MatchResult` | 191-200 | 模板匹配输出: good_matches, pts_left_match, pts_template_match |
 | `PoseEstimate` | 203-210 | PnP输出: R, t, success, num_points |
 | `GPNPMonitor` | 213-225 | GPNP优化监控: initial_cost, final_cost, iterations |
-| `LogEntry` | 228-242 | 单帧日志: frame_id, n_features, median_disparity, t_ms |
+| `LogEntry` | 228-242 | 单帧日志: frame, timestamp, is_first, fallback, n_kp, n_match, n_proj, n_tmpl, disp_median, gpnp, total_ms, timing, strategy_name, is_class1, t/rvec |
 | `TrackingState` | 245-258 | 帧间缓存: R_prev, t_prev, has_cache, frame_count, logs |
 | `RoiRect` | 291-302 | ROI矩形: x, y, width, height; valid() = width>0 && height>0 |
 | `RoiGroup` | 305-315 | 双ROI组: primary, secondary, is_dual |
@@ -325,6 +327,8 @@ enum class StrategyType {
 | `akaze_min_area` | int | 40001 | strategies.akaze_min_area | State 2/3 分界 |
 | `dual_trigger_area` | int | 490000 | strategies.dual_roi | State 3/4 分界 (700×700) |
 | `class1_min_area` | int | — | strategies.close_range | State 5 class1最小面积 |
+| `akaze_min_area_class1` | int | 0 | strategies.close_range.akaze_min_area | class1-only 专用 AKAZE 阈值 (0=回退到通用值) |
+| `tiny_max_area_class1` | int | 0 | strategies.close_range.tiny_max_area | class1-only 专用 TinyTarget 阈值 |
 
 > ⚠️ **这些值为早期测试占位值**。在实际部署场景中必须重新标定。修改方法：
 > 1. `config/tracker_config.json` 中修改对应值
@@ -336,19 +340,22 @@ enum class StrategyType {
 // include/tracker/TrackerBase.hpp protected方法
 // StereoTracker构造中调用，每帧根据ROI面积重新配置
 
-void configureStrategyChain(int roi_area) {
-    if (roi_area >= akaze_min_area_ || roi_area == 0) {
+void configureStrategyChain(int roi_area, bool is_class1 = false) {
+    // 选择阈值：class1 专用阈值 > 0 时使用，否则回退到通用阈值
+    int akaze_thresh = is_class1 && akaze_min_area_class1_ > 0
+        ? akaze_min_area_class1_ : akaze_min_area_;
+    int tiny_thresh  = is_class1 && tiny_max_area_class1_ > 0
+        ? tiny_max_area_class1_  : tiny_max_area_;
+
+    if (roi_area >= akaze_thresh || roi_area == 0) {
         extractor_ = akaze_extractor_.get();           // 主策略: AKAZE
         fallback_extractors_ = {binary_extractor_.get(), tiny_extractor_.get()};
-        // 退化链: AKAZE → BC → TT
-    } else if (roi_area > tiny_max_area_) {
+    } else if (roi_area > tiny_thresh) {
         extractor_ = binary_extractor_.get();           // 主策略: BC
         fallback_extractors_ = {tiny_extractor_.get()};
-        // 退化链: BC → TT
     } else {
         extractor_ = tiny_extractor_.get();             // 主策略: TT
         fallback_extractors_ = {};
-        // 退化链: TT (无后备)
     }
 }
 ```
@@ -840,19 +847,27 @@ solve(pts_2d, pts_3d, K):
   3. cv::solvePnPRansac(EPNP, 300 iter, 8.0px, 0.99, no extrinsic guess)
      → inliers < 4 → 返回 PoseEstimate{fail}
 
-  4. cv::solvePnP(ITERATIVE, useExtrinsicGuess=true) on inliers
+  4. 保存 RANSAC 结果 rvec_ransac / tvec_ransac
+
+  5. cv::solvePnP(ITERATIVE, useExtrinsicGuess=true) on inliers
      抛出异常 → 非致命, 继续用RANSAC结果
 
-  5. 有效性检查 (见 §6.5)
+  6. ITERATIVE 发散检测：若精化后 |t| > 100000 或 < 10，
+     自动回退到 RANSAC EPnP 初值
+     → 输出 "[MonoPnP] ITERATIVE 发散，回退到 RANSAC EPnP 结果"
+
+  7. 有效性检查 (见 §6.5)
      → PoseEstimate{R, t, success, num_points}
 ```
+
+> **ITERATIVE 发散回退**（新增）：极小 ROI（~30px²）下 2D 点高度聚集而 3D 点跨度大，深度估计病态化，ITERATIVE 精化可能发散到 `|t| → ∞`。此机制在发散时自动回退到 RANSAC 的有效结果，避免整帧被标记为 FAILED。
 
 ### 6.5 位姿有效性校验 (所有求解器共用)
 
 ```cpp
 // 通过才标记 success=true
 1. t.z > 0                    // 相机必须在目标前方
-2. 10 < norm(t) < 20000       // 深度在合理范围 (mm)
+2. 10 < norm(t) < 100000       // 深度在合理范围 (mm)；MonoPnP 上限 100m，双目 GPnP 上限 20m
 3. R, t 各分量 isfinite       // 无 NaN/Inf
 4. num_points >= min_pts      // 有效点数足够
 ```
@@ -1034,13 +1049,17 @@ struct SensorPacket {
             "enabled": true,
             "class1_min_area": 100,
             "roi_expand_ratio": 0.1,
-            "min_expand_pixels": 10
+            "min_expand_pixels": 10,
+            "akaze_min_area": 40001,     // class1-only 专用 AKAZE 阈值 (0=使用默认)
+            "tiny_max_area": 400          // class1-only 专用 TinyTarget 阈值 (0=使用默认)
         }
     },
 
     // ========== 可视化 ==========
-    "visualize": true,
-    "verbose_console": false           // Normal=false, Debug 自动=true
+    "output": {
+        "visualize": true,              // 是否保存可视化图像
+        "log_file": false               // Normal 模式是否输出 TXT 日志文件
+    },
 }
 ```
 
@@ -1305,6 +1324,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | GPnPSolver/MonoPnPSolver | 位姿校验失败 | `t.z ≤ 0` / `|t| ∉ [10, 20000]` / NaN/Inf | `success = false` |
 | MonoPnPSolver | EPnP RANSAC 失败 | `inliers < 4` | 返回 `PoseEstimate{success=false}` |
 | MonoPnPSolver | ITERATIVE 精化异常 | `solvePnP` 抛出异常 | **非致命**，继续用 RANSAC 结果 |
+| MonoPnPSolver | ITERATIVE 发散 | `\|t\| > 100000` mm | 自动回退到 RANSAC EPnP 结果（不标记 FAILED） |
 | TinyTarget solvePnP | 无 RANSAC，无 warm-start | ITERATIVE 失败 | 直接 `gpnp_success = false` |
 
 #### 十二、ROI 输入层退化
@@ -1501,7 +1521,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | RANSAC 迭代 (InitialPnP) | 300 | InitialPnPSolver | — |
 | RANSAC 置信度 | 0.99 | PnP Solvers | — |
 | RANSAC 重投影阈值 | 8.0 px | PnP Solvers | — |
-| 深度有效范围 | [10, 20000] mm | 位姿校验 | — |
+| 深度有效范围 | [10, 100000] mm (MonoPnP), [10, 20000] mm (GPnP) | 位姿校验 | — |
+| ITERATIVE 发散阈值 | \|t\| > 100000 mm | MonoPnPSolver | 检测到发散时回退到 RANSAC |
 | approxPolyDP 二分搜索 | 0.001~0.05×perimeter, 8次 | BC | — |
 
 ---

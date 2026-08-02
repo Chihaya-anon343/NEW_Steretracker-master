@@ -18,7 +18,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
 
     const int n = static_cast<int>(pts_2d.size());
     if (n < 4 || pts_3d.size() != pts_2d.size()) {
-        std::cerr << "[MonoPnP] 点数不足: pts_2d=" << n
+        std::cout << "[MonoPnP] 点数不足: pts_2d=" << n
                   << ", pts_3d=" << pts_3d.size() << " (需要 ≥4)" << std::endl;
         return pose;
     }
@@ -53,7 +53,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
             pnp_ok = !rvec.empty() && !tvec.empty();
             if (pnp_ok) inliers = {0, 1, 2, 3};
         } catch (const cv::Exception& e) {
-            std::cerr << "[MonoPnP] ITERATIVE (4pts) 异常: " << e.what() << std::endl;
+            std::cout << "[MonoPnP] ITERATIVE (4pts) 异常: " << e.what() << std::endl;
             return pose;
         }
     } else {
@@ -70,18 +70,22 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
             pnp_ok = !rvec.empty() && !tvec.empty() &&
                      inliers.size() >= 4;
         } catch (const cv::Exception& e) {
-            std::cerr << "[MonoPnP] solvePnPRansac 异常: " << e.what() << std::endl;
+            std::cout << "[MonoPnP] solvePnPRansac 异常: " << e.what() << std::endl;
             return pose;
         }
 
         if (!pnp_ok) {
-            std::cerr << "[MonoPnP] RANSAC EPnP 失败（内点="
+            std::cout << "[MonoPnP] RANSAC EPnP 失败（内点="
                       << inliers.size() << "）" << std::endl;
             return pose;
         }
 
         // 用 inlier 子集做 ITERATIVE 精化
         {
+            // 保存 RANSAC 结果，防止 ITERATIVE 发散后丢失
+            cv::Mat rvec_ransac = rvec.clone();
+            cv::Mat tvec_ransac = tvec.clone();
+
             std::vector<cv::Point3f> inl_obj;
             std::vector<cv::Point2f> inl_img;
             inl_obj.reserve(inliers.size());
@@ -97,14 +101,24 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                              true,                          // useExtrinsicGuess
                              cv::SOLVEPNP_ITERATIVE);
             } catch (const cv::Exception& e) {
-                std::cerr << "[MonoPnP] ITERATIVE 精化异常（使用 RANSAC 结果）: "
+                std::cout << "[MonoPnP] ITERATIVE 精化异常（使用 RANSAC 结果）: "
                           << e.what() << std::endl;
+            }
+
+            // 检测 ITERATIVE 是否发散，若发散则回退到 RANSAC 结果
+            double t_norm_refined = cv::norm(tvec);
+            if (t_norm_refined > 100000.0 || t_norm_refined < 10.0) {
+                if (g_verbose_console)
+                    std::cout << "[MonoPnP] ITERATIVE 发散 (|t|=" << t_norm_refined
+                              << ")，回退到 RANSAC EPnP 结果" << std::endl;
+                rvec = rvec_ransac;
+                tvec = tvec_ransac;
             }
         }
     }
 
     if (!pnp_ok) {
-        std::cerr << "[MonoPnP] PnP 失败" << std::endl;
+        std::cout << "[MonoPnP] PnP 失败" << std::endl;
         return pose;
     }
 
@@ -124,19 +138,19 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
     // --- 5. 有效性校验 ---
     // t[2] > 0: 相机必须在模板平面前方
     if (t(2) <= 0.0) {
-        std::cerr << "[MonoPnP] 无效：t.z = " << t(2) << " ≤ 0（相机在模板后方）" << std::endl;
+        std::cout << "[MonoPnP] 无效：t.z = " << t(2) << " ≤ 0（相机在模板后方）" << std::endl;
         return pose;
     }
 
     double t_norm = t.norm();
     if (t_norm < 10.0 || t_norm > 100000.0) {
-        std::cerr << "[MonoPnP] 无效：|t| = " << t_norm
+        std::cout << "[MonoPnP] 无效：|t| = " << t_norm
                   << " mm（超出 [10, 20000]）" << std::endl;
         return pose;
     }
 
     if (!R.allFinite() || !t.allFinite()) {
-        std::cerr << "[MonoPnP] 无效：结果包含非有限值" << std::endl;
+        std::cout << "[MonoPnP] 无效：结果包含非有限值" << std::endl;
         return pose;
     }
 

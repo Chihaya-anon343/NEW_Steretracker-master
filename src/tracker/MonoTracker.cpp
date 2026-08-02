@@ -311,7 +311,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
 
     // ---- Visualization (simplified, left-only) ----
     if (visualize && pose.success && !output_dir_.empty()) {
-        std::string prefix = "_f" + std::to_string(state_.frame_count);
+        std::string prefix = "_f" + std::to_string(current_frame_);
 
         const cv::Scalar BC_COLOR(0, 0, 255);    // red: BinaryCorner corners
         const cv::Scalar AK_COLOR(0, 255, 0);    // green: AKAZE features
@@ -555,7 +555,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
 
     // ---- Visualization ----
     if (visualize && !output_dir_.empty()) {
-        std::string prefix = "_f" + std::to_string(state_.frame_count);
+        std::string prefix = "_f" + std::to_string(current_frame_);
         std::string strategy = result.strategy_name;
         bool is_bc   = (strategy == "BinaryCorner");
         bool is_tiny = (strategy == "TinyTarget");
@@ -623,7 +623,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                 }
             }
             cv::imwrite(output_dir_ + "/mono_f"
-                + std::to_string(state_.frame_count) + ".png", vis);
+                + std::to_string(current_frame_) + ".png", vis);
         }
 
         // ================================================================
