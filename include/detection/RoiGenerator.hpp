@@ -35,6 +35,8 @@ public:
         int class1_min_area = 100;       ///< class1 ROI 最小面积阈值
         float roi_expand_ratio = 3.0f;   ///< class1 ROI 外扩倍数
         int min_expand_pixels = 200;     ///< 最少外扩像素
+        int akaze_min_area = 0;          ///< class1-only AKAZE 策略阈值 (0=用默认)
+        int tiny_max_area = 0;           ///< class1-only TinyTarget 阈值 (0=用默认)
     };
 
     RoiGenerator();

@@ -461,15 +461,15 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
 
     // 根据输入类别选择 BC/TT 的 3D 模板尺寸
     // is_class1=true：仅检测到 class1（近距离回退），使用 class1 尺寸参数
+    bool use_c1 = left_grp.is_class1;
     {
-        bool use_c1 = left_grp.is_class1;
         binary_extractor_->setUseClass1(use_c1);
         tiny_extractor_->setUseClass1(use_c1);
     }
 
     // Automatically select extraction strategy chain from ROI area
     int roi_area = roi_l.valid() ? roi_l.width * roi_l.height : 0;
-    configureStrategyChain(roi_area);
+    configureStrategyChain(roi_area, use_c1);
 
     // Expand ROI with padding for non-AKAZE extractors (corner context)
     applyRoiPadding(roi_l, roi_r, roi_area,
@@ -572,8 +572,8 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     if (visualize && pose_ok) {
         std::string prefix = "_f" + std::to_string(state_.frame_count);
 
-        // Normal 模式 (verbose_console_=false): 仅三维坐标轴叠加图
-        if (!verbose_console_) {
+        // Normal 模式 (visualize_detailed_=false): 仅三维坐标轴叠加图
+        if (!visualize_detailed_) {
             cv::Mat vis = result.left_color.clone();
             for (const auto& pt : result.pts_left_match)
                 cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 1, 1);
@@ -890,6 +890,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
 
     // ---- Logging ----
     result.is_first_frame = is_first;
+    result.is_class1 = use_c1;
     result.n_matched = static_cast<int>(result.pts_left_good.size());
     result.n_projected = static_cast<int>(result.pts_right_projected.size());
     addLogEntry(result, is_first, fallback_used);
@@ -1301,7 +1302,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         std::string prefix = "_f" + std::to_string(state_.frame_count);
 
         // Normal 模式: 仅三维坐标轴叠加图
-        if (!verbose_console_) {
+        if (!visualize_detailed_) {
             cv::Mat vis = result.left_color.clone();
             for (const auto& pt : result.pts_left_match)
                 cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 1, 1);

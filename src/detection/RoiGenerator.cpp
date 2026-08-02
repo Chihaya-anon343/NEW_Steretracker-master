@@ -119,13 +119,15 @@ RoiGroup RoiGenerator::tryCloseRange(const std::vector<Detection>& detections,
 
     if (g_verbose_console) {
         int expanded_area = expanded.width * expanded.height;
+        int ak_th = close_range_cfg_.akaze_min_area > 0 ? close_range_cfg_.akaze_min_area : 40001;
+        int tt_th = close_range_cfg_.tiny_max_area  > 0 ? close_range_cfg_.tiny_max_area  : 800;
         std::cout << "[RoiGenerator] Close-range fallback: class0 not detected,"
                   << " class1=" << class1_roi.width << "x" << class1_roi.height
                   << " expanded=" << expanded.width << "x" << expanded.height
                   << " (area=" << expanded_area;
-        if (expanded_area >= 40001)      std::cout << " → AKAZE chain)";
-        else if (expanded_area > 800)    std::cout << " → BC chain)";
-        else                             std::cout << " → TT)";
+        if (expanded_area >= ak_th)         std::cout << " → AKAZE chain)";
+        else if (expanded_area > tt_th)     std::cout << " → BC chain)";
+        else                                std::cout << " → TT)";
         std::cout << std::endl;
     }
 

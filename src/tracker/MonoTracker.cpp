@@ -316,6 +316,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         const cv::Scalar BC_COLOR(0, 0, 255);    // red: BinaryCorner corners
         const cv::Scalar AK_COLOR(0, 255, 0);    // green: AKAZE features
 
+        // ---- 诊断面板 (overview/corners/reproj) 仅 Debug 模式 ----
+        if (visualize_detailed_) {
+
         // Panel 0: Overview — ROI rectangles on original image
         {
             cv::Mat p0 = left_color_orig.clone();
@@ -350,7 +353,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             cv::imwrite(output_dir_ + "/dual_roi_mono_corners" + prefix + ".png", p1);
         }
 
-        // Panel 2: 3D axes on original image
+        } // end visualize_detailed_ (overview/corners)
+
+        // Panel 2: 3D axes on original image (始终生成)
         {
             cv::Mat p2 = left_color_orig.clone();
             double axis_len = 100.0;
@@ -371,6 +376,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
             cv::imwrite(output_dir_ + "/dual_roi_mono_axes" + prefix + ".png", p2);
         }
+
+        // ---- 诊断面板 (reproj) 仅 Debug 模式 ----
+        if (visualize_detailed_) {
 
         // Panel 3: Reprojection error on class 0 ROI zoomed
         if (total_use > 0 && !merged_pts_3d.empty()) {
@@ -394,6 +402,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             }
             cv::imwrite(output_dir_ + "/dual_roi_mono_reproj" + prefix + ".png", p3);
         }
+
+        } // end visualize_detailed_ dual-ROI panels
 
         if (verbose_console_)
             std::cout << "  [DualRoi][Mono] Visualized: " << n_bc_use << " BC + "
@@ -453,16 +463,16 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     cv::Mat left_color_roi = left_color(cv::Rect(roi.x, roi.y, roi.width, roi.height));
     cv::Point2d left_offset(roi.x, roi.y);
 
-    // 根据输入类别选择 BC/TT 的 3D 模板尺寸
-    // is_class1=true：仅检测到 class1（近距离回退），使用 class1 尺寸参数
+    // 根据输入类别选择 BC/TT 的 3D 模板尺寸 并标记用于策略链选择
+    // is_class1=true：仅检测到 class1（近距离回退），使用 class1 尺寸 + class1 阈值
+    bool use_c1 = (left_group != nullptr && left_group->is_class1);
     {
-        bool use_c1 = (left_group != nullptr && left_group->is_class1);
         binary_extractor_->setUseClass1(use_c1);
         tiny_extractor_->setUseClass1(use_c1);
     }
 
-    // 策略链选择
-    configureStrategyChain(roi_area);
+    // 策略链选择（class1 时使用 class1 专用面积阈值）
+    configureStrategyChain(roi_area, use_c1);
 
     bool is_first = (state_.frame_count == 0);
     bool extracted = false;
@@ -519,6 +529,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
 
     if (!extracted) {
         std::cerr << "[Mono] All extractors failed" << std::endl;
+        result.is_class1 = use_c1;
         addLogEntry(result, is_first, true);
         return result;
     }
@@ -539,44 +550,263 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
 
     result.strategy_name = winning_ext ? winning_ext->name() : "Unknown";
     result.success = pose.success;
+    result.is_class1 = use_c1;
     addLogEntry(result, is_first, false);
 
-    // 可视化 — 原图 + 特征点 + 三维坐标轴
+    // ---- Visualization ----
     if (visualize && !output_dir_.empty()) {
-        cv::Mat vis = left_color.clone();
+        std::string prefix = "_f" + std::to_string(state_.frame_count);
+        std::string strategy = result.strategy_name;
+        bool is_bc   = (strategy == "BinaryCorner");
+        bool is_tiny = (strategy == "TinyTarget");
 
-        // 绘制匹配特征点
-        for (const auto& pt : result.pts_left_match) {
-            cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 1, 1);
-        }
+        // ---- Shared helpers ----
+        auto expandRect = [](const RoiRect& r, const cv::Size& imgSz) -> cv::Rect {
+            int cx = r.x + r.width / 2;
+            int cy = r.y + r.height / 2;
+            int ew = r.width * 5;
+            int eh = r.height * 5;
+            int x = std::max(0, cx - ew / 2);
+            int y = std::max(0, cy - eh / 2);
+            int w = std::min(ew, imgSz.width - x);
+            int h = std::min(eh, imgSz.height - y);
+            return cv::Rect(x, y, w, h);
+        };
+        cv::Rect expand_L = expandRect(roi, left_color.size());
+        cv::Mat view_L = left_color(expand_L).clone();
+        float elx = static_cast<float>(expand_L.x);
+        float ely = static_cast<float>(expand_L.y);
+        auto toView_L = [&](const cv::Point2f& p) {
+            return cv::Point2f(p.x - elx, p.y - ely);
+        };
+        auto proj = [&](const Eigen::Vector3d& P) -> cv::Point {
+            if (std::abs(P.z()) < 1e-6) return cv::Point(-1, -1);
+            Eigen::Vector2d uv = projectToImage(P, camera_.K);
+            return cv::Point(static_cast<int>(uv.x()), static_cast<int>(uv.y()));
+        };
+        const cv::Scalar CORNER_COLORS[] = {
+            {0,0,255}, {0,255,0}, {0,255,255}, {255,0,0}, {255,0,255},
+            {255,255,0}, {128,0,255}, {0,128,255}, {255,128,0}, {128,255,0}
+        };
 
-        // 绘制三维坐标轴
+        // Pre-build camera matrices for axis projection (reused across panels)
+        cv::Mat K_cv = (cv::Mat_<double>(3,3) <<
+            camera_.K(0,0), camera_.K(0,1), camera_.K(0,2),
+            camera_.K(1,0), camera_.K(1,1), camera_.K(1,2),
+            camera_.K(2,0), camera_.K(2,1), camera_.K(2,2));
+        cv::Mat rvec, tvec_cv;
         if (result.success) {
-            std::vector<cv::Point3d> axis_pts = {{0,0,0}, {100,0,0}, {0,100,0}, {0,0,100}};
-            std::vector<cv::Point2d> img_pts;
-            cv::Mat K_cv = (cv::Mat_<double>(3,3) <<
-                camera_.K(0,0), camera_.K(0,1), camera_.K(0,2),
-                camera_.K(1,0), camera_.K(1,1), camera_.K(1,2),
-                camera_.K(2,0), camera_.K(2,1), camera_.K(2,2));
-            cv::Mat rvec;
             cv::Mat R_cv = (cv::Mat_<double>(3,3) <<
                 result.R(0,0), result.R(0,1), result.R(0,2),
                 result.R(1,0), result.R(1,1), result.R(1,2),
                 result.R(2,0), result.R(2,1), result.R(2,2));
             cv::Rodrigues(R_cv, rvec);
-            cv::Mat tvec = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
-            cv::projectPoints(axis_pts, rvec, tvec, K_cv, cv::Mat(), img_pts);
-            if (img_pts.size() == 4) {
-                cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0, 0, 255), 3);
-                cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0, 255, 0), 3);
-                cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255, 0, 0), 3);
+            tvec_cv = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
+        }
+
+        // ================================================================
+        // Panel: Overview (always) — full image + visible markers + 3D axes
+        // ================================================================
+        {
+            cv::Mat vis = left_color.clone();
+            for (const auto& pt : result.pts_left_match) {
+                cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 8, 2);
+            }
+            if (result.success) {
+                std::vector<cv::Point3d> axis_pts = {{0,0,0}, {100,0,0}, {0,100,0}, {0,0,100}};
+                std::vector<cv::Point2d> img_pts;
+                cv::projectPoints(axis_pts, rvec, tvec_cv, K_cv, cv::Mat(), img_pts);
+                if (img_pts.size() == 4) {
+                    cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0, 0, 255), 3);
+                    cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0, 255, 0), 3);
+                    cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255, 0, 0), 3);
+                }
+            }
+            cv::imwrite(output_dir_ + "/mono_f"
+                + std::to_string(state_.frame_count) + ".png", vis);
+        }
+
+        // ================================================================
+        // 以下 per-strategy 诊断面板仅在 Debug 模式 (visualize_detailed_) 生成
+        // Normal 模式只输出 Overview 三维轴叠加图
+        // ================================================================
+        if (visualize_detailed_) {
+
+        // ================================================================
+        // Panel: 3D Axes on expanded view (all strategies, when pose OK)
+        // ================================================================
+        if (result.success) {
+            cv::Mat p_axes = view_L.clone();
+            double axis_len = 100.0;
+            Eigen::Vector3d o  = result.R * Eigen::Vector3d(0,0,0) + result.t;
+            Eigen::Vector3d ax = result.R * Eigen::Vector3d(axis_len,0,0) + result.t;
+            Eigen::Vector3d ay = result.R * Eigen::Vector3d(0,axis_len,0) + result.t;
+            Eigen::Vector3d az = result.R * Eigen::Vector3d(0,0,axis_len) + result.t;
+            cv::Point o_p  = proj(o);  o_p.x  -= expand_L.x; o_p.y  -= expand_L.y;
+            cv::Point ax_p = proj(ax); ax_p.x -= expand_L.x; ax_p.y -= expand_L.y;
+            cv::Point ay_p = proj(ay); ay_p.x -= expand_L.x; ay_p.y -= expand_L.y;
+            cv::Point az_p = proj(az); az_p.x -= expand_L.x; az_p.y -= expand_L.y;
+            cv::line(p_axes, o_p, ax_p, cv::Scalar(0,0,255), 2, cv::LINE_AA);
+            cv::line(p_axes, o_p, ay_p, cv::Scalar(0,255,0), 2, cv::LINE_AA);
+            cv::line(p_axes, o_p, az_p, cv::Scalar(255,0,0), 2, cv::LINE_AA);
+            // Draw matched points on axes panel
+            for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
+                cv::Point2f pv = toView_L(result.pts_left_match[i]);
+                cv::circle(p_axes,
+                    cv::Point(static_cast<int>(pv.x), static_cast<int>(pv.y)),
+                    4, CORNER_COLORS[i % 10], -1);
+            }
+            std::string axes_name = is_bc   ? "/mono_bc_axes" + prefix + ".png" :
+                                    is_tiny ? "/mono_tt_axes" + prefix + ".png"
+                                            : "/mono_ak_axes" + prefix + ".png";
+            cv::imwrite(output_dir_ + axes_name, p_axes);
+        }
+
+        // ================================================================
+        // BinaryCorner-specific panels
+        // ================================================================
+        if (is_bc) {
+            auto* bce = binary_extractor_.get();
+            float lx_roi = static_cast<float>(left_offset.x);
+            float ly_roi = static_cast<float>(left_offset.y);
+
+            // -- Panel: Binary image (left only) with corner overlay --
+            if (bce && !bce->lastLeftBinary().empty()) {
+                cv::Mat bl_bgr;
+                cv::cvtColor(bce->lastLeftBinary(), bl_bgr, cv::COLOR_GRAY2BGR);
+                for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
+                    cv::Point p(
+                        static_cast<int>(result.pts_left_match[i].x - lx_roi),
+                        static_cast<int>(result.pts_left_match[i].y - ly_roi));
+                    cv::circle(bl_bgr, p, 4, CORNER_COLORS[i % 10], -1);
+                }
+                cv::imwrite(output_dir_ + "/mono_bc_binary" + prefix + ".png", bl_bgr);
+            }
+
+            // -- Panel: Upright (rotated-back) binary --
+            if (bce && !bce->lastUprightBinary().empty()) {
+                cv::Mat up;
+                cv::cvtColor(bce->lastUprightBinary(), up, cv::COLOR_GRAY2BGR);
+                cv::imwrite(output_dir_ + "/mono_bc_upright" + prefix + ".png", up);
+            }
+
+            // -- Panel: Template correspondence (left-view | matched-template) --
+            {
+                cv::Mat p_tmpl_l = view_L.clone();
+                for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
+                    cv::Point2f pv = toView_L(result.pts_left_match[i]);
+                    cv::circle(p_tmpl_l,
+                        cv::Point(static_cast<int>(pv.x), static_cast<int>(pv.y)),
+                        4, CORNER_COLORS[i % 10], -1);
+                }
+                const TemplateData* matched_tmpl = bce ? bce->lastMatchedTemplate() : nullptr;
+                cv::Mat p_tmpl_r;
+                if (matched_tmpl && !matched_tmpl->image.empty()) {
+                    cv::cvtColor(matched_tmpl->image, p_tmpl_r, cv::COLOR_GRAY2BGR);
+                } else {
+                    p_tmpl_r = cv::Mat(100, 100, CV_8UC3, cv::Scalar(128,128,128));
+                }
+                cv::resize(p_tmpl_r, p_tmpl_r, p_tmpl_l.size(), 0, 0, cv::INTER_NEAREST);
+                if (matched_tmpl) {
+                    double dsx = static_cast<double>(p_tmpl_r.cols)
+                               / std::max(1, matched_tmpl->image.cols);
+                    double dsy = static_cast<double>(p_tmpl_r.rows)
+                               / std::max(1, matched_tmpl->image.rows);
+                    for (const auto& c : matched_tmpl->corners) {
+                        cv::circle(p_tmpl_r,
+                            cv::Point(static_cast<int>(c.x * dsx),
+                                      static_cast<int>(c.y * dsy)),
+                            4, CORNER_COLORS[0], 1);
+                    }
+                }
+                cv::Mat p_tmpl;
+                cv::hconcat(p_tmpl_l, p_tmpl_r, p_tmpl);
+                cv::imwrite(output_dir_ + "/mono_bc_template" + prefix + ".png", p_tmpl);
+            }
+
+            // -- Panel: Reprojection error on expanded left view --
+            {
+                const auto& pnp_pts_3d = winning_ext->templateData().pts_3d;
+                if (!pnp_pts_3d.empty()) {
+                    cv::Mat p_reproj = view_L.clone();
+                    size_t n_pts = std::min(result.pts_left_match.size(), pnp_pts_3d.size());
+                    for (size_t i = 0; i < n_pts; ++i) {
+                        cv::Point2f obs_v = toView_L(result.pts_left_match[i]);
+                        cv::Point po(static_cast<int>(obs_v.x), static_cast<int>(obs_v.y));
+                        if (result.success) {
+                            Eigen::Vector3d P_cam = result.R * pnp_pts_3d[i] + result.t;
+                            if (std::abs(P_cam.z()) >= 1e-6) {
+                                Eigen::Vector2d uv = projectToImage(P_cam, camera_.K);
+                                cv::Point pd(static_cast<int>(uv.x() - expand_L.x),
+                                            static_cast<int>(uv.y() - expand_L.y));
+                                cv::circle(p_reproj, pd, 3, cv::Scalar(0, 255, 0), -1);
+                                cv::circle(p_reproj, po, 5, CORNER_COLORS[i % 10], 1);
+                                cv::line(p_reproj, pd, po,
+                                         cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+                            }
+                        } else {
+                            cv::circle(p_reproj, po, 4, CORNER_COLORS[i % 10], -1);
+                        }
+                    }
+                    cv::imwrite(output_dir_ + "/mono_bc_reproj" + prefix + ".png", p_reproj);
+                }
             }
         }
 
-        std::string mono_path = output_dir_ + "/mono_f" +
-            std::to_string(state_.frame_count) + ".png";
-        cv::imwrite(mono_path, vis);
-        if (verbose_console_) std::cout << "[Mono] Visualization saved: " << mono_path << std::endl;
+        // ================================================================
+        // TinyTarget-specific panels
+        // ================================================================
+        if (is_tiny) {
+            const auto& pnp_pts_3d = winning_ext->templateData().pts_3d;
+
+            // -- Panel: Reprojection error --
+            if (!pnp_pts_3d.empty()) {
+                cv::Mat p_reproj = view_L.clone();
+                size_t n_pts = std::min(result.pts_left_match.size(), pnp_pts_3d.size());
+                for (size_t i = 0; i < n_pts; ++i) {
+                    cv::Point2f obs_v = toView_L(result.pts_left_match[i]);
+                    cv::Point po(static_cast<int>(obs_v.x), static_cast<int>(obs_v.y));
+                    if (result.success) {
+                        Eigen::Vector3d P_cam = result.R * pnp_pts_3d[i] + result.t;
+                        if (std::abs(P_cam.z()) >= 1e-6) {
+                            Eigen::Vector2d uv = projectToImage(P_cam, camera_.K);
+                            cv::Point pd(static_cast<int>(uv.x() - expand_L.x),
+                                        static_cast<int>(uv.y() - expand_L.y));
+                            cv::circle(p_reproj, pd, 3, cv::Scalar(0, 255, 0), -1);
+                            cv::circle(p_reproj, po, 5, CORNER_COLORS[i % 10], 1);
+                            cv::line(p_reproj, pd, po,
+                                     cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+                        }
+                    } else {
+                        cv::circle(p_reproj, po, 4, CORNER_COLORS[i % 10], -1);
+                    }
+                }
+                cv::imwrite(output_dir_ + "/mono_tt_reproj" + prefix + ".png", p_reproj);
+            }
+        }
+
+        // ================================================================
+        // AKAZE-specific panels
+        // ================================================================
+        if (!is_bc && !is_tiny) {
+            // -- Panel: Matched feature points on expanded view --
+            if (!result.pts_left_match.empty()) {
+                cv::Mat p_match = view_L.clone();
+                for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
+                    cv::Point2f pv = toView_L(result.pts_left_match[i]);
+                    cv::circle(p_match,
+                        cv::Point(static_cast<int>(pv.x), static_cast<int>(pv.y)),
+                        4, CORNER_COLORS[i % 10], -1);
+                }
+                cv::imwrite(output_dir_ + "/mono_ak_matches" + prefix + ".png", p_match);
+            }
+        }
+
+        } // end visualize_detailed_ per-strategy panels
+
+        if (verbose_console_)
+            std::cout << "[Mono] Visualization saved: " << output_dir_
+                      << " (strategy=" << strategy << ")" << std::endl;
     }
 
     state_.frame_count++;

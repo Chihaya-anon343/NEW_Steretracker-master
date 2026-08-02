@@ -54,6 +54,8 @@ struct TrackerConfig {
     LKParams lk_params;                  ///< 光流参数
     int akaze_min_area{40000};           ///< 选择 AKAZE 策略的最小 ROI 面积
     int tiny_max_area{800};              ///< TinyTarget 策略的最大 ROI 面积
+    int akaze_min_area_class1{0};        ///< class1-only 时的 AKAZE 阈值 (0=回退到 akaze_min_area)
+    int tiny_max_area_class1{0};         ///< class1-only 时的 TinyTarget 阈值 (0=回退到 tiny_max_area)
     int dual_roi_secondary_expand{10};   ///< 双 ROI 模式下次级（class 1）ROI 的拓展像素数
     double dual_roi_akaze_scale{0.5};    ///< 双 ROI class 1 提取时的 AKAZE 缩放
 };
@@ -216,6 +218,11 @@ struct LogEntry {
 
     double total_time_ms{0.0};
     std::map<std::string, double> timing; ///< 各阶段耗时 (ms)
+
+    std::string strategy_name;            ///< 使用的提取器策略
+    bool is_class1{false};                ///< 是否 class1 回退帧
+    double t_x{0.0}, t_y{0.0}, t_z{0.0};        ///< 平移 (mm)
+    double rvec_x{0.0}, rvec_y{0.0}, rvec_z{0.0};///< 旋转向量 (angle*axis)
 };
 
 // ============================================================================
@@ -264,6 +271,7 @@ struct PipelineResult {
     cv::Mat right_color;
     bool is_first_frame{false};
     bool fallback_used{false};
+    bool is_class1{false};             ///< class1-only 回退帧标志
     int n_matched{0};
     int n_projected{0};
 

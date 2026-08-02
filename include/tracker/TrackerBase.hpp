@@ -31,6 +31,7 @@ public:
     void printLogs() const;
     void setOutputDir(const std::string& dir) { output_dir_ = dir; }
     void setVerboseConsole(bool v) { verbose_console_ = v; g_verbose_console = v; }
+    void setVisualizeDetailed(bool v) { visualize_detailed_ = v; }
     bool verboseConsole() const { return verbose_console_; }
     const StereoCameraParams& cameraParams() const { return camera_; }
     const TrackerConfig& config() const { return config_; }
@@ -48,7 +49,7 @@ protected:
                         const std::string& tiny_template_dir);
 
     // ---- 共享方法 ----
-    void configureStrategyChain(int roi_area);
+    void configureStrategyChain(int roi_area, bool is_class1 = false);
     static RoiRect validateRoi(const RoiRect* roi, const cv::Size& img, const std::string& name);
     static std::pair<cv::Mat, cv::Mat> loadImage(const cv::Mat& img);
     void finalizePose(PipelineResult& result, const PoseEstimate& pose);
@@ -64,9 +65,11 @@ protected:
     FeatureExtractor* extractor_ = nullptr;
     std::vector<FeatureExtractor*> fallback_extractors_;
     int akaze_min_area_ = 40000, tiny_max_area_ = 800;
+    int akaze_min_area_class1_ = 0, tiny_max_area_class1_ = 0;
     int binary_roi_pad_ = 0, tiny_roi_pad_ = 0;
     std::string output_dir_;
     bool verbose_console_ = true;
+    bool visualize_detailed_ = true;  ///< true=Debug 模式生成 per-strategy 面板; false=仅三维轴叠加图
     std::unique_ptr<Visualizer> visualizer_;
     TrackingState state_;
 };

@@ -1,5 +1,5 @@
 {
-  "mode": "debug",
+  "mode": "normal",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/大图/cj01_image_0032 _rot180.jpg",
-    "right": "data/大图/cj01_image_0032 _rot180.jpg"
+    "left": "data/只有class 1/cj01_image_0008.jpg",
+    "right": "data/只有class 1/cj01_image_0008.jpg"
   },
 
   "manual_roi": {
@@ -49,7 +49,8 @@
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
-    "visualize": true
+    "visualize": true,
+    "log_file": true
   },
 
   "camera": {
@@ -78,8 +79,10 @@
       "_comment": "近距离回退: class0 未检测到 + class1 有效时触发",
       "enabled": true,
       "class1_min_area": 100,
-      "roi_expand_ratio": 3.0,
-      "min_expand_pixels": 200
+      "roi_expand_ratio": 1,
+      "min_expand_pixels": 1,
+      "akaze_min_area": 4000000,
+      "tiny_max_area": 400
     },
 
     "akaze_gpnp": {

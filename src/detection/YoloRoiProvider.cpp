@@ -50,11 +50,6 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
 
     if (sl != Status::Success || sr != Status::Success ||
         det_left.empty() || det_right.empty()) {
-        if (g_verbose_console)
-            std::cerr << "[YoloRoiProvider] Detection failed"
-                      << " (L status=" << static_cast<int>(sl)
-                      << ", R status=" << static_cast<int>(sr) << ")"
-                      << std::endl;
         return {};
     }
 
@@ -83,10 +78,6 @@ RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
     Status sl = detector_->detect(left_img, det_left);
 
     if (sl != Status::Success || det_left.empty()) {
-        if (g_verbose_console)
-            std::cerr << "[YoloRoiProvider] Mono detection failed"
-                      << " (status=" << static_cast<int>(sl) << ")"
-                      << std::endl;
         return {};
     }
 

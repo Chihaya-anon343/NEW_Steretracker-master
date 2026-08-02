@@ -43,6 +43,8 @@ void TrackerBase::initExtractors(const std::string& template_path,
 
     akaze_min_area_ = config_.akaze_min_area;
     tiny_max_area_  = config_.tiny_max_area;
+    akaze_min_area_class1_ = config_.akaze_min_area_class1;
+    tiny_max_area_class1_  = config_.tiny_max_area_class1;
     binary_roi_pad_ = binary_cfg.roi_pad_pixels;
     tiny_roi_pad_   = tiny_cfg.roi_pad_pixels;
 
@@ -59,27 +61,40 @@ void TrackerBase::initExtractors(const std::string& template_path,
 // configureStrategyChain
 // ============================================================
 
-void TrackerBase::configureStrategyChain(int roi_area) {
+void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
+    // 选择阈值：class1 专用阈值 > 0 时使用，否则回退到通用阈值
+    int akaze_thresh = akaze_min_area_;
+    int tiny_thresh  = tiny_max_area_;
+    if (is_class1) {
+        if (akaze_min_area_class1_ > 0) akaze_thresh = akaze_min_area_class1_;
+        if (tiny_max_area_class1_ > 0)  tiny_thresh  = tiny_max_area_class1_;
+    }
+
     fallback_extractors_.clear();
 
-    if (roi_area >= akaze_min_area_ || roi_area == 0) {
+    if (roi_area >= akaze_thresh || roi_area == 0) {
         extractor_ = akaze_extractor_.get();
         fallback_extractors_.push_back(binary_extractor_.get());
         fallback_extractors_.push_back(tiny_extractor_.get());
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: AkazeGpnp → BinaryCorner → TinyTarget"
-                      << " (roi_area=" << roi_area << ")" << std::endl;
-    } else if (roi_area > tiny_max_area_) {
+                      << " (roi_area=" << roi_area
+                      << " akaze_thresh=" << akaze_thresh
+                      << " is_class1=" << is_class1 << ")" << std::endl;
+    } else if (roi_area > tiny_thresh) {
         extractor_ = binary_extractor_.get();
         fallback_extractors_.push_back(tiny_extractor_.get());
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: BinaryCorner → TinyTarget"
-                      << " (roi_area=" << roi_area << ")" << std::endl;
+                      << " (roi_area=" << roi_area
+                      << " tiny_thresh=" << tiny_thresh
+                      << " is_class1=" << is_class1 << ")" << std::endl;
     } else {
         extractor_ = tiny_extractor_.get();
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: TinyTarget only"
-                      << " (roi_area=" << roi_area << ")" << std::endl;
+                      << " (roi_area=" << roi_area
+                      << " is_class1=" << is_class1 << ")" << std::endl;
     }
 }
 
@@ -170,6 +185,14 @@ void TrackerBase::addLogEntry(const PipelineResult& result, bool is_first, bool 
     entry.disparity_median = disp_median;
     entry.total_time_ms = total_time;
     entry.timing = result.timing;
+    entry.strategy_name = result.strategy_name;
+    entry.is_class1 = result.is_class1;
+    if (result.gpnp_success || result.success) {
+        entry.t_x = result.t.x(); entry.t_y = result.t.y(); entry.t_z = result.t.z();
+        Eigen::AngleAxisd aa(result.R);
+        Eigen::Vector3d rv = aa.angle() * aa.axis();
+        entry.rvec_x = rv.x(); entry.rvec_y = rv.y(); entry.rvec_z = rv.z();
+    }
     state_.logs.push_back(std::move(entry));
 }
 

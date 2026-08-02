@@ -24,6 +24,8 @@
 
 #include <iostream>
 #include <filesystem>
+#include <sstream>
+#include <fstream>
 
 int main(int argc, char** argv) {
     using namespace gpnp;
@@ -61,7 +63,8 @@ int main(int argc, char** argv) {
     binary_cfg.target_size   = cv::Size(
         fs["strategies"]["binary_corner"]["target_width"],
         fs["strategies"]["binary_corner"]["target_height"]);
-    binary_cfg.pixel_to_meter_scale = fs["strategies"]["binary_corner"]["pixel_to_meter_scale"];
+    binary_cfg.pixel_to_meter_scale_class0 = fs["strategies"]["binary_corner"]["pixel_to_meter_scale_class0"];
+    binary_cfg.pixel_to_meter_scale_class1 = fs["strategies"]["binary_corner"]["pixel_to_meter_scale_class1"];
     binary_cfg.roi_pad_pixels = fs["strategies"]["binary_corner"]["roi_pad_pixels"];
     binary_cfg.otsu_ratio     = fs["strategies"]["binary_corner"]["otsu_ratio"];
     std::string binary_template_dir = fs["strategies"]["binary_corner"]["template_dir"];
@@ -72,7 +75,8 @@ int main(int argc, char** argv) {
         fs["strategies"]["tiny_target"]["target_width"],
         fs["strategies"]["tiny_target"]["target_height"]);
     tiny_cfg.scale_factor  = fs["strategies"]["tiny_target"]["scale_factor"];
-    tiny_cfg.square_size_m = fs["strategies"]["tiny_target"]["square_size_m"];
+    tiny_cfg.square_size_m_class0 = fs["strategies"]["tiny_target"]["square_size_m_class0"];
+    tiny_cfg.square_size_m_class1 = fs["strategies"]["tiny_target"]["square_size_m_class1"];
     tiny_cfg.roi_pad_pixels = fs["strategies"]["tiny_target"]["roi_pad_pixels"];
     std::string tiny_template_dir = fs["strategies"]["tiny_target"]["template_dir"];
 
@@ -90,12 +94,18 @@ int main(int argc, char** argv) {
 
     // 近距离回退配置（class0 丢失时用 class1）
     RoiGenerator::CloseRangeConfig close_range_cfg;
+    int akaze_min_area_class1 = 0;
+    int tiny_max_area_class1  = 0;
     cv::FileNode cr_node = fs["strategies"]["close_range"];
     if (!cr_node.empty()) {
         close_range_cfg.enabled          = static_cast<int>(cr_node["enabled"]) != 0;
         close_range_cfg.class1_min_area  = cr_node["class1_min_area"];
         close_range_cfg.roi_expand_ratio = cr_node["roi_expand_ratio"];
         close_range_cfg.min_expand_pixels = cr_node["min_expand_pixels"];
+        akaze_min_area_class1 = static_cast<int>(cr_node["akaze_min_area"]);
+        tiny_max_area_class1  = static_cast<int>(cr_node["tiny_max_area"]);
+        close_range_cfg.akaze_min_area = akaze_min_area_class1;
+        close_range_cfg.tiny_max_area  = tiny_max_area_class1;
     }
 
     // 双 ROI 配置（class 1 ROI 拓展像素 + AKAZE 提取参数）
@@ -119,12 +129,18 @@ int main(int argc, char** argv) {
         if (!mn.empty()) run_mode = static_cast<std::string>(mn);
     }
     bool verbose_console  = (run_mode == "debug");
+    bool visualize_detailed = verbose_console;  ///< Debug 模式生成 per-strategy 面板，与日志捕获独立
     bool use_input_system = (run_mode == "normal");
 
     // 输入输出
     std::string left_path  = fs["input"]["left"];
     std::string right_path = fs["input"]["right"];
     bool visualize = static_cast<int>(fs["output"]["visualize"]) != 0;
+    bool log_file   = false;
+    {
+        cv::FileNode lf = fs["output"]["log_file"];
+        if (!lf.empty()) log_file = static_cast<int>(lf) != 0;
+    }
 
     // 手动 ROI 配置 — 仅 debug 模式生效
     bool use_manual_roi = false;
@@ -192,6 +208,17 @@ int main(int argc, char** argv) {
     fs.release();
 
     // ========================================================================
+    // 日志文件捕获 — normal 模式 + log_file 时重定向 cout 到字符串流
+    // ========================================================================
+    std::ostringstream log_body;
+    std::streambuf* saved_cout = nullptr;
+    bool capture_log = log_file && !verbose_console;   // 仅 normal 模式（非 verbose）
+    if (capture_log) {
+        saved_cout = std::cout.rdbuf(log_body.rdbuf());  // cout → 日志；保存原始终端缓冲区
+        verbose_console = true;                        // 强制 verbose 以便捕获详细处理消息
+    }
+
+    // ========================================================================
     // ② 构造输出目录
     // ========================================================================
     namespace fsp = std::filesystem;
@@ -229,6 +256,7 @@ int main(int argc, char** argv) {
 
     TrackerConfig tracker_cfg = makeTrackerConfig(scale, min_pts, use_init_pnp, tw, th,
                                                   akaze_min_area, tiny_max_area,
+                                                  akaze_min_area_class1, tiny_max_area_class1,
                                                   dual_expand, dual_akaze_scale);
 
     try {
@@ -280,6 +308,7 @@ int main(int argc, char** argv) {
                                                     tiny_cfg, tiny_template_dir);
             t->setOutputDir(output_dir);
             t->setVerboseConsole(verbose_console);
+            t->setVisualizeDetailed(visualize_detailed);
             tracker = std::move(t);
             std::cout << "单目模式已启用（仅左图）" << std::endl;
         } else {
@@ -289,6 +318,7 @@ int main(int argc, char** argv) {
                                                       tiny_cfg, tiny_template_dir);
             t->setOutputDir(output_dir);
             t->setVerboseConsole(verbose_console);
+            t->setVisualizeDetailed(visualize_detailed);
             tracker = std::move(t);
         }
 
@@ -298,6 +328,16 @@ int main(int argc, char** argv) {
         auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) {
             PipelineResult result;
 
+            // 终端每帧一行输出。capture_log 时 cout 被重定向到日志，这里直写原始终端缓冲区
+            auto termLine = [&](const std::string& s) {
+                if (capture_log && saved_cout) {
+                    std::string t = s + '\n';
+                    saved_cout->sputn(t.data(), t.size());
+                } else {
+                    std::cout << s << std::endl;
+                }
+            };
+
             if (mono_mode) {
                 auto* mt = static_cast<MonoTracker*>(tracker.get());
                 RoiGroup left_group;
@@ -306,7 +346,7 @@ int main(int argc, char** argv) {
                 } else if (yolo_ok) {
                     left_group = yolo.detectMono(L);
                     if (!left_group.valid()) {
-                        std::cout << "[Frame " << frame << "] YOLO未检测到目标" << std::endl;
+                        termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
                         return;
                     }
                 }
@@ -326,7 +366,7 @@ int main(int argc, char** argv) {
                 } else if (yolo_ok) {
                     std::tie(lg, rg) = yolo.detect(L, R);
                     if (!lg.valid() || !rg.valid()) {
-                        std::cout << "[Frame " << frame << "] YOLO未检测到目标" << std::endl;
+                        termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
                         return;
                     }
                     if (lg.is_dual && verbose_console) {
@@ -339,7 +379,7 @@ int main(int argc, char** argv) {
 
             // ---- 输出 ----
             if (verbose_console) {
-                // 详细模式：当前行为
+                // 详细统计 → cout（capture_log 时被重定向到日志文件）
                 std::cout << "  特征点: " << result.n_kp_left
                           << "  匹配: " << result.n_matched
                           << "  投影: " << result.n_projected
@@ -351,20 +391,23 @@ int main(int argc, char** argv) {
                 }
                 std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
                           << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
-            } else {
-                // 静默模式：策略 + n + r + t 或 FAILED
+            }
+
+            // normal 模式：每帧一行 → 终端
+            if (!verbose_console || capture_log) {
                 if (result.success) {
                     Eigen::AngleAxisd aa(result.R);
                     Eigen::Vector3d rvec = aa.angle() * aa.axis();
                     std::string sname = result.strategy_name.empty()
                         ? "Unknown" : result.strategy_name;
-                    std::cout << "[Frame " << frame << "] " << sname
-                              << "  n=" << result.n_matched
-                              << "  r=[" << rvec.x() << ", " << rvec.y() << ", " << rvec.z() << "]"
-                              << "  t=[" << result.t.x() << ", " << result.t.y() << ", " << result.t.z() << "]"
-                              << std::endl;
+                    std::ostringstream os;
+                    os << "[Frame " << frame << "] " << sname
+                       << "  n=" << result.n_matched
+                       << "  r=[" << rvec.x() << ", " << rvec.y() << ", " << rvec.z() << "]"
+                       << "  t=[" << result.t.x() << ", " << result.t.y() << ", " << result.t.z() << "]";
+                    termLine(os.str());
                 } else {
-                    std::cout << "[Frame " << frame << "] FAILED" << std::endl;
+                    termLine("[Frame " + std::to_string(frame) + "] FAILED");
                 }
             }
         };
@@ -404,6 +447,66 @@ int main(int argc, char** argv) {
 
         if (verbose_console)
             tracker->printLogs();
+
+        // ---- 日志文件输出（normal + log_file 时已捕获 cout）----
+        if (capture_log) {
+            std::cout.rdbuf(saved_cout);   // 恢复终端输出
+            verbose_console = false;
+
+            // 配置摘要头
+            std::ostringstream hdr;
+            hdr << "================================================================\n"
+                << " Steretracker 追踪日志\n"
+                << "================================================================\n"
+                << "运行模式: " << run_mode << (mono_mode ? " (单目)" : " (双目)") << "\n"
+                << "配置路径: " << config_path << "\n";
+            if (use_input_system) {
+                hdr << "输入源目录: " << input_sys_cfg.image.directory_path
+                    << "  type=";
+                switch (input_sys_cfg.image.type) {
+                    case input::ImageSourceType::File:       hdr << "file"; break;
+                    case input::ImageSourceType::Directory:  hdr << "directory"; break;
+                    case input::ImageSourceType::Sequence:   hdr << "sequence"; break;
+                    default:                                 hdr << "unknown"; break;
+                }
+                hdr << "\n";
+            } else {
+                hdr << "左图: " << left_path << "\n"
+                    << "右图: " << right_path << "\n";
+            }
+            hdr << "输出目录: " << output_dir << "\n"
+                << "相机: fx=" << fx << " fy=" << fy << " cx=" << cx << " cy=" << cy
+                << " baseline_mm=" << baseline << "\n"
+                << "YOLO: model=" << model_path << " conf=" << conf
+                << " class=" << target_cls << " expand=" << expand << "\n"
+                << "AKAZE模板: " << template_path << "  " << tw << "x" << th << "mm"
+                << "  scale=" << scale << "  min_pts=" << min_pts << "\n"
+                << "BC模板: " << binary_template_dir << "  corners=" << binary_cfg.corners
+                << "  kernel=" << binary_cfg.kernel_size
+                << "  p2m_c0=" << binary_cfg.pixel_to_meter_scale_class0
+                << "  p2m_c1=" << binary_cfg.pixel_to_meter_scale_class1 << "\n"
+                << "TT模板: " << tiny_template_dir << "  scale_factor=" << tiny_cfg.scale_factor
+                << "  sq_c0=" << tiny_cfg.square_size_m_class0
+                << "  sq_c1=" << tiny_cfg.square_size_m_class1 << "\n"
+                << "面积阈值: akaze_min=" << akaze_min_area
+                << "  tiny_max=" << tiny_max_area
+                << "  class1_akaze=" << akaze_min_area_class1
+                << "  class1_tiny=" << tiny_max_area_class1 << "\n"
+                << "close_range: enabled=" << close_range_cfg.enabled
+                << "  class1_min=" << close_range_cfg.class1_min_area
+                << "  expand_ratio=" << close_range_cfg.roi_expand_ratio << "\n"
+                << "================================================================\n\n";
+
+            std::string log_path = output_dir + "/tracking_log.txt";
+            std::ofstream ofs(log_path);
+            if (ofs.is_open()) {
+                ofs << hdr.str() << log_body.str();
+                ofs.close();
+                std::cout << "[Log] Saved: " << log_path << std::endl;
+            } else {
+                std::cerr << "[Log] Failed to open: " << log_path << std::endl;
+            }
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "致命错误: " << e.what() << std::endl;
