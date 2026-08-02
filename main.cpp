@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
     int akaze_min_area = fs["strategies"]["akaze_min_area"];
     int tiny_max_area  = fs["strategies"]["tiny_max_area"];
     int dual_trigger_area = fs["strategies"]["dual_trigger_area"];
+    bool stereo_mono_fallback = static_cast<int>(fs["strategies"]["stereo_mono_fallback"]) != 0;
 
     // 近距离回退配置（class0 丢失时用 class1）
     RoiGenerator::CloseRangeConfig close_range_cfg;
@@ -366,7 +367,7 @@ int main(int argc, char** argv) {
                     }
                 } else if (yolo_ok) {
                     std::tie(lg, rg) = yolo.detect(L, R);
-                    if (!lg.valid() || !rg.valid()) {
+                    if (!lg.valid() && !rg.valid()) {
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
                         return;
                     }
@@ -376,7 +377,17 @@ int main(int argc, char** argv) {
                     }
                 }
                 tracker->setFrameNumber(frame);
-                result = st->process(L, R, visualize, &lg, &rg);
+                if (lg.valid() && rg.valid()) {
+                    // 双侧检测 → 双目
+                    result = st->process(L, R, visualize, &lg, &rg);
+                } else if (stereo_mono_fallback && (lg.valid() || rg.valid())) {
+                    // 单侧检测 → 单目降级（需 stereo_mono_fallback=true）
+                    result = st->processMono(lg.valid() ? L : R, visualize,
+                                              lg.valid() ? &lg : &rg);
+                } else {
+                    termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
+                    return;
+                }
             }
 
             // ---- 输出 ----

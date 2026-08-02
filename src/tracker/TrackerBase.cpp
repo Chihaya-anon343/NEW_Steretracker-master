@@ -137,6 +137,7 @@ void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose)
     result.R = pose.R;
     result.t = pose.t;
     result.gpnp_success = pose.success;
+    result.success = pose.success;   // 统一流水线整体成功标志（终端 FAILED / 三维轴绘制依赖此值）
     result.gpnp_n_pts = pose.num_points;
 
     if (pose.success) {

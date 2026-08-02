@@ -4,6 +4,7 @@
 #include "feature/MadDisparityFilter.hpp"
 #include "pose/GPnPSolver.hpp"
 #include "pose/InitialPnPSolver.hpp"
+#include "pose/MonoPnPSolver.hpp"
 
 #include <opencv2/core.hpp>
 #include <memory>
@@ -43,6 +44,11 @@ public:
                            const RoiGroup* left_group = nullptr,
                            const RoiGroup* right_group = nullptr);
 
+    /// 单目降级处理：左右图仅一侧检测到目标时使用（EPnP，无立体）。
+    PipelineResult processMono(const cv::Mat& img,
+                               bool visualize = false,
+                               const RoiGroup* roi_group = nullptr);
+
 private:
     // ---- Stereo-specific helpers ----
     PipelineResult processDualRoi(const cv::Mat& left_img,
@@ -75,9 +81,9 @@ private:
 
     // ---- PnP ----
     std::pair<bool, PoseEstimate> dispatchPnP(FeatureExtractor* ext,
-                                               PipelineResult& result, bool is_first);
-    std::pair<bool, PoseEstimate> runAkazePnP(PipelineResult& result, bool is_first);
-    std::pair<bool, PoseEstimate> runBinaryCornerPnP(PipelineResult& result, bool is_first);
+                                               PipelineResult& result);
+    std::pair<bool, PoseEstimate> runAkazePnP(PipelineResult& result);
+    std::pair<bool, PoseEstimate> runBinaryCornerPnP(PipelineResult& result);
     std::pair<bool, PoseEstimate> runTinyTargetPnP(PipelineResult& result);
 
     // ---- Stereo-specific members ----
@@ -88,6 +94,7 @@ private:
     InitialPnPSolver initial_pnp_;
     GPnPSolver gpnp_solver_;
     MadDisparityFilter mad_filter_;
+    MonoPnPSolver mono_pnp_;  ///< 单侧检测降级时的单目 PnP
 };
 
 } // namespace gpnp

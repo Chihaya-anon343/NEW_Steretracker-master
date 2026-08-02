@@ -6,10 +6,10 @@
     "_comment": "type: file / directory / sequence",
     "max_frames": 0,
     "image": {
-      "type": "sequence",
+      "type": "directory",
       "left_path": "",
       "right_path": "",
-      "directory_path": "data/output_frames",
+      "directory_path": "data/stere_frames",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -45,7 +45,7 @@
 
   "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
   "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
-  "mono_mode": true,
+  "mono_mode": false,
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
@@ -74,6 +74,7 @@
     "akaze_min_area": 40001,
     "tiny_max_area": 400,
     "dual_trigger_area": 490000,
+    "stereo_mono_fallback": false,
 
     "close_range": {
       "_comment": "近距离回退: class0 未检测到 + class1 有效时触发",

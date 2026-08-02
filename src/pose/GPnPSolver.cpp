@@ -345,11 +345,11 @@ PoseEstimate GPnPSolver::solve(PipelineResult& result,
                 pose_result.success = true;
             } else if (R_diff > 1.5) {
                 // 大 |ΔR| 且 t 符号正确 → 共面 r₃ 歧义。
-                // 保留 InitialPnP R（几何一致），使用 GPnP t（立体细化）。
+                // 保留 InitialPnP 完整位姿（几何一致，确定性复现），放弃 GPnP 结果。
                 std::cout << "  [GPnP HYBRID] |ΔR|=" << R_diff
-                          << " > 1.5 (coplanar ambiguity), using InitialPnP R + GPnP t" << std::endl;
+                          << " > 1.5 (coplanar ambiguity), using InitialPnP pose" << std::endl;
                 pose_result.R = *R_init;
-                // pose_result.t = t_opt（已从 GPnP 设置）
+                pose_result.t = *t_init;
             }
         }
     }
