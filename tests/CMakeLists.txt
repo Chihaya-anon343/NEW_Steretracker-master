@@ -145,9 +145,10 @@ function(gpnp_add_test name)
         target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
-    # ONNX 可选链接 (仅 test_input_system 需要)
+    # ONNX 可选链接 (YoloRoiProvider.cpp 属于共享源码, 所有测试目标均需链接)
     if(GPNP_ONNXRUNTIME_FOUND)
         target_include_directories(${name} PRIVATE ${GPNP_ONNXRUNTIME_INCLUDE_DIR})
+        target_link_libraries(${name} PRIVATE ${GPNP_ONNXRUNTIME_LIB})
     endif()
 
     # 测试数据路径注入 (绝对路径, 保证任意工作目录可运行)

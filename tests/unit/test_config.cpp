@@ -33,7 +33,7 @@ static void test_stereo_params_invalid_k() {
 }
 
 static void test_stereo_params_invalid_rotation() {
-    auto R = Eigen::Matrix3d::Identity();
+    Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
     R(0, 0) = 2.0;
     TEST_ASSERT_THROWS(makeStereoCameraParams(makeK(), R, Eigen::Vector3d(-120.0, 0.0, 0.0)), std::invalid_argument);
 }
