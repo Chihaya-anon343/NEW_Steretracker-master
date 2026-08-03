@@ -1,90 +1,149 @@
-# Steretracker 测试方案
+# Steretracker 自动化测试方案
 
-本目录包含 Steretracker（GPNP 双目视觉跟踪器）的完整功能测试方案与测试基础设施。
+> 本目录存放项目自动化测试代码。方案基于对 README.md / CLAUDE.md 与全部源码的深度阅读设计。
 
-## 目录结构
+## 1. 测试目标
+
+| 层级 | 目标 | 覆盖模块 |
+|------|------|---------|
+| L0 单元 | 纯函数/单类行为验证，无外部依赖 | 配置工厂、ROI 生成与五状态判定、PnP 求解器、提取器、输入系统 |
+| L1 集成 | 多模块协同（Tracker 全流程） | 双目/单目/双ROI 合成图像端到端 |
+| L2 系统 | 完整二进制 + 真数据 + YOLO/ONNX | 由 CI 手动触发，脚本级对接 |
+
+> 核心原则：**L0/L1 完全脱离 ONNX Runtime 与主工程 main.cpp**，仅依赖 OpenCV+Eigen（已验证：源码中仅 `main.cpp` 与 `YoloRoiProvider.cpp` 依赖 ONNX）。
+
+## 2. 技术栈与框架
+
+- **C++17** · **OpenCV 4.x** · **Eigen 3.x**（与主工程一致）
+- **自研轻量断言宏** `TestAssert.hpp`（不引入 GTest 等第三方测试依赖，便于 CI 零配置构建）
+- **CMake 集成**：根工程 `GPNP_BUILD_TESTS` 开关，独立 `tests/CMakeLists.txt`
+
+## 3. 目录结构
 
 ```
 tests/
-├── README.md                   # 本文件 — 测试方案总览与执行入口
-├── docs/
-│   └── TEST_PLAN.md            # 完整测试方案（测试域、用例矩阵、优先级、通过准则）
-├── test_data/
-│   └── synthetic/              # 合成测试图像（由生成脚本预生成）
-│       └── generate.py         # Python+OpenCV 合成图像生成脚本
-├── unit/                       # 纯算法层单元测试（不依赖 ONNX Runtime）
-│   ├── CMakeLists.txt          # 独立编译配置
-│   ├── pose/                   # 位姿有效性测试用例
-│   └── strategy/               # 策略链退化测试用例
-├── test_utils/                 # 测试辅助工具（断言宏）
-└── integration/                # 端到端集成测试脚本（Linux / Docker 环境）
-    └── run_e2e.sh              # 批量运行主程序 + 验证输出
+├── README.md                 # 本方案文档
+├── CMakeLists.txt            # 测试构建（独立，复用 src/ 全部可测源文件）
+├── framework/
+│   └── TestAssert.hpp        # 轻量断言宏 + 测试注册器
+├── unit/
+│   ├── test_config.cpp               # Config 工厂函数（参数校验/派生量）
+│   ├── test_roi_generator.cpp        # 五状态判定 + 双ROI + 近距离回退
+│   ├── test_pose_solvers.cpp         # GPnP/InitialPnP/MonoPnP 合成对应点
+│   ├── test_extractors.cpp           # 三大提取器（合成矩形目标）
+│   └── test_input_system.cpp         # File/Directory/Sequence 图像源
+├── integration/
+│   ├── test_stereo_pipeline.cpp      # 双目全流程（GPnP warm-start + MAD）
+│   ├── test_mono_pipeline.cpp        # 单目全流程（EPnP）
+│   └── test_dual_roi.cpp             # 双ROI 合并路径
+├── fixtures/                 # 测试资产（脚本生成，不入库）
+│   ├── gen_fixtures.py
+│   ├── stereo/               # 合成双目图像对
+│   ├── templates/            # 合成模板
+│   └── sequences/            # 编号图像序列
+└── l2_system_test.py         # L2 冒烟脚本（可选，对接真实 best.onnx）
 ```
 
-## 测试环境要求
+## 4. 测试用例设计
 
-| 组件 | 最小版本 | 备注 |
-|------|---------|------|
-| C++ | 17 | 编译单元测试 |
-| OpenCV | 4.x | `core, imgproc, features2d, calib3d, highgui` |
-| Eigen | 3.x | 线性代数 |
-| ONNX Runtime | 1.20+ (Linux) | 仅集成测试需要 |
-| CMake | 3.22+ | 构建工具 |
-| Python | 3.8+ | 合成图像生成（可选） |
+### 4.1 五状态判定（test_roi_generator.cpp）— 核心
 
-## 快速开始
+依据 `RoiGenerator` 面积分级规则设计 **表驱动测试**：
 
-### 1. 生成合成测试图像（可选）
+| 用例 | 输入 (class0_area, class1) | 期望 State | 期望策略 |
+|------|---------------------------|-----------|---------|
+| R01 | ≤800, 无 | 1 远 | TinyTarget |
+| R02 | 801~40000, 无 | 2 中 | BinaryCorner |
+| R03 | 40001~489999, 无 | 3 中近 | AKAZE |
+| R04 | ≥490000, 无 class1 | 3 中近 | AKAZE（单ROI） |
+| R05 | ≥490000, 有 class1 | 4 近 | Dual-ROI（is_dual=true） |
+| R06 | 无 class0, class1 面积≥min | 5 极近 | CloseRange 回退→按面积重分类 |
+| R07 | 无任何检测 | SKIP | RoiGroup 无效，valid()==false |
+
+### 4.2 配置工厂（test_config.cpp）
+
+- 合法参数 → 派生量正确（`focal_length = K(0,0)`, `baseline = |t_rl|`）
+- 非法参数 → 抛出 `std::invalid_argument`：
+  - K 非标准内参 / 含 NaN / R 行列式≠1 / scale≤0 或 >1 / gpnp_min_pts<3 / 模板尺寸≤0
+  - YOLO: 空路径 / conf>1 / iou>1 / input_size≤0
+
+### 4.3 PnP 求解器（test_pose_solvers.cpp）
+
+- **MonoPnPSolver**：合成 8+ 个 3D 点（Z=0 平面）+ 已知 K/R/t 投影 → 解算位姿应接近真值（旋转误差 < 5°，平移误差 < 5%）
+- **InitialPnPSolver**：加入 30% 外点 → RANSAC 仍收敛；纯内点 → 精化正确
+- **GPnPSolver**：带外点 + warm-start（上帧位姿±5% 扰动）→ 收敛；首帧无初值 → 深度估算回退路径
+- 有效性校验：t.z≤0 / |t|∉[10,20000] / NaN → `success=false`
+
+### 4.4 特征提取器（test_extractors.cpp）
+
+合成输入（黑色背景白矩形，已知几何）：
+
+| 提取器 | 构造 | 断言 |
+|--------|------|------|
+| TinyTarget | 50×50 白方块 | 提取 4 角点，顺序 TL/TR/BR/BL，误差 <2px |
+| BinaryCorner | 10 角点星形多边形 | 提取角点数 == 10，重排序与模板 1:1 对应 |
+| AKAZE | 纹理模板合成图 | 匹配数 ≥ min_pts，模板 3D 对应正确 |
+
+### 4.5 输入系统（test_input_system.cpp）
+
+- `FileStereoSource`: 给定左右路径 → `getNextPacket()` 返回有效图对，二次调用返回空
+- `DirectoryStereoSource`: 按 `pattern` 排序读取编号序列，逐帧递增
+- `SequenceSource`: 单目序列，`right_image` 为空
+- `InputProvider`: 首帧 `getNextPacket()` 正确组装 `SensorPacket`
+
+### 4.6 集成流水线（integration/）
+
+合成双目立体视觉环境：
+- 几何：方形/多边形目标放置于已知深度（如 1000mm），基线 120mm，fx=fy=1000
+- 用真实 R,t 渲染左右图 → 跑 `StereoTracker::process()` → 断言位姿误差 <10%
+
+| 集成 | 通道 | 路径 |
+|------|------|------|
+| test_stereo_pipeline | 双目 | State 2/3 策略 + GPnP warm-start + MAD |
+| test_mono_pipeline | 单目 | `processMono()` → MonoPnP EPnP |
+| test_dual_roi | 双目 | 双 ROI（class0+class1）合并路径 | 
+
+## 5. 构建与运行
+
+### 5.1 方式一：根工程开关
 
 ```bash
-cd tests/test_data/synthetic
-python generate.py
+cmake .. -DCMAKE_BUILD_TYPE=Release -DGPNP_BUILD_TESTS=ON
+cmake --build . --config Release --target gpnp_tests
+ctest --test-dir build/tests -C Release --output-on-failure
 ```
 
-### 2. 编译并运行单元测试（Windows / Linux 均支持）
-
-单元测试仅依赖 OpenCV + Eigen，不依赖 ONNX Runtime，可在 Windows 下直接编译：
+### 5.2 方式二：独立构建（推荐 CI 用，完全避开 main.cpp/ONNX）
 
 ```bash
-cd tests/unit
+cd tests
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake .. -DOpenCV_DIR=<opencv_dir>          # 仅需 OpenCV + Eigen
 cmake --build . --config Release
-./test_stereotracker    # Linux
-# 或 test_stereotracker.exe   # Windows
+ctest --output-on-failure
 ```
 
-### 3. 运行端到端集成测试（仅 Linux / Docker）
+### 5.3 L2 系统冒烟（可选，需要 best.onnx + 真实数据）
 
 ```bash
-# 在项目根目录执行
-bash tests/integration/run_e2e.sh
+python l2_system_test.py --bin build/Steretracker --data data/ --model best.onnx
 ```
 
-## 测试范围速览
+## 6. 风险与规避
 
-| 编号 | 测试域 | 类型 | 环境 | 优先级 |
-|------|--------|------|------|--------|
-| T1 | 配置与工厂函数 | 单元测试 | Win/Linux | P0 |
-| T2 | 五状态分级（RoiGenerator） | 单元测试 | Win/Linux | P0 |
-| T3 | 特征提取器（TinyTarget/BC/AKAZE） | 单元测试 | Win/Linux | P0 |
-| T4 | 位姿解算（GPnP/InitialPnP/MonoPnP） | 单元测试 | Win/Linux | P0 |
-| T5 | 退化链（策略降级） | 单元测试 | Win/Linux | P1 |
-| T6 | 退化全景（13类退化路径） | 单元测试 | Win/Linux | P1 |
-| T7 | 输入系统（File/Directory/Sequence） | 单元测试 | Win/Linux | P1 |
-| T8 | 端到端集成（完整流水线） | 集成测试 | Linux/Docker | P0 |
-| T9 | 性能基线 | 基准测试 | Win/Linux | P2 |
+| 风险 | 规避 |
+|------|------|
+| 主工程 ONNX 路径 Linux 硬编码导致 WIN 编译失败 | 测试构建独立，不编译 `main.cpp`/`YoloRoiProvider.cpp` |
+| 提取器对真实图敏感 | 全部用脚本合成图（矩形/多边形/纹理），几何真值已知 |
+| 阈值占位值未标定 | 测试使用与配置一致的默认值，且用例断言状态而非绝对面积常量 |
+| GPnP 数值敏感 | 对双目位姿断言用宽松容差（旋转<5°、平移<10%） |
+| 模板数据依赖 | 合成模板在 fixtures/gen_fixtures.py 中按需生成 |
 
-## 测试设计原则
+## 7. 已完成 / 待办
 
-1. **合成图像优先** — 使用已知几何的图像验证位姿解算正确性（真实图像缺乏 ground truth）
-2. **自动化判定** — 每个用例定义输入、预期输出（含数值容差）、判定标准
-3. **不修改主项目源码** — 单元测试通过引用 include 头文件 + 链接源码编译
-4. **分层隔离** — 单元测试不依赖 ONNX Runtime，可在任意平台运行
-5. **优先级驱动** — P0 必测（影响核心功能）、P1 应测（影响鲁棒性）、P2 可测（性能基线）
-
-## 相关文档
-
-- 主项目 README：`../README.md`
-- AI Agent 说明书：`../CLAUDE.md`
-- 完整测试方案：`docs/TEST_PLAN.md`
+- [x] 方案设计（本文档）
+- [ ] TestAssert.hpp 断言框架
+- [ ] L0 单元测试（config/roi/pose/feature/input）
+- [ ] fixtures 合成资产生成脚本
+- [ ] L1 集成测试（stereo/mono/dual_roi）
+- [ ] tests/CMakeLists.txt + `GPNP_BUILD_TESTS` 开关 + `.vscode/tasks.json`

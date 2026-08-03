@@ -136,6 +136,24 @@ endif()
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 
 # ============================================================================
+# Tests (可选, 默认关闭)
+#
+# 启用方式:
+#   cmake .. -DGPNP_BUILD_TESTS=ON
+#
+# 注意:
+#   - 测试目录对 ONNX Runtime 为"可选"依赖, 单元测试无需 YOLO 即可运行
+#   - 若本机缺少 ONNX Runtime (如 Windows 开发环境), 建议改为独立构建:
+#       cmake -S tests -B build-tests
+#     (tests/ 自带 find_package 探测逻辑, 便于跨平台 CI)
+# ============================================================================
+option(GPNP_BUILD_TESTS "Build unit/integration tests under tests/" OFF)
+
+if(GPNP_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
+
+# ============================================================================
 # Summary
 # ============================================================================
 

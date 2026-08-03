@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "GPNP: 配置测试 (build-tests)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S",
+        "${workspaceFolder}/tests",
+        "-B",
+        "${workspaceFolder}/build-tests",
+        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DTEST_TEMPLATE_DIR=${workspaceFolder}/data/NewMuBan(reordered)"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "GPNP: 构建测试",
+      "type": "shell",
+      "command": "cmake --build ${workspaceFolder}/build-tests --config Debug --parallel",
+      "group": "build",
+      "dependsOn": "GPNP: 配置测试 (build-tests)",
+      "problemMatcher": []
+    },
+    {
+      "label": "GPNP: 运行全部测试 (ctest)",
+      "type": "shell",
+      "command": "ctest --test-dir ${workspaceFolder}/build-tests --output-on-failure",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "dependsOn": "GPNP: 构建测试",
+      "problemMatcher": []
+    }
+  ]
+}
