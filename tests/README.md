@@ -228,18 +228,46 @@ tests/
 
 ## 6. 合成资产脚本（`tests/scripts/generate_assets.py`）
 
-生成集成/调试用的**合成图像与 ROI**，输出到 `tests/data/fixtures/`（可用 `--out` 指定）。所有目标为深色背景上的白色目标，右图为左图水平位移副本（视差固定）。
+生成集成/调试用的**合成图像与 ROI**，输出到 `tests/data/fixtures/`（可用 `--out` 指定）。脚本**不自动生成占位内容**，需用户自备输入（见下方"输入"）。
 
-| 场景目录 | 目标类型 | 几何参数 | 视差 |
-|----------|----------|----------|------|
-| `synthetic_tiny/` | 白色实心 20×20px 方块（State 1，≤800px²） | 边长 20，居中 | 4px |
-| `synthetic_bc/` | 10 角点星形（State 2，801~40000px²） | 外接圆半径 ~70px | 8px |
-| `synthetic_akaze/` | 棋盘格矩形 + 白边框（State 3，≥40000px²） | 棋盘 180×180，10×10 格 | 16px |
-| `synthetic_dual/` | class0 白边外框 520px + class1 中心白块 120px（State 4） | 外框 ≥490000px² | 20px |
-| `mono_*` | 各场景左图副本（单目） | — | — |
-| `manual_roi.json` | Debug 模式手动 ROI（与 synthetic_bc 匹配，左右各一带视差偏移的 180×180 框） | — | — |
+**思路**：输入为 背景图 + 目标图 + class1 坐标大小；class1 从目标图中按坐标裁剪，目标图本身即 class0，按测试所需大小等比缩放后布置到背景图中心区域。右图为左图水平位移副本（视差固定）。
 
-用法：
+**输入**（**硬编码在脚本顶部"输入配置"区**，运行前修改为实际路径与坐标，脚本不生成占位、缺失时报错退出）：
+
+| 常量 | 说明 |
+|------|------|
+| `TARGET_IMG` | 正视目标图路径（即 class0），支持 3/4 通道（4 通道按 alpha 混合） |
+| `BACKGROUND_IMG` | 背景图路径（自动 resize 到画布尺寸） |
+| `CLASS1_RECT` | class1 在 target.png 中的像素矩形 `{"x":..,"y":..,"width":..,"height":..}`；无 class1 时设为 `None`（dual 场景跳过 class1） |
+
+例：
+
+```python
+TARGET_IMG = r"C:/your/path/to/target.png"
+BACKGROUND_IMG = r"C:/your/path/to/background.png"
+CLASS1_RECT = {"x": 70, "y": 70, "width": 60, "height": 60}
+```
+
+**输出与占位参数**（各 State 尺寸与视差，与 §5.2 阈值一致）：
+
+| 场景目录 | class0 短边（画布 640×480） | 视差 | 说明 |
+|----------|-----------|------|------|
+| `synthetic_tiny/` | 20px（面积 ≤800px²，State 1） | 4px | class0 居中粘贴 |
+| `synthetic_bc/` | 150px（801~40000px²，State 2） | 8px | class0 居中粘贴 |
+| `synthetic_akaze/` | 210px（>40000px²，State 3） | 16px | class0 居中粘贴 |
+| `synthetic_dual/` | 720px（画布 1280×960，面积 ≥490000px²，State 4） | 20px | class0 缩放至 720 框并画白框圈定；class1 由 `class1_rect` 裁剪后缩放至 120px 叠加到中心 |
+| `synthetic_bc_class1/` | class1 短边 150px（class0 不存在） | 8px | 仅有 class1：从目标图按 `class1_rect` 裁剪后缩放至 150px 居中粘贴 |
+| `synthetic_akaze_class1/` | class1 短边 210px（class0 不存在） | 16px | 仅有 class1：从目标图按 `class1_rect` 裁剪后缩放至 210px 居中粘贴 |
+| `mono_tiny/` `mono_bc/` `mono_akaze/` | 各 class0 场景左图副本（单目） | — | 复制 `left_*.png` |
+| `mono_bc_class1/` `mono_akaze_class1/` | 各 class1 场景左图副本（单目） | — | 复制 `left_*.png` |
+| `manual_roi.json` | Debug 模式手动 ROI（对齐 `synthetic_bc` 第 0 帧实际 bbox，右图带 8px 视差偏移） | — | — |
+| `rois.json` | 每幅图 class0/class1 ROI 信息（覆盖全部场景全部帧） | — | 场景中不存在的类别对应 `null`；`synthetic_dual` 同时给出 class0（720 框）与 class1（中心 120px）实际 bbox |
+
+> `mono_dual/` 不生成：dual 场景依赖 class1 叠加，单目无对应需求。
+>
+> `rois.json` 结构：按场景分组的 `{ "场景名": { "image_size": {...}, "left_000.png": {"class0": bbox|null, "class1": bbox|null}, ... } }`，bbox 格式 `{"x":..,"y":..,"width":..,"height":..}`，可直接用于测试读取左右图 ROI。
+
+**用法**：
 
 ```bash
 pip install numpy opencv-python
@@ -325,7 +353,7 @@ g++ -std=c++17 -Iinclude -Itests \
 - [x] **L1 特征提取器测试**（`test_extractors.cpp`）：接口、静态几何、合成图、空输入（8 用例）
 - [x] **L1 输入系统测试**（`test_input_system.cpp`）：图像源、InputProvider、RingBuffer（13 场景）
 - [x] **L2 端到端冒烟测试**（`test_integration.cpp`）：单目 / 双目 warm-start / 双 ROI 三类主流程
-- [x] **合成资产脚本**（`generate_assets.py`）：4 类场景 + 单目副本 + 手动 ROI
+- [x] **合成资产脚本**（`generate_assets.py`）：6 类场景（3 个 class0 档位 + dual + 2 个 class1-only 档位） + 单目副本 + 手动 ROI + 每帧 class0/class1 ROI（`rois.json`）
 - [x] **断言框架**（`TestAssert.hpp`）：TEST_ASSERT / _MSG / _EQ / _NEAR / _THROWS / 注册表 / runAll 汇总
 - [x] **CMake 集成**（`tests/CMakeLists.txt`）：`GPNP_BUILD_TESTS` 总开关 + ONNX Runtime 可选检测（缺失时 `test_input_system` 自动跳过），`check` 目标一键运行
 
