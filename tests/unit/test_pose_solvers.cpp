@@ -8,7 +8,7 @@
 //
 // 策略: 合成 2D/3D 对应点, 用已知位姿投影生成真值.
 // ============================================================================
-#include "framework/TestAssert.hpp"
+#include "../framework/TestAssert.hpp"
 
 #include "pose/InitialPnPSolver.hpp"
 #include "pose/MonoPnPSolver.hpp"
@@ -232,10 +232,10 @@ void test_gpnp_recovers_pose_stereo() {
         }
 
         result.pts_left_match.push_back(pL);
-        result.pts_right_match.push_back(pR);
         result.disparity.push_back(static_cast<float>(pL.x - pR.x));
         result.pts_left_good.push_back(pL);
         result.pts_right_good.push_back(pR);
+        result.idx_from_filtered.push_back(static_cast<int>(i));
         result.good_matches.emplace_back(static_cast<int>(i), static_cast<int>(i), 0.f);
     }
     result.n_kp_left = static_cast<int>(pts_3d.size());
@@ -268,10 +268,10 @@ void test_gpnp_rejects_insufficient_points() {
     PipelineResult result;
     for (size_t i = 0; i < 2; ++i) { // 仅 2 点 < min_pts=4
         result.pts_left_match.emplace_back(500.f, 500.f);
-        result.pts_right_match.emplace_back(480.f, 500.f);
         result.pts_left_good.emplace_back(500.f, 500.f);
         result.pts_right_good.emplace_back(480.f, 500.f);
         result.disparity.push_back(20.f);
+        result.idx_from_filtered.push_back(static_cast<int>(i));
         result.good_matches.emplace_back(static_cast<int>(i), static_cast<int>(i), 0.f);
     }
 
@@ -292,3 +292,11 @@ REGISTER_TEST(test_gpnp_recovers_pose_stereo);
 REGISTER_TEST(test_gpnp_rejects_insufficient_points);
 
 } // namespace
+
+// ============================================================================
+// 测试入口
+// ============================================================================
+
+int main() {
+    return gpnp_test::TestRegistry::instance().runAll();
+}

@@ -53,9 +53,9 @@ except ImportError as e:
 # 输入配置 (硬编码, 运行前请修改为你的实际图片路径与 class1 坐标)
 # ============================================================================
 # 正视目标图路径 (即 class0)
-TARGET_IMG = r"C:\\Code\\NEW_Steretracker-master\data\\big\\img_1.png"
+TARGET_IMG = r"data/big/img_1.png"
 # 背景图路径 (自动 resize 到画布尺寸)
-BACKGROUND_IMG = r"C:\\Code\\NEW_Steretracker-master\data\\small\\gj06_image_0317.jpg"
+BACKGROUND_IMG = r"data/small/gj06_image_0317.jpg"
 # class1 在 target.png 中的像素矩形 (x, y, width, height); 无 class1 时设为 None
 CLASS1_RECT = {"x": 389, "y": 447, "width": 60, "height": 60}
 

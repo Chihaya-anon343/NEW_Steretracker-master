@@ -21,6 +21,9 @@
 #include "common/Config.hpp"
 #include "tracker/MonoTracker.hpp"
 #include "tracker/StereoTracker.hpp"
+#include "feature/AkazeGpnpExtractor.hpp"
+#include "feature/BinaryCornerExtractor.hpp"
+#include "feature/TinyTargetExtractor.hpp"
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -29,6 +32,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -36,9 +40,50 @@ using namespace gpnp;
 
 namespace {
 
-std::string g_template_dir;
-std::string g_binary_dir;
-std::string g_tiny_dir;
+// 默认模板路径: 相对 CLion 工作目录(项目根)解析, 指向 data/ 下。
+//   - AKAZE 模板: 单个图像文件 (cv::imread 读取) → data/big/img_1.png
+//   - BC/TT 模板: 目录 (含 N_degrees.txt/.png) → data/NewMuBan(reordered)
+// 均可通过 --template-dir / --binary-template-dir / --tiny-template-dir 覆盖。
+std::string g_template_dir  = "data/big/img_1.png";
+std::string g_binary_dir    = "data/NewMuBan(reordered)";
+std::string g_tiny_dir      = "data/NewMuBan(reordered)";
+
+// ---------------------------------------------------------------------------
+// 轻量级冒烟测试框架: 与 TestAssert.hpp 不同, 该文件使用可跳过的
+// (SKIP) 用例, 因此维护独立的 runTest / CHECK 统计。
+//   - CHECK 失败 → 抛出异常 → runTest 捕获并计为 FAIL
+//   - 模板缺失 → skipNotice 抛出 SkipTestException → runTest 计为 SKIP
+// ---------------------------------------------------------------------------
+int g_passed_tests = 0;
+int g_failed_tests = 0;
+
+struct SkipTestException : public std::exception {
+    const char* what() const noexcept override { return "skipped"; }
+};
+
+#define CHECK(cond)                                                          \
+    do {                                                                     \
+        if (!(cond)) {                                                       \
+            throw std::runtime_error(std::string("CHECK 失败: ") + #cond);   \
+        }                                                                    \
+    } while (0)
+
+void runTest(const char* name, const std::function<void()>& fn) {
+    std::printf("\n[TEST] %s\n", name);
+    try {
+        fn();
+        ++g_passed_tests;
+        std::printf("  [PASS]\n");
+    } catch (const SkipTestException&) {
+        std::printf("  [SKIP]\n");
+    } catch (const std::exception& e) {
+        ++g_failed_tests;
+        std::printf("  [FAIL] %s\n", e.what());
+    } catch (...) {
+        ++g_failed_tests;
+        std::printf("  [FAIL] 未捕获未知异常\n");
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 合成双目图对: 将平面 3D 点投影到左右相机, 画白底黑点目标
@@ -104,8 +149,8 @@ BinaryCornerExtractor::Config makeBinaryCfg() {
     c.corners = 10;
     c.kernel_size = 3;
     c.scale = 1.0f;
-    c.target_size = 100;
-    c.pixel_to_meter_scale = 0.5f;
+    c.target_size = cv::Size(100, 100);
+    c.pixel_to_meter_scale_class0 = 0.5f;
     c.roi_pad_pixels = 0;
     c.otsu_ratio = 1.3f;
     return c;
@@ -113,20 +158,22 @@ BinaryCornerExtractor::Config makeBinaryCfg() {
 
 TinyTargetExtractor::Config makeTinyCfg() {
     TinyTargetExtractor::Config c;
-    c.target_size = 50;
+    c.target_size = cv::Size(50, 50);
     c.scale_factor = 4.0f;
-    c.square_size_m = 0.05f;
+    c.square_size_m_class0 = 0.05f;
     c.roi_pad_pixels = 0;
     return c;
 }
 
+// 检查 AKAZE 模板文件与 BC/TT 模板目录是否齐全。
 bool templatesAvailable() {
     if (g_template_dir.empty()) return false;
-    return std::filesystem::is_directory(g_template_dir);
+    return std::filesystem::exists(g_template_dir);
 }
 
 void skipNotice(const char* name) {
-    std::printf("  [SKIP] %s (缺少模板目录, 指定 --template-dir 后启用)\n", name);
+    std::printf("  [SKIP] %s (缺少模板, 指定 --template-dir 后启用)\n", name);
+    throw SkipTestException();
 }
 
 // 断言 ROI 在图像范围内
@@ -146,18 +193,18 @@ int main(int argc, char** argv) {
         else if (a == "--binary-template-dir" && i + 1 < argc) g_binary_dir = argv[++i];
         else if (a == "--tiny-template-dir" && i + 1 < argc)  g_tiny_dir = argv[++i];
         else if (a == "--help") {
-            std::printf("用法: %s [--template-dir DIR] [--binary-template-dir DIR] "
-                        "[--tiny-template-dir DIR]\n", argv[0]);
+            std::printf("用法: %s [--template-dir FILE] [--binary-template-dir DIR] "
+                        "[--tiny-template-dir DIR]\n"
+                        "默认: AKAZE=%s | BC/TT=%s\n",
+                        argv[0], g_template_dir.c_str(), g_binary_dir.c_str());
             return 0;
         }
     }
-    if (g_binary_dir.empty()) g_binary_dir = g_template_dir;
-    if (g_tiny_dir.empty())   g_tiny_dir   = g_template_dir;
 
     int exit_code = 0;
 
     runTest("MonoTracker 冒烟: 合成点云 + 手动 ROI", [&] {
-        if (!templatesAvailable()) { skipNotice(__func__); return; }
+        if (!templatesAvailable()) { skipNotice(__func__); }
 
         Eigen::Matrix3d K = makeK();
         Eigen::Matrix3d R = Eigen::AngleAxisd(0.15, Eigen::Vector3d::UnitY())
@@ -176,13 +223,13 @@ int main(int argc, char** argv) {
         tracker.setOutputDir("output/test_mono");
 
         PipelineResult res = tracker.process(pair.left, /*visualize=*/false, &group);
-        CHECK(res.total_time_ms >= 0.0);
+        CHECK(res.total_time_ms() >= 0.0);
         CHECK(tracker.frameCount() >= 1);
         CHECK(tracker.getLogs().size() >= 1);
     });
 
     runTest("StereoTracker 冒烟: 合成点云 + 双目 ROI + warm-start 两帧", [&] {
-        if (!templatesAvailable()) { skipNotice(__func__); return; }
+        if (!templatesAvailable()) { skipNotice(__func__); }
 
         Eigen::Matrix3d K = makeK();
         Eigen::Matrix3d R = Eigen::AngleAxisd(0.1, Eigen::Vector3d::UnitY())
@@ -206,13 +253,13 @@ int main(int argc, char** argv) {
         // 两帧连续处理验证 warm-start 路径无异常
         PipelineResult r1 = tracker.process(pair.left, pair.right, false, &lg, &rg);
         PipelineResult r2 = tracker.process(pair.left, pair.right, false, &lg, &rg);
-        CHECK(r1.total_time_ms >= 0.0);
-        CHECK(r2.total_time_ms >= 0.0);
+        CHECK(r1.total_time_ms() >= 0.0);
+        CHECK(r2.total_time_ms() >= 0.0);
         CHECK(tracker.frameCount() >= 2);
     });
 
     runTest("StereoTracker Dual-ROI 冒烟: is_dual=true 独立路径", [&] {
-        if (!templatesAvailable()) { skipNotice(__func__); return; }
+        if (!templatesAvailable()) { skipNotice(__func__); }
 
         Eigen::Matrix3d K = makeK();
         Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
@@ -255,8 +302,8 @@ int main(int argc, char** argv) {
         // Dual-ROI 为独立路径: process 不应抛出, 且 frame_count 递增
         PipelineResult r1 = tracker.process(pairAll.left, pairAll.right, false, &lg, &rg);
         PipelineResult r2 = tracker.process(pairInner.left, pairInner.right, false, &lg, &rg);
-        CHECK(r1.total_time_ms >= 0.0);
-        CHECK(r2.total_time_ms >= 0.0);
+        CHECK(r1.total_time_ms() >= 0.0);
+        CHECK(r2.total_time_ms() >= 0.0);
         CHECK(tracker.frameCount() >= 2);
     });
 

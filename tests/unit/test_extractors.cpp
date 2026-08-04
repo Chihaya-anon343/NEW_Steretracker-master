@@ -1,4 +1,4 @@
-#include "framework/TestAssert.hpp"
+#include "../framework/TestAssert.hpp"
 
 #include "feature/FeatureExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
@@ -196,3 +196,11 @@ void test_tiny_target_set_use_class1() {
 REGISTER_TEST(test_tiny_target_set_use_class1);
 
 } // namespace
+
+// ============================================================================
+// 测试入口
+// ============================================================================
+
+int main() {
+    return gpnp_test::TestRegistry::instance().runAll();
+}

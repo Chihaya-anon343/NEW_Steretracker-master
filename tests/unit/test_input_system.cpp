@@ -9,7 +9,7 @@
 //
 // ============================================================================
 
-#include "framework/TestAssert.hpp"
+#include "../framework/TestAssert.hpp"
 
 #include "input/DirectoryStereoSource.hpp"
 #include "input/FileStereoSource.hpp"
@@ -69,6 +69,44 @@ int64_t nowUs() {
 
 /// 返回通过断言数量。
 int g_pass = 0;
+
+// ---------------------------------------------------------------------------
+// 轻量级断言宏: REQUIRE 失败时抛出 AssertionError, 由 RUN 宏外层/main
+// 捕获统计。与 TestAssert.hpp 不同, 该文件使用独立的 RUN/REQUIRE 体系。
+// ---------------------------------------------------------------------------
+struct AssertionError : public std::exception {
+    std::string msg;
+    explicit AssertionError(std::string m) : msg(std::move(m)) {}
+    const char* what() const noexcept override { return msg.c_str(); }
+};
+
+#define REQUIRE(cond)                                                          \
+    do {                                                                       \
+        if (cond) {                                                            \
+            ++g_pass;                                                          \
+        } else {                                                               \
+            std::cerr << "  [FAIL] " << __FILE__ << ":" << __LINE__            \
+                      << "  REQUIRE(" #cond ")" << std::endl;                   \
+            throw AssertionError("REQUIRE(" #cond ") 失败");                    \
+        }                                                                      \
+    } while (0)
+
+#define REQUIRE_FALSE(cond) REQUIRE(!(cond))
+
+#define REQUIRE_EQUAL(a, b)                                                    \
+    do {                                                                       \
+        auto&& _va = (a);                                                      \
+        auto&& _vb = (b);                                                      \
+        if (_va == _vb) {                                                      \
+            ++g_pass;                                                          \
+        } else {                                                               \
+            std::cerr << "  [FAIL] " << __FILE__ << ":" << __LINE__            \
+                      << "  REQUIRE_EQUAL(" #a ", " #b ")" << std::endl;        \
+            throw AssertionError("REQUIRE_EQUAL(" #a ", " #b ") 失败");         \
+        }                                                                      \
+    } while (0)
+
+#define PASS(msg) do { (void)(msg); } while (0)
 
 #define RUN(name, body)                                      \
     do {                                                     \
@@ -434,11 +472,24 @@ void testRingBuffer() {
 
 int main() {
     std::cout << "=== 输入系统单元测试 ===" << std::endl;
-    testFileSource();
-    testDirectorySource();
-    testSequenceSource();
-    testInputProvider();
-    testRingBuffer();
-    std::cout << "全部通过 (" << g_pass << " 断言)" << std::endl;
-    return 0;
+    int failures = 0;
+
+    auto runAll = [&](const char* name, void (*fn)()) {
+        try {
+            fn();  // 成功时 RUN 宏已打印 [PASS]
+        } catch (const std::exception& e) {
+            std::cout << "  [FAIL] " << name << ": " << e.what() << std::endl;
+            ++failures;
+        }
+    };
+
+    runAll("testFileSource", testFileSource);
+    runAll("testDirectorySource", testDirectorySource);
+    runAll("testSequenceSource", testSequenceSource);
+    runAll("testInputProvider", testInputProvider);
+    runAll("testRingBuffer", testRingBuffer);
+
+    std::cout << "断言通过 " << g_pass << " 次, 失败 " << failures << " 组"
+              << std::endl;
+    return failures == 0 ? 0 : 1;
 }

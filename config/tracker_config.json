@@ -87,7 +87,7 @@
     },
 
     "akaze_gpnp": {
-      "template_path": "data/大图/img_1.png",
+      "template_path": "data/big/img_1.png",
       "template_real_width_mm": 500.0,
       "template_real_height_mm": 500.0,
       "scale": 0.5,
