@@ -108,6 +108,18 @@ public:
         return buffer_.empty();
     }
 
+    /// 缓冲区容量上限（0 表示无限制）。
+    size_t capacity() const {
+        std::shared_lock lock(mtx_);
+        return capacity_;
+    }
+
+    /// 缓冲区是否已满（容量 > 0 且元素数达上限）。
+    bool full() const {
+        std::shared_lock lock(mtx_);
+        return capacity_ > 0 && buffer_.size() >= capacity_;
+    }
+
     /// 自上次 clear() 以来因满溢而丢弃的元素数。
     size_t dropped() const {
         std::shared_lock lock(mtx_);

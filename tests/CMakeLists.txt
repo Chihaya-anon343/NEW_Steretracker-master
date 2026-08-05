@@ -101,6 +101,7 @@ set(TEST_SHARED_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/FileStereoSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/DirectoryStereoSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/SequenceSource.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/CameraSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/InputProvider.cpp
 )
 

@@ -57,7 +57,7 @@ TARGET_IMG = r"data/big/img_1.png"
 # 背景图路径 (自动 resize 到画布尺寸)
 BACKGROUND_IMG = r"data/small/gj06_image_0317.jpg"
 # class1 在 target.png 中的像素矩形 (x, y, width, height); 无 class1 时设为 None
-CLASS1_RECT = {"x": 389, "y": 447, "width": 60, "height": 60}
+CLASS1_RECT = {"x": 359, "y": 417, "width": 60, "height": 60}
 
 # ============================================================================
 # 常量

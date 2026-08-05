@@ -9,3 +9,5 @@
 .idea/editor.xml
 .gitignore
 .idea/GPNP.iml
+/data/output_frames_mono/
+/data/stere_frames/

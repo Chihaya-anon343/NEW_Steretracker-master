@@ -113,7 +113,7 @@ struct AssertionError : public std::exception {
         std::cout << "  [RUN ] " << name << std::endl;      \
         std::cout << std::unitbuf;                           \
         body;                                                \
-        PASS("case: " << name);                             \
+        PASS(std::string("case: ") + name);                 \
         std::cout << "  [PASS] " << name << std::endl;      \
     } while (0)
 
@@ -138,7 +138,8 @@ void testFileSource() {
         REQUIRE_EQUAL(src.totalFrames(), 1);
         REQUIRE_EQUAL(src.currentFrame(), -1); // 尚未取帧
 
-        cv::Mat L, R;
+        cv::Mat L;
+        cv::Mat R;
         int64_t ts = 0;
         REQUIRE(src.nextFrame(L, R, ts));
         REQUIRE_FALSE(L.empty());
@@ -149,7 +150,8 @@ void testFileSource() {
         REQUIRE_EQUAL(src.currentFrame(), 0);
 
         // File 源多次 nextFrame 返回同一帧（warm-start 兼容）
-        cv::Mat L2, R2;
+        cv::Mat L2;
+        cv::Mat R2;
         int64_t ts2 = 0;
         REQUIRE(src.nextFrame(L2, R2, ts2));
 
@@ -179,7 +181,8 @@ void testFileSource() {
         REQUIRE(src.open(lp.string() + ";" + rp.string()));
         REQUIRE(src.isOpen());
 
-        cv::Mat L, R;
+        cv::Mat L;
+        cv::Mat R;
         int64_t ts = 0;
         REQUIRE(src.nextFrame(L, R, ts));
         REQUIRE_FALSE(L.empty());
@@ -211,7 +214,8 @@ void testDirectorySource() {
         REQUIRE(src.isOpen());
         REQUIRE_EQUAL(src.totalFrames(), N);
 
-        cv::Mat L, R;
+        cv::Mat L;
+        cv::Mat R;
         int64_t ts = 0;
         // 第 1 帧尺寸应为最小 (40×30)
         REQUIRE(src.nextFrame(L, R, ts));
@@ -250,7 +254,8 @@ void testDirectorySource() {
         REQUIRE(src.open(dir.string(), "left", "right"));
         REQUIRE_EQUAL(src.totalFrames(), 1);
 
-        cv::Mat L, R;
+        cv::Mat L;
+        cv::Mat R;
         int64_t ts = 0;
         REQUIRE(src.nextFrame(L, R, ts));
         REQUIRE_FALSE(L.empty());
@@ -290,7 +295,8 @@ void testSequenceSource() {
         REQUIRE_EQUAL(src.totalFrames(), N);
         REQUIRE_EQUAL(src.currentFrame(), -1);
 
-        cv::Mat L, R;
+        cv::Mat L;
+        cv::Mat R;
         int64_t ts = 0;
         REQUIRE(src.nextFrame(L, R, ts));
         REQUIRE_EQUAL(L.cols, 32);
@@ -390,7 +396,8 @@ void testInputProvider() {
         REQUIRE(provider.initialize(makeDirConfig(dir.string())));
         REQUIRE_EQUAL(provider.totalFrames(), 2);
 
-        SensorPacket p1, p2;
+        SensorPacket p1;
+        SensorPacket p2;
         REQUIRE(provider.getNextPacket(p1));
         REQUIRE_EQUAL(p1.left_image.cols, 40);
         REQUIRE(provider.getNextPacket(p2));
@@ -429,38 +436,40 @@ void testInputProvider() {
 void testRingBuffer() {
     RUN("RingBuffer: 写入/读取顺序", {
         RingBuffer<int> buf(4);
-        REQUIRE(buf.capacity() == 4);
+        REQUIRE_EQUAL(buf.capacity(), 4);
         REQUIRE(buf.empty());
         REQUIRE_FALSE(buf.full());
 
-        REQUIRE(buf.push(10));
-        REQUIRE(buf.push(20));
-        REQUIRE(buf.push(30));
-        REQUIRE(buf.size() == 3);
+        buf.push(10);
+        buf.push(20);
+        buf.push(30);
+        REQUIRE_EQUAL(buf.size(), 3);
 
         int v = 0;
-        REQUIRE(buf.pop(v));
+        REQUIRE(buf.popOldest(v));
         REQUIRE_EQUAL(v, 10);
-        REQUIRE(buf.pop(v));
+        REQUIRE(buf.popOldest(v));
         REQUIRE_EQUAL(v, 20);
-        REQUIRE(buf.pop(v));
+        REQUIRE(buf.popOldest(v));
         REQUIRE_EQUAL(v, 30);
-        REQUIRE_FALSE(buf.pop(v));
+        REQUIRE_FALSE(buf.popOldest(v));
         REQUIRE(buf.empty());
     });
 
     RUN("RingBuffer: 满缓冲区行为", {
         RingBuffer<int> buf(2);
-        REQUIRE(buf.push(1));
-        REQUIRE(buf.push(2));
+        buf.push(1);
+        buf.push(2);
         REQUIRE(buf.full());
-        // 覆盖最旧元素 (FIFO)
-        REQUIRE_FALSE(buf.push(3));
+        // 覆盖最旧元素 (FIFO): push 满时丢弃最老元素并计数 dropped
+        buf.push(3);
+        REQUIRE_EQUAL(buf.dropped(), 1);
         REQUIRE_EQUAL(buf.size(), 2);
 
         // 清空
         buf.clear();
         REQUIRE(buf.empty());
+        REQUIRE_EQUAL(buf.dropped(), 0);
     });
 }
 
