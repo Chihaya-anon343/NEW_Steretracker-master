@@ -3,6 +3,7 @@
 #include "input/FileStereoSource.hpp"
 #include "input/DirectoryStereoSource.hpp"
 #include "input/SequenceSource.hpp"
+#include "input/CameraSource.hpp"
 #include "input/IStereoImageSource.hpp"
 
 #include <iostream>
@@ -77,9 +78,19 @@ bool InputProvider::createImageSource() {
         return true;
     }
 
-    case ImageSourceType::Camera:
-        std::cerr << "[InputProvider] Camera 源尚未实现 (Phase 3)" << std::endl;
-        return false;
+    case ImageSourceType::Camera: {
+        auto src = std::make_unique<CameraSource>();
+        // 多设备预留: "0;1" 取第一个; 后续可扩展为 USB 双目
+        std::string dev = img_cfg.camera_devices;
+        if (dev.empty()) dev = "0";
+        auto sep = dev.find(';');
+        if (sep != std::string::npos) dev = dev.substr(0, sep);
+        if (!src->open(dev, img_cfg.target_fps)) {
+            return false;
+        }
+        image_source_ = std::move(src);
+        return true;
+    }
     }
 
     std::cerr << "[InputProvider] 未知的图像源类型" << std::endl;

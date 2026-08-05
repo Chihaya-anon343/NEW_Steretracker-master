@@ -198,6 +198,15 @@ int main(int argc, char** argv) {
                 input_sys_cfg.image.directory_path = static_cast<std::string>(img_node["directory_path"]);
                 input_sys_cfg.image.sequence_pattern = static_cast<std::string>(img_node["sequence_pattern"]);
                 if (input_sys_cfg.image.sequence_pattern.empty()) input_sys_cfg.image.sequence_pattern = "frame";
+            } else if (img_type == "camera") {
+                input_sys_cfg.image.type = input::ImageSourceType::Camera;
+                input_sys_cfg.image.camera_devices = static_cast<std::string>(img_node["camera_devices"]);
+                if (input_sys_cfg.image.camera_devices.empty()) input_sys_cfg.image.camera_devices = "0";
+                input_sys_cfg.image.target_fps = 0.0;
+                {
+                    cv::FileNode tf = img_node["target_fps"];
+                    if (!tf.empty()) input_sys_cfg.image.target_fps = static_cast<double>(tf);
+                }
             }
         }
         if (use_input_system) {
@@ -480,6 +489,7 @@ int main(int argc, char** argv) {
                     case input::ImageSourceType::File:       hdr << "file"; break;
                     case input::ImageSourceType::Directory:  hdr << "directory"; break;
                     case input::ImageSourceType::Sequence:   hdr << "sequence"; break;
+                    case input::ImageSourceType::Camera:     hdr << "camera"; break;
                     default:                                 hdr << "unknown"; break;
                 }
                 hdr << "\n";
