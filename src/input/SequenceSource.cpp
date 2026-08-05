@@ -54,7 +54,7 @@ bool SequenceSource::open(const std::string& dir, const std::string& pattern) {
         return false;
     }
 
-    current_index_ = 0;
+    current_index_ = -1;
     std::cout << "[SequenceSource] 找到 " << files_.size()
               << " 帧, 目录: " << dir << " (模式: " << pattern << "_*)" << std::endl;
     return true;
@@ -93,10 +93,11 @@ bool SequenceSource::scanDirectory(const std::string& dir,
 
 bool SequenceSource::nextFrame(cv::Mat& left, cv::Mat& right,
                                 int64_t& timestamp_us) {
-    if (current_index_ < 0 ||
-        current_index_ >= static_cast<int>(files_.size())) {
+    int next = current_index_ + 1;
+    if (next < 0 || next >= static_cast<int>(files_.size())) {
         return false;
     }
+    current_index_ = next;
 
     left = cv::imread(files_[current_index_], cv::IMREAD_COLOR);
     if (left.empty()) {
@@ -108,7 +109,6 @@ bool SequenceSource::nextFrame(cv::Mat& left, cv::Mat& right,
     // 单目序列：右图 = 左图副本
     right = left.clone();
     timestamp_us = nowUs();
-    ++current_index_;
     return true;
 }
 
@@ -123,7 +123,7 @@ void SequenceSource::close() {
 
 bool SequenceSource::reset() {
     if (files_.empty()) return false;
-    current_index_ = 0;
+    current_index_ = -1;
     return true;
 }
 

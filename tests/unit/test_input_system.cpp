@@ -234,7 +234,7 @@ void testDirectorySource() {
 
         // reset 回放
         REQUIRE(src.reset());
-        REQUIRE_EQUAL(src.currentFrame(), 0);
+        REQUIRE_EQUAL(src.currentFrame(), -1);
         REQUIRE(src.nextFrame(L, R, ts));
         REQUIRE_EQUAL(L.cols, 40);
 
@@ -359,7 +359,7 @@ void testInputProvider() {
         REQUIRE(provider.initialize(makeFileConfig(lp.string(), rp.string())));
         REQUIRE(provider.isOpen());
         REQUIRE_EQUAL(provider.totalFrames(), 1);
-        REQUIRE_EQUAL(provider.currentFrame(), 0);
+        REQUIRE_EQUAL(provider.currentFrame(), -1); // 尚未取帧
 
         SensorPacket packet;
         REQUIRE(provider.getNextPacket(packet));
@@ -369,7 +369,7 @@ void testInputProvider() {
         REQUIRE(packet.timestamp_us > 0);
         REQUIRE_FALSE(packet.imu.has_value());   // 未启用 IMU
         REQUIRE_FALSE(packet.height.has_value()); // 未启用高度计
-        REQUIRE_EQUAL(provider.currentFrame(), 1);
+        REQUIRE_EQUAL(provider.currentFrame(), 0);
 
         // 到达末尾
         REQUIRE_FALSE(provider.getNextPacket(packet));

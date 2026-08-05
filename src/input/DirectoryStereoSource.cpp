@@ -51,7 +51,7 @@ bool DirectoryStereoSource::open(const std::string& dir,
         return false;
     }
 
-    current_index_ = 0;
+    current_index_ = -1;
     std::cout << "[DirectoryStereoSource] 找到 " << left_files_.size()
               << " 对图像，目录: " << dir << std::endl;
     return true;
@@ -124,10 +124,11 @@ bool DirectoryStereoSource::scanDirectory(const std::string& dir,
 
 bool DirectoryStereoSource::nextFrame(cv::Mat& left, cv::Mat& right,
                                        int64_t& timestamp_us) {
-    if (current_index_ < 0 ||
-        current_index_ >= static_cast<int>(left_files_.size())) {
+    int next = current_index_ + 1;
+    if (next < 0 || next >= static_cast<int>(left_files_.size())) {
         return false;
     }
+    current_index_ = next;
 
     left = cv::imread(left_files_[current_index_], cv::IMREAD_COLOR);
     right = cv::imread(right_files_[current_index_], cv::IMREAD_COLOR);
@@ -139,7 +140,6 @@ bool DirectoryStereoSource::nextFrame(cv::Mat& left, cv::Mat& right,
     }
 
     timestamp_us = nowUs();
-    ++current_index_;
     return true;
 }
 
@@ -155,7 +155,7 @@ void DirectoryStereoSource::close() {
 
 bool DirectoryStereoSource::reset() {
     if (left_files_.empty()) return false;
-    current_index_ = 0;
+    current_index_ = -1;
     return true;
 }
 

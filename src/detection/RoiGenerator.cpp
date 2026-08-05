@@ -192,7 +192,8 @@ std::pair<RoiRect, RoiRect> RoiGenerator::generateStereo(
     // 2. 从右图检测结果生成右 ROI
     RoiRect right_roi = generate(detections_right, right_img_size, config_.target_class_id);
     if (!right_roi.valid()) {
-        return {};
+        // 右图无检测 → 复制左 ROI 作为回退（立体对要求左右 ROI 同时存在）
+        right_roi = left_roi;
     }
 
     // 3. 查找右图检测结果用于中心锚定（normalizeStereoPair 需要）

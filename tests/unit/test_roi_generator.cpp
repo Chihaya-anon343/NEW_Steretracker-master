@@ -45,8 +45,16 @@ RoiGenerator makeCloseRangeGenerator() {
 // ============================================================================
 
 static void test_state1_tiny_area() {
-    auto gen = makeGenerator();
     // State 1 远: class0 面积 <= 800  (如 28×28)
+    // 注意: 必须禁用 roi_min_size (设为 0), 否则 detectionToRoi 会把
+    // 28×28 强制放大到 50×50=2500, 破坏 tiny target 的 State 1 判定。
+    RoiGenerator::Config cfg;
+    cfg.target_class_id = 0;
+    cfg.roi_expand_ratio = 0.0f;
+    cfg.roi_min_size = 0;
+    cfg.dual_trigger_area = 490000;
+    RoiGenerator gen(cfg);
+
     auto group = gen.generateGroup({makeDet(0, 10, 10, 28, 28)}, cv::Size(640, 480));
     TEST_ASSERT(group.valid());
     TEST_ASSERT(!group.is_dual);
