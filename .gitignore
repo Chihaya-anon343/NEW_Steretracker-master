@@ -11,3 +11,6 @@
 .idea/GPNP.iml
 /data/output_frames_mono/
 /data/stere_frames/
+/.idea/.name
+/.idea/NEW_Steretracker-master.iml
+__pycache__/
