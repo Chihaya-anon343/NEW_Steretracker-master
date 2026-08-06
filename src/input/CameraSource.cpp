@@ -84,16 +84,23 @@ bool CameraSource::nextFrame(cv::Mat& left, cv::Mat& right,
         }
     }
 
+    // grab() 阻塞直到硬件下一帧就绪; 返回后立即打戳 — 比 read() 后打戳
+    // 更接近真实曝光时刻 (read 内部还包含解码时间)
+    const int64_t ts = nowUs();
+    if (!cap_->grab()) {
+        std::cerr << "[CameraSource] 抓取帧失败" << std::endl;
+        return false;
+    }
     cv::Mat frame;
-    if (!cap_->read(frame)) {   // 阻塞直到下一帧到达 (天然按摄像头帧率节流)
-        std::cerr << "[CameraSource] 读取帧失败" << std::endl;
+    if (!cap_->retrieve(frame)) {
+        std::cerr << "[CameraSource] 解码帧失败" << std::endl;
         return false;
     }
 
     left = frame;
     right = frame.clone();      // 单目源: 右图 = 左图副本
-    timestamp_us = nowUs();
-    last_frame_us_ = timestamp_us;
+    timestamp_us = ts;
+    last_frame_us_ = ts;
     ++current_frame_;
     return true;
 }

@@ -427,6 +427,51 @@ void testInputProvider() {
         REQUIRE_FALSE(provider.initialize(makeFileConfig("no_L.png", "no_R.png")));
         REQUIRE_FALSE(provider.isOpen());
     });
+
+    RUN("InputProvider: 线程化采集 (take-latest + 统计)", {
+        fs::path dir = makeTempDir("prov_thread");
+        const int N = 8;
+        for (int i = 0; i < N; ++i) {
+            char name[64];
+            std::snprintf(name, sizeof(name), "left_%04d.png", i);
+            REQUIRE(cv::imwrite((dir / name).string(), makeTestImage(20 + i, 20 + i)));
+            std::snprintf(name, sizeof(name), "right_%04d.png", i);
+            REQUIRE(cv::imwrite((dir / name).string(), makeTestImage(20 + i, 20 + i)));
+        }
+
+        InputSystemConfig cfg = makeDirConfig(dir.string());
+        cfg.use_threaded_capture = true;   // 显式启用线程化 (非 Camera 源)
+        cfg.ring_capacity = 2;
+
+        InputProvider provider;
+        REQUIRE(provider.initialize(cfg));
+        REQUIRE(provider.isOpen());
+        REQUIRE_EQUAL(provider.totalFrames(), N);
+
+        // 消费全部帧: 消费数 ≤ 总帧数 (take-latest 可能跳帧), 且帧有效
+        SensorPacket pkt;
+        int consumed = 0;
+        while (provider.getNextPacket(pkt)) {
+            REQUIRE(pkt.valid);
+            REQUIRE_FALSE(pkt.left_image.empty());
+            REQUIRE_FALSE(pkt.right_image.empty());
+            ++consumed;
+        }
+        REQUIRE(consumed >= 1);
+        REQUIRE(consumed <= N);
+
+        // 停止采集线程 → 统计一致: captured == consumed + dropped (缓冲已排空)
+        provider.shutdown();
+        InputProvider::InputStats st = provider.stats();
+        REQUIRE_EQUAL(st.consumed, consumed);
+        REQUIRE(st.captured >= consumed);
+        REQUIRE(st.dropped >= 0);
+        REQUIRE_EQUAL(st.captured, st.consumed + st.dropped);
+
+        // shutdown 后再取帧应返回 false (采集已停止)
+        REQUIRE_FALSE(provider.getNextPacket(pkt));
+        cleanupDir(dir);
+    });
 }
 
 // ============================================================================

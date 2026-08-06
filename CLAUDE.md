@@ -899,6 +899,10 @@ auto mad_result = mad_filter_.filter(disparity, inlier_mask);
 
 ## 7. 输入系统
 
+> **输入分类**：输入按数据来源明确分为两大类：
+> - **实时相机输入** — `input_system.image.type: "camera"`（CameraSource，Phase 3 已实现）
+> - **离线图像输入** — `input_system.image.type: "file" | "directory" | "sequence"`，以及 Debug 模式的 `cv::imread` 固定图像（此时 `input_system` 配置不需要）
+
 ### 7.1 架构
 
 ```
@@ -908,13 +912,24 @@ InputProvider (统一协调器)
 └── 输出: SensorPacket { left, right, timestamp, IMU(opt), height(opt), valid }
 ```
 
-### 7.2 三种图像源
+### 7.2 四种图像源
 
-| type | 类 | 文件 | 用途 | 配置 |
-|------|-----|------|------|------|
-| `"file"` | `FileStereoSource` | src/input/FileStereoSource.cpp | 静态双目文件对 | `input_system.source_type` + `left_path/right_path` |
-| `"directory"` | `DirectoryStereoSource` | src/input/DirectoryStereoSource.cpp | 双目编号图像序列 | `input_system.source_dir` + `pattern` |
-| `"sequence"` | `SequenceSource` | src/input/SequenceSource.cpp | 单目图像序列 | `input_system.source_dir` + `pattern` |
+| 分类 | type | 类 | 文件 | 用途 | 配置 |
+|------|------|-----|------|------|------|
+| 离线 | `"file"` | `FileStereoSource` | src/input/FileStereoSource.cpp | 静态双目文件对 | `input_system.image.left_path/right_path` |
+| 离线 | `"directory"` | `DirectoryStereoSource` | src/input/DirectoryStereoSource.cpp | 双目编号图像序列 | `input_system.image.directory_path` + `left_pattern/right_pattern` |
+| 离线 | `"sequence"` | `SequenceSource` | src/input/SequenceSource.cpp | 单目图像序列 | `input_system.image.directory_path` + `sequence_pattern` |
+| 实时 | `"camera"` | `CameraSource` | src/input/CameraSource.cpp | **实时摄像头 (Phase 3, 已实现)** | `input_system.image.camera_devices` + `target_fps` |
+
+> **CameraSource 要点** (src/input/CameraSource.cpp):
+> - **运行方式**: `./build/Steretracker config/tracker_config_webcam.json`（type=camera + mono_mode=true 的完整示例配置，见 §8.2）
+> - OpenCV `VideoCapture` 打开设备: 纯数字 `"0"` → 索引模式; `/dev/video0` → 路径模式
+> - `nextFrame()` 阻塞在 `cap_->grab()` 上 (天然按摄像头帧率节流); `target_fps>0` 时额外 sleep 限速; **时间戳在 grab 返回后立即打戳** (接近曝光时刻)
+> - 单目语义: 右图 = 左图 `clone()` (与 SequenceSource 一致); `totalFrames() = -1`
+> - 打开后 `grab()` 预热 5 帧 (等自动曝光/白平衡收敛)
+> - `camera_devices` 支持 `"0;1"` 多设备格式, 当前只取第一个 (USB 双目预留)
+> - **线程化采集 (Phase 3.1)**: Camera 类型自动启用 (`InputProvider::initialize`), 采集线程产帧入 `RingBuffer` (容量 `ring_capacity`, 默认4), 主循环 `getNextPacket()` 用 **take-latest** 语义取最新帧——处理快时阻塞等帧 (等效同步), 处理慢时跳过旧帧 (延迟有界、丢帧可统计)。统计接口 `stats()` 返回 captured/consumed/dropped; `shutdown()` 停止并 join 采集线程
+> - **优雅退出 (Phase 3.2)**: main.cpp 注册 SIGINT/SIGTERM → 帧循环收尾 → 打印运行汇总 (帧数/成功率/实际FPS/输入统计) → `log_file` 可正常落盘
 
 ### 7.3 SensorPacket
 
@@ -934,8 +949,9 @@ struct SensorPacket {
 | Phase | 状态 | 内容 |
 |-------|------|------|
 | Phase 1 | ✅ 完成 | 图像源抽象 + RingBuffer |
-| Phase 2 | 占位 | IMU + 高度计 + TimeSyncUnit |
-| Phase 3 | 未开始 | 实时摄像头源 |
+| Phase 2 | 占位 | IMU + 高度计 + TimeSyncUnit (extracted_input_system/ 提供 CanSocket/TimeSyncUnit 参考实现, 未接入) |
+| Phase 3 | ✅ 完成 | 实时摄像头源 (CameraSource) |
+| Phase 3.x | ✅ 完成 | 线程化采集 (采集线程 + RingBuffer take-latest) + 丢帧/FPS 统计 + Ctrl+C 优雅退出 |
 
 ### 7.5 独立输入系统模块
 
@@ -969,13 +985,22 @@ struct SensorPacket {
 
     // ========== Normal 模式: 输入系统 ==========
     "input_system": {
-        "source_type": "directory",   // "file" | "directory" | "sequence"
-        "source_dir": "data/大图/",
-        "pattern": "*.png",
-        "left_path": "",              // source_type=file 时使用
-        "right_path": "",             // source_type=file 时使用
-        // RingBuffer 大小等...
+        "max_frames": 0,              // <=0 = 无限 (实时摄像头用)
+        "image": {
+            "type": "directory",      // "file" | "directory" | "sequence" | "camera"
+            "left_path": "",          // type=file: 左图路径
+            "right_path": "",         // type=file: 右图路径
+            "directory_path": "data/大图/",   // type=directory/sequence: 目录
+            "left_pattern": "left",   // type=directory: 左图前缀
+            "right_pattern": "right", // type=directory: 右图前缀
+            "sequence_pattern": "frame",      // type=sequence: 单目序列前缀
+            "camera_devices": "0",    // type=camera: 设备索引 "0" 或路径 "/dev/video0"; 支持 "0;1" (取第一个)
+            "target_fps": 10          // type=camera: 目标帧率, 0=不限制
+        },
+        "imu": { "enabled": false, "port": "/dev/ttyUSB0", "baud_rate": 921600, "protocol": "custom" },
+        "altimeter": { "enabled": false, "can_interface": "can0", "type": "can" }   // Phase 2, Linux only
     },
+    // 实时摄像头完整示例: config/tracker_config_webcam.json (type=camera + mono_mode=true)
 
     // ========== Debug 模式: 手动图像路径 ==========
     "input": {
@@ -1477,11 +1502,14 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 | 文件/目录 | 关键内容 |
 |-----------|---------|
-| `include/input/InputProvider.hpp` | 统一协调器 |
+| `include/input/InputProvider.hpp` + `src/input/InputProvider.cpp` | 统一协调器 (图像源工厂 + getNextPacket) |
 | `include/input/IStereoImageSource.hpp` | 图像源抽象接口 |
-| `include/input/SensorPacket.hpp` | 统一数据包 |
-| `src/input/` | InputProvider, FileStereoSource, DirectoryStereoSource, SequenceSource 实现 |
-| `extracted_input_system/` | 独立可复用输入系统模块 |
+| `include/input/SensorTypes.hpp` | SensorPacket / ImuData / AltimeterData |
+| `include/input/InputConfig.hpp` | InputSystemConfig / ImageSourceType 枚举 (含 Camera) |
+| `include/input/CameraSource.hpp` + `src/input/CameraSource.cpp` | **实时摄像头源 (Phase 3)** |
+| `include/input/RingBuffer.hpp` | 环形缓冲区 (线程采集预留, 已单测) |
+| `src/input/` | FileStereoSource, DirectoryStereoSource, SequenceSource 实现 |
+| `extracted_input_system/` | 独立可复用输入系统模块 (CanSocket/TimeSyncUnit, Phase 2 参考) |
 
 ### 10.12 配置与模型
 
@@ -1543,7 +1571,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 ### B.3 添加实时摄像头支持
 
-输入系统 Phase 3 预留。在 `src/input/` 中实现新的 `IStereoImageSource` 子类，注册到 `InputProvider`。
+Phase 3 已完成（`CameraSource`）。扩展新视频源（如 USB 双目、RTSP）时：在 `src/input/` 中实现新的 `IStereoImageSource` 子类，注册到 `InputProvider::createImageSource()`；若需同步双摄像头，参考线程化采集模式（独立采集线程 + RingBuffer，见 §7.2 与 `InputProvider::captureLoop`）。
 
 ### B.4 调优 YOLO 模型
 

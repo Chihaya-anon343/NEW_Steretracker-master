@@ -23,9 +23,14 @@
 
 #include "input/InputConfig.hpp"
 #include "input/SensorTypes.hpp"
+#include "input/RingBuffer.hpp"
 
+#include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 
 namespace gpnp {
 namespace input {
@@ -63,9 +68,16 @@ public:
     ///   3. 若有高度计源 → TimeSyncUnit 指数加权融合到图像时间戳
     ///   4. 组装 SensorPacket 并返回
     ///
-    /// @param[out] packet  对齐后的统一传感器数据包。
-    /// @return 成功返回 true；到达末尾或错误返回 false。
-    bool getNextPacket(SensorPacket& packet);
+    /// @param[out] packet    对齐后的统一传感器数据包。
+    /// @param timeout_ms     线程化模式的等待超时 (毫秒)。-1 = 无限阻塞;
+    ///                       有限超时无帧时返回 false (调用方应检查
+    ///                       isCaptureStopped() 区分"源结束"与"超时")。
+    /// @return 成功返回 true；到达末尾/采集停止/超时返回 false。
+    bool getNextPacket(SensorPacket& packet, int timeout_ms = -1);
+
+    /// 线程化采集是否已停止（源结束 / 摄像头断开 / 显式 shutdown）。
+    /// 同步模式恒为 true——getNextPacket 返回 false 即源结束。
+    bool isCaptureStopped() const;
 
     // ========================================================================
     // 状态查询
@@ -86,7 +98,27 @@ public:
     /// 获取内部配置的只读引用。
     const InputSystemConfig& config() const { return config_; }
 
+    // ========================================================================
+    // 线程化采集 (Phase 3.1)
+    // ========================================================================
+
+    /// 停止采集线程并等待其退出（join）。
+    /// 析构时自动调用；主循环结束后手动调用以获得稳定统计。
+    void shutdown();
+
+    /// 输入运行统计（线程化采集模式; 同步模式恒为 0）。
+    struct InputStats {
+        int64_t captured = 0;   ///< 采集线程从图像源取得的帧数
+        int64_t consumed = 0;   ///< 消费者成功取出的帧数
+        int64_t dropped = 0;    ///< 未被消费的帧数 (缓冲溢出 + take-latest 跳帧)
+    };
+    InputStats stats() const;
+
 private:
+    /// 采集线程主循环: 图像源 nextFrame → 推入环形缓冲。
+    /// 仅线程化采集模式运行; 摄像头断开/读取失败时置 capture_failed_ 并退出。
+    void captureLoop();
+
     /// 创建图像源（根据 ImageInputConfig::type 选择具体实现）。
     bool createImageSource();
 
@@ -98,6 +130,17 @@ private:
 
     InputSystemConfig config_;
     std::unique_ptr<class IStereoImageSource> image_source_;
+
+    // ---- Phase 3.1: 线程化采集状态 ----
+    bool threaded_capture_ = false;
+    std::thread capture_thread_;
+    std::atomic<bool> capture_running_{false};
+    std::atomic<bool> capture_failed_{false};
+    mutable std::mutex queue_cv_mtx_;          ///< 与 queue_cv_ 配合的互斥量
+    std::condition_variable queue_cv_;         ///< 消费者阻塞等待新帧
+    std::unique_ptr<RingBuffer<SensorPacket>> frame_ring_;  ///< 帧缓冲 (take-latest)
+    std::atomic<int64_t> captured_frames_{0};  ///< 采集线程产帧数
+    std::atomic<int64_t> consumed_frames_{0};  ///< 消费者取帧数
 
     // Phase 2: 传感器源 + 时间同步（当前 Phase 1 使用 opaque pointer 避免不完整类型析构）
     void* imu_source_ = nullptr;         ///< IImuSource*, Phase 2 改为 unique_ptr

@@ -78,6 +78,20 @@ public:
         return true;
     }
 
+    /// 取最新元素并丢弃其余（take-latest 语义）。
+    /// 消费者慢于生产者时跳过旧帧，保证拿到的是最新数据。
+    /// @param[out] out        最新元素
+    /// @param[out] discarded  因取最新而被丢弃的旧元素数量
+    /// @return 缓冲区非空时返回 true
+    bool takeLatest(T& out, size_t& discarded) {
+        std::unique_lock lock(mtx_);
+        if (buffer_.empty()) return false;
+        discarded = buffer_.size() - 1;
+        out = std::move(buffer_.back());
+        buffer_.clear();
+        return true;
+    }
+
     /// 排空所有元素（用于批量消费，如 ESKF 预测）。
     std::vector<T> drainAll() {
         std::unique_lock lock(mtx_);

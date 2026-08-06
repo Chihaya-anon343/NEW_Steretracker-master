@@ -22,10 +22,20 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 
+#include <chrono>
+#include <csignal>
 #include <iostream>
 #include <filesystem>
 #include <sstream>
 #include <fstream>
+
+namespace {
+// Phase 3.2: 优雅退出 — Ctrl+C (SIGINT) / kill (SIGTERM) 置位, 帧循环检测后收尾
+volatile std::sig_atomic_t g_stop_requested = 0;
+void handleSignal(int) {
+    g_stop_requested = 1;
+}
+} // namespace
 
 int main(int argc, char** argv) {
     using namespace gpnp;
@@ -179,6 +189,14 @@ int main(int argc, char** argv) {
 
     cv::FileNode input_sys_node = fs["input_system"];
     if (!input_sys_node.empty()) {
+        // Phase 3.1: 线程化采集配置 (Camera 类型自动启用, 可不配置)
+        input_sys_cfg.use_threaded_capture =
+            static_cast<int>(input_sys_node["use_threaded_capture"]) != 0;
+        {
+            cv::FileNode rc = input_sys_node["ring_capacity"];
+            if (!rc.empty()) input_sys_cfg.ring_capacity = static_cast<int>(rc);
+        }
+
         cv::FileNode img_node = input_sys_node["image"];
         if (!img_node.empty()) {
             std::string img_type = img_node["type"];
@@ -251,7 +269,7 @@ int main(int argc, char** argv) {
         }
         output_dir = "output/" + img_name;
     }
-    if (visualize) fsp::create_directories(output_dir);
+    if (visualize || log_file) fsp::create_directories(output_dir);
     std::cout << "输出目录: " << output_dir << std::endl;
 
     // ========================================================================
@@ -335,6 +353,9 @@ int main(int argc, char** argv) {
         // ====================================================================
         // ④ 逐帧处理
         // ====================================================================
+        // Phase 3.2: 位姿成功帧计数 (汇总统计用)
+        int processed_ok = 0;
+
         auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) {
             PipelineResult result;
 
@@ -400,6 +421,7 @@ int main(int argc, char** argv) {
             }
 
             // ---- 输出 ----
+            if (result.success) ++processed_ok;   // 汇总统计
             if (verbose_console) {
                 // 详细统计 → cout（capture_log 时被重定向到日志文件）
                 std::cout << "  特征点: " << result.n_kp_left
@@ -435,10 +457,21 @@ int main(int argc, char** argv) {
         };
 
         if (use_input_system) {
+            // Phase 3.2: 注册优雅退出信号 — Ctrl+C 后循环自然收尾 (汇总+日志落盘)
+            std::signal(SIGINT, handleSignal);
+            std::signal(SIGTERM, handleSignal);
+
             // 新版输入系统路径 —— 数据驱动的帧循环
             int frame = 0;
             input::SensorPacket packet;
-            while (input_provider.getNextPacket(packet) && frame < max_frames) {
+            auto t_start = std::chrono::steady_clock::now();
+            while (frame < max_frames && !g_stop_requested) {
+                // 有限超时取帧: 让循环周期性醒来检查 Ctrl+C;
+                // getNextPacket false 时用 isCaptureStopped 区分"源结束"与"超时重试"
+                if (!input_provider.getNextPacket(packet, /*timeout_ms=*/200)) {
+                    if (input_provider.isCaptureStopped()) break;  // 源结束/断开/失败
+                    continue;                                       // 超时 → 重试
+                }
                 ++frame;
                 try {
                     if (verbose_console)
@@ -450,8 +483,37 @@ int main(int argc, char** argv) {
                     // 继续下一帧，不中断整条序列
                 }
             }
-            if (frame == 0) {
+
+            // ---- Phase 3.2: 收尾汇总 — 停止采集线程 → 打印统计 ----
+            input_provider.shutdown();
+            auto termOut = [&](const std::string& s) {
+                if (capture_log && saved_cout) saved_cout->sputn(s.data(), s.size());
+                std::cout << s;   // capture_log 时同时进入日志文件
+            };
+            if (g_stop_requested) {
+                termOut("用户中断 (Ctrl+C)，停止采集\n");
+            } else if (frame == 0) {
                 std::cerr << "警告: 输入系统未产生任何帧" << std::endl;
+            }
+            if (frame > 0) {
+                auto t_end = std::chrono::steady_clock::now();
+                double secs = std::chrono::duration<double>(t_end - t_start).count();
+                input::InputProvider::InputStats ist = input_provider.stats();
+                termOut("===== 运行汇总 =====\n");
+                termOut("处理帧数: " + std::to_string(frame)
+                        + "  位姿成功: " + std::to_string(processed_ok)
+                        + " (" + std::to_string(100.0 * processed_ok / frame) + "%)\n");
+                if (secs > 0.0) {
+                    termOut("实际处理 FPS: " + std::to_string(frame / secs) + "\n");
+                }
+                if (ist.captured > 0) {
+                    termOut("输入统计 (线程化采集): 采集 " + std::to_string(ist.captured)
+                            + " 帧, 消费 " + std::to_string(ist.consumed)
+                            + " 帧, 丢弃 " + std::to_string(ist.dropped)
+                            + " 帧 ("
+                            + std::to_string(100.0 * ist.dropped / ist.captured)
+                            + "%)\n");
+                }
             }
         } else {
             // 旧版路径 —— 固定帧数循环（向后兼容）

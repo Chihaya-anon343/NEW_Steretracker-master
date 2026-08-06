@@ -8,9 +8,9 @@
 | `test_roi_generator.cpp` | 16 | ROI 生成 & 五状态判定 | 代码合成 `Detection` 结构体 | 精确面积/尺寸/布尔值 |
 | `test_pose_solvers.cpp` | 7 | InitialPnP / MonoPnP / GPnP | 代码合成 Z=0 平面 8 点 + 高斯噪声 | 误差阈值 (5%~15%) |
 | `test_extractors.cpp` | 8 | BinaryCorner / TinyTarget 提取器 | `data/fixtures/` 图片 (mono_bc/mono_tiny) + `rois.json` + `data/NewMuBan(reordered)/` 模板 | 结构性 (成功/不崩溃) |
-| `test_input_system.cpp` | 13 | 输入系统 & RingBuffer | `cv::imwrite` 临时目录 (自动创建+清理) | 精确尺寸/FIFO 顺序 |
+| `test_input_system.cpp` | 14 | 输入系统 & RingBuffer & 线程化采集 | `cv::imwrite` 临时目录 (自动创建+清理) | 精确尺寸/FIFO 顺序 |
 | `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `data/fixtures/` 图片 (mono_akaze/synthetic_akaze/synthetic_dual) + `rois.json` + 模板目录 | 冒烟 (仅验证不崩溃) |
-| **合计** | **55** | | | |
+| **合计** | **56** | | | |
 
 > 数据依赖层级：纯代码 → 临时文件 (自动) → fixtures 图片 + 模板目录 (可选, 缺失时 SKIP)
 
@@ -197,8 +197,9 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 | 9 | `InputProvider: Directory 配置` | Directory 配置 + 2 对 | 2 帧尺寸递增 |
 | 10 | `InputProvider: Sequence 配置` | Sequence 配置 + 30×30 | packet 有效, 左右非空 |
 | 11 | `InputProvider: 无效配置` | 不存在的路径 | init 失败, !isOpen |
-| 12 | `RingBuffer: 写入/读取顺序` | buf(4), push 10/20/30 | popOldest→10,20,30 (FIFO) |
-| 13 | `RingBuffer: 满缓冲区行为` | buf(2), push 1/2/3 | full=true, dropped=1, clear 后 empty |
+| 12 | `InputProvider: 线程化采集` | Directory 源 8 帧 + use_threaded_capture + ring_capacity=2 | 消费≤8, shutdown 后 captured=consumed+dropped, 再取帧 false |
+| 13 | `RingBuffer: 写入/读取顺序` | buf(4), push 10/20/30 | popOldest→10,20,30 (FIFO) |
+| 14 | `RingBuffer: 满缓冲区行为` | buf(2), push 1/2/3 | full=true, dropped=1, clear 后 empty |
 
 > `currentFrame()` 统一语义：-1 = 未取帧, 0 = 已取帧 0, …（与 FileStereoSource 对齐）。
 

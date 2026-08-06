@@ -17,7 +17,7 @@ namespace input {
 
 InputProvider::InputProvider() = default;
 InputProvider::~InputProvider() {
-    // Phase 2: delete static_cast<IImuSource*>(imu_source_) etc.
+    shutdown();  // 停止采集线程 (若已启动), 避免线程访问已析构成员
 }
 
 // ============================================================================
@@ -28,6 +28,9 @@ bool InputProvider::initialize(const InputSystemConfig& config) {
     config_ = config;
     current_frame_ = 0;
 
+    // 防御: 若此前已初始化并启动了采集线程, 先停止 (重复 initialize 安全)
+    if (capture_thread_.joinable()) shutdown();
+
     if (!createImageSource()) {
         std::cerr << "[InputProvider] 图像源创建失败" << std::endl;
         return false;
@@ -35,6 +38,23 @@ bool InputProvider::initialize(const InputSystemConfig& config) {
 
     // Phase 2: createImuSource() / createAltimeterSource() + TimeSyncUnit
     // 当前 Phase 1 仅图像源
+
+    // ---- Phase 3.1: 线程化采集 ----
+    // Camera 类型自动启用 (实时流必须解耦采集与处理); 其他源可由配置显式启用
+    threaded_capture_ = (config_.image.type == ImageSourceType::Camera)
+                        || config_.use_threaded_capture;
+    if (threaded_capture_) {
+        int cap = config_.ring_capacity > 0 ? config_.ring_capacity : 4;
+        frame_ring_ = std::make_unique<RingBuffer<SensorPacket>>(
+            static_cast<size_t>(cap));
+        captured_frames_ = 0;
+        consumed_frames_ = 0;
+        capture_failed_ = false;
+        capture_running_ = true;
+        capture_thread_ = std::thread(&InputProvider::captureLoop, this);
+        std::cout << "[InputProvider] 线程化采集已启动 (缓冲 " << cap << " 帧, "
+                  << "take-latest 策略)" << std::endl;
+    }
 
     std::cout << "[InputProvider] 初始化完成, "
               << "总帧数: " << totalFrames() << std::endl;
@@ -118,14 +138,90 @@ bool InputProvider::createAltimeterSource() {
 }
 
 // ============================================================================
+// 线程化采集 (Phase 3.1)
+// ============================================================================
+
+void InputProvider::captureLoop() {
+    while (capture_running_.load()) {
+        // 1. 从图像源获取下一帧 (Camera: 阻塞在 cap_->read/grab 上, 按相机帧率节拍)
+        cv::Mat left, right;
+        int64_t ts_us = 0;
+        if (!image_source_->nextFrame(left, right, ts_us)) {
+            capture_failed_ = true;   // 摄像头断开/读取失败 → 通知消费者退出
+            break;
+        }
+
+        // 2. 组装数据包并推入缓冲 (满时丢弃最旧帧并计数)
+        SensorPacket pkt;
+        pkt.timestamp_us = ts_us;
+        pkt.left_image = left;
+        pkt.right_image = right;
+        pkt.imu.reset();
+        pkt.height.reset();
+        pkt.valid = true;
+
+        frame_ring_->push(std::move(pkt));
+        ++captured_frames_;
+        queue_cv_.notify_one();
+    }
+    queue_cv_.notify_all();   // 唤醒可能阻塞在 wait 中的消费者
+}
+
+void InputProvider::shutdown() {
+    capture_running_ = false;
+    if (capture_thread_.joinable()) {
+        capture_thread_.join();
+    }
+    queue_cv_.notify_all();
+}
+
+InputProvider::InputStats InputProvider::stats() const {
+    InputStats s;
+    s.captured = captured_frames_.load();
+    s.consumed = consumed_frames_.load();
+    s.dropped = s.captured - s.consumed
+                - (frame_ring_ ? static_cast<int64_t>(frame_ring_->size()) : 0);
+    if (s.dropped < 0) s.dropped = 0;
+    return s;
+}
+
+// ============================================================================
 // getNextPacket()
 // ============================================================================
 
-bool InputProvider::getNextPacket(SensorPacket& packet) {
+bool InputProvider::getNextPacket(SensorPacket& packet, int timeout_ms) {
     if (!image_source_ || !image_source_->isOpen()) {
         return false;
     }
 
+    if (threaded_capture_) {
+        // ---- 线程化: 从缓冲取最新帧 (take-latest) ----
+        // 处理快 → 缓冲基本为空, 阻塞等下一帧 (等效同步模式);
+        // 处理慢 → 缓冲积压, 取最新帧并丢弃旧帧 (延迟有界, 丢帧可统计)
+        // 有限超时: 让主循环能周期性醒来检查外部停止标志 (如 Ctrl+C)
+        std::unique_lock lock(queue_cv_mtx_);
+        auto ready = [&] {
+            return !frame_ring_->empty()
+                || !capture_running_.load()
+                || capture_failed_.load();
+        };
+        if (timeout_ms >= 0) {
+            queue_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), ready);
+        } else {
+            queue_cv_.wait(lock, ready);
+        }
+        if (frame_ring_->empty()) return false;   // 采集已停止/失败/超时
+
+        size_t discarded = 0;
+        if (!frame_ring_->takeLatest(packet, discarded)) return false;
+        lock.unlock();
+
+        ++consumed_frames_;
+        ++current_frame_;
+        return true;
+    }
+
+    // ---- 同步模式 (File/Directory/Sequence): 逐帧直读 ----
     // 1. 从图像源获取下一帧
     cv::Mat left, right;
     int64_t ts_us = 0;
@@ -155,6 +251,12 @@ bool InputProvider::isOpen() const {
     return image_source_ && image_source_->isOpen();
 }
 
+bool InputProvider::isCaptureStopped() const {
+    // 同步模式: 无采集线程, getNextPacket 返回 false 即源结束
+    if (!threaded_capture_) return true;
+    return !capture_running_.load() || capture_failed_.load();
+}
+
 int InputProvider::totalFrames() const {
     return image_source_ ? image_source_->totalFrames() : -1;
 }
@@ -165,6 +267,7 @@ int InputProvider::currentFrame() const {
 
 bool InputProvider::reset() {
     current_frame_ = 0;
+    if (frame_ring_) frame_ring_->clear();
     return image_source_ ? image_source_->reset() : false;
 }
 

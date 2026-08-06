@@ -34,7 +34,8 @@
                            ▼              ▼
                     ┌──────────────┐  ┌──────────────────────┐
                     │ InputProvider │  │ cv::imread + 手动/YOLO│
-                    │ (File/Dir/Seq)│  │ verbose_console=true  │
+                    │(File/Dir/Seq/ │  │ verbose_console=true  │
+                    │     Camera)   │  │                      │
                     └──────┬───────┘  └──────────┬───────────┘
                            │                     │
                            └──────┬──────────────┘
@@ -96,7 +97,7 @@ cmake --build . --config Release
 
 |          | Normal                              | Debug                     |
 | -------- | ----------------------------------- | ------------------------- |
-| 图像源   | `InputProvider` (input_system 节) | `cv::imread` (input 节) |
+| 图像源   | `InputProvider` (input_system 节: 实时 `camera` 或离线 `file`/`directory`/`sequence`) | `cv::imread` (input 节: 离线固定图像) |
 | ROI      | YOLO 检测                           | 手动 ROI 或 YOLO          |
 | 终端输出 | 每帧一行简介 (`[Frame N] Strategy n=... t=...`) | 详细统计                  |
 | 可视化   | 仅三维坐标轴叠加 (`mono_f{N}.png`)  | 各策略完整中间面板        |
@@ -109,6 +110,10 @@ cmake --build . --config Release
 ## 3. 图像输入系统 (InputProvider)
 
 > 对应 SYS-REQ-100 系列
+
+> **输入分类**：输入按数据来源明确分为两大类：
+> - **实时相机输入** — `input_system.image.type: "camera"`（`CameraSource`，Phase 3 已实现，支持线程化采集，见 [§3.5 实时摄像头模式](#35-实时摄像头模式cameraSource)）
+> - **离线图像输入** — `input_system.image.type: "file" | "directory" | "sequence"`（静态文件对 / 双目编号序列 / 单目序列）；Debug 模式绕过 InputProvider，直接 `cv::imread` 读取固定图像，同样属于离线输入
 
 ### 3.1 架构
 
@@ -126,7 +131,7 @@ cmake --build . --config Release
 │     ▼     ▼             ▼              ▼                      │
 │  ┌────┐ ┌──────────┐ ┌──────────┐ ┌────────┐                │
 │  │File│ │Directory │ │Sequence  │ │Camera  │                │
-│  │文件│ │双目编号序│ │单目序列  │ │实时摄像│ (Phase 3)       │
+│  │文件│ │双目编号序│ │单目序列  │ │实时摄像│ (Phase 3 ✅)    │
 │  │对  │ │列        │ │          │ │头      │                │
 │  └────┘ └──────────┘ └──────────┘ └────────┘                │
 │                                                               │
@@ -134,13 +139,21 @@ cmake --build . --config Release
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 三种图像源模式
+### 3.2 四种图像源模式
 
-| type            | 类                        | 用途             |
-| --------------- | ------------------------- | ---------------- |
-| `"file"`      | `FileStereoSource`      | 静态双目文件对   |
-| `"directory"` | `DirectoryStereoSource` | 双目编号图像序列 |
-| `"sequence"`  | `SequenceSource`        | 单目图像序列     |
+| 分类         | type            | 类                        | 用途                                   |
+| ------------ | --------------- | ------------------------- | -------------------------------------- |
+| 离线图像输入 | `"file"`      | `FileStereoSource`      | 静态双目文件对                         |
+| 离线图像输入 | `"directory"` | `DirectoryStereoSource` | 双目编号图像序列                       |
+| 离线图像输入 | `"sequence"`  | `SequenceSource`        | 单目图像序列                           |
+| 实时相机输入 | `"camera"`   | `CameraSource`          | **实时摄像头** (Phase 3, 单目, USB/内置 webcam) |
+
+> **CameraSource 要点**:
+> - OpenCV `VideoCapture` 打开: `"0"` → 设备索引; `/dev/video0` → 设备路径; 支持 `"0;1"` 多设备格式 (当前取第一个)
+> - 阻塞读帧 (`cap_->grab()`), 天然按摄像头帧率节流; `target_fps` 额外 sleep 限速; 时间戳在 grab 返回后立即打戳 (接近曝光时刻)
+> - 单目语义: 右图 = 左图副本; `totalFrames() = -1` (帧数未知)
+> - 打开后 `grab()` 预热 5 帧 (等自动曝光/白平衡收敛)
+> - **线程化采集 (Phase 3.1)**: Camera 类型自动启用采集线程 + RingBuffer (take-latest 策略), 读帧与 YOLO/提取解耦 — 处理慢时跳过旧帧而非累积延迟 (见 [§3.5 实时摄像头模式](#35-实时摄像头模式cameraSource))
 
 ### 3.3 SensorPacket 统一数据包
 
@@ -159,10 +172,33 @@ struct SensorPacket {
 | Phase   | 状态      | 内容                                     |
 | ------- | --------- | ---------------------------------------- |
 | Phase 1 | ✅ 已完成 | 图像源抽象 + RingBuffer |
-| Phase 2 | 占位      | IMU + 高度计 + TimeSyncUnit |
-| Phase 3 | 未开始    | 实时摄像头源 |
+| Phase 2 | 占位      | IMU + 高度计 + TimeSyncUnit (`extracted_input_system/` 提供 CanSocket/TimeSyncUnit 参考实现, 未接入) |
+| Phase 3 | ✅ 已完成 | 实时摄像头源 (CameraSource, 同步阻塞读帧) |
+| Phase 3.x | ✅ 已完成 | 线程化采集 (采集线程 + RingBuffer take-latest) + FPS/丢帧统计 + Ctrl+C 优雅退出 |
 
-### 3.5 配置
+### 3.5 实时摄像头模式 (CameraSource)
+
+实时模式配置示例见 [config/tracker_config_webcam.json](config/tracker_config_webcam.json)：
+
+```jsonc
+"input_system": {
+    "max_frames": 0,                       // 0 = 无限循环
+    "image": { "type": "camera", "camera_devices": "0", "target_fps": 10 }
+},
+"mono_mode": true                          // 单摄像头必须单目
+```
+
+| 要点 | 说明 |
+|------|------|
+| 运行方式 | `./build/Steretracker config/tracker_config_webcam.json` |
+| 帧循环 | `main.cpp` `while (getNextPacket() && frame < max_frames && !Ctrl+C)` 逐帧 YOLO → 策略 → 位姿 |
+| 采集模型 | **线程化 (Phase 3.1)**: 采集线程按相机节拍产帧入环形缓冲; 主循环 take-latest 取最新帧 — 处理慢时跳帧而非累积延迟, 丢帧数可统计 |
+| 结束方式 | 摄像头断开 → `getNextPacket()` false 退出; **Ctrl+C → 优雅收尾**: 停止采集 → 打印汇总 (处理帧数/位姿成功率/实际 FPS/采集-消费-丢弃统计) → 日志落盘 |
+| 日志 | `log_file: true` 时退出后写 `output/sequence/tracking_log.txt` (含配置摘要 + 逐帧详情 + 运行汇总) |
+| 相机内参 | ⚠️ webcam 配置为 640×480 占位值, **必须棋盘格标定后替换** fx/fy/cx/cy |
+| 当前局限 | 仅单目 (USB 双目/RTSP 未支持); `target_fps` 依赖摄像头驱动对 CAP_PROP_FPS 的支持 |
+
+### 3.6 配置
 
 参见 [§10 配置文件](#10-配置文件) 中的 `input_system` 节。
 
@@ -497,7 +533,11 @@ TrackerBase
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `mode` | `"normal"` | 运行模式: `"normal"` / `"debug"` |
-| `mono_mode` | `false` | 启用单目模式 |
+| `mono_mode` | `false` | 启用单目模式 (单摄像头实时必须 true) |
+| `input_system.max_frames` | 0 | 最大帧数, ≤0 = 无限 |
+| `input_system.image.type` | `"file"` | 图像源: `"file"` / `"directory"` / `"sequence"` / `"camera"` |
+| `input_system.image.camera_devices` | `"0"` | 摄像头设备: 索引 `"0"` 或路径 `/dev/video0` |
+| `input_system.image.target_fps` | 0 | 实时目标帧率, 0 = 不限制 |
 | `output.visualize` | `true` | 是否保存可视化图像 |
 | `output.log_file` | `false` | Normal 模式下是否输出 TXT 日志文件 |
 | `strategies.tiny_max_area` | 800 | State 1/2 分界 (占位值) |
@@ -562,6 +602,11 @@ cmake --build . --config Release
 ```bash
 ./build/Steretracker                    # 默认配置
 ./build/Steretracker path/to/config.json # 指定配置
+
+# 实时摄像头 (单目 webcam, 见 §3.5)
+./build/Steretracker config/tracker_config_webcam.json
+# 先验证摄像头可用性
+python scripts/camera_capture.py --preview
 ```
 
 ---
@@ -576,7 +621,8 @@ Steretracker/
 ├── best.onnx                   # YOLO ONNX 模型
 │
 ├── config/
-│   └── tracker_config.json
+│   ├── tracker_config.json
+│   └── tracker_config_webcam.json   # 实时摄像头配置 (type=camera + mono_mode)
 │
 ├── data/                       # 测试图像与模板
 │
@@ -584,7 +630,7 @@ Steretracker/
 │   ├── common/                 # Types.hpp, Config.hpp, GeometryUtils.hpp
 │   ├── detection/              # YoloDetector, YoloRoiProvider, RoiGenerator
 │   ├── feature/                # FeatureExtractor, AkazeGpnp, BinaryCorner, TinyTarget
-│   ├── input/                  # InputProvider, IStereoImageSource, SensorPacket
+│   ├── input/                  # InputProvider, IStereoImageSource, CameraSource, RingBuffer
 │   ├── matching/               # TemplateMatcher
 │   ├── pose/                   # InitialPnPSolver, GPnPSolver, MonoPnPSolver
 │   ├── stereo/                 # StereoProjector
@@ -593,8 +639,9 @@ Steretracker/
 │   └── utils/                  # PoseUtils
 │
 ├── src/                        # 对应 .cpp 实现
+├── scripts/camera_capture.py   # 摄像头预览/抓拍辅助脚本
 ├── sysml/                      # SysML 需求模型
 │   ├── sysrequire.puml         # 系统需求规格 (SYS-REQ)
 │   ├── softwarerequire.puml
 │   └── flow.puml
-└── extracted_input_system/     # 独立输入系统模块
+└── extracted_input_system/     # 独立输入系统模块 (CanSocket/TimeSyncUnit, Phase 2 参考)

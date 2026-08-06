@@ -91,8 +91,13 @@ struct InputSystemConfig {
     ImuInputConfig imu;
     AltimeterInputConfig altimeter;
 
-    /// 若为 true，InputProvider 内部使用 RingBuffer + 采集线程（Camera 模式时自动启用）
+    /// 若为 true，InputProvider 内部使用 RingBuffer + 采集线程
+    /// （Camera 模式无论此值如何均自动启用，见 InputProvider::initialize）
     bool use_threaded_capture = false;
+
+    /// 线程化采集的环形缓冲容量（帧数）。越小延迟越低，越大抗处理耗时尖峰。
+    /// 消费策略为 take-latest：处理慢时跳过旧帧，保证拿到最新帧。
+    int ring_capacity = 4;
 };
 
 } // namespace input

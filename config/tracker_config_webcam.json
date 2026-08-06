@@ -5,6 +5,9 @@
   "input_system": {
     "_comment": "type: file / directory / sequence / camera",
     "max_frames": 0,
+    "use_threaded_capture": true,
+    "_comment_thread": "Phase 3.1: 采集线程+环形缓冲 (take-latest)。Camera 类型默认自动启用, 此配置可省略; ring_capacity 越小延迟越低, 越大抗处理耗时尖峰",
+    "ring_capacity": 4,
     "image": {
       "type": "camera",
       "left_path": "",
@@ -49,9 +52,9 @@
 
   "output": {
     "_comment_visualize": "false: 实时运行不落盘可视化图",
-    "_comment_log": "⚠️ log_file 保持 false: 日志在帧循环结束后才写盘, 实时模式只以 Ctrl+C 结束, 永远不会落盘; 逐帧结果看终端即可",
+    "_comment_log": "Phase 3.2: 优雅退出已实现 — Ctrl+C 后帧循环收尾, 日志可正常落盘到 output/sequence/tracking_log.txt; 终端逐帧结果不受影响",
     "visualize": false,
-    "log_file": false
+    "log_file": true
   },
 
   "camera": {
