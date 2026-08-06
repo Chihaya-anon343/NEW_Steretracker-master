@@ -1,10 +1,12 @@
 #include "../framework/TestAssert.hpp"
+#include "TestDataLoader.hpp"
 
 #include "feature/FeatureExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 
 #include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <cmath>
@@ -23,11 +25,27 @@ bool templateDirExists() {
     return std::filesystem::exists(kMuBanDir);
 }
 
-// 生成一张含黑色圆盘的 200×200 灰度图，用于 extract 不崩溃测试
-cv::Mat makeGrayImage() {
-    cv::Mat img(200, 200, CV_8UC1, cv::Scalar(255));
-    cv::circle(img, cv::Point(100, 100), 40, cv::Scalar(0), cv::FILLED);
-    return img;
+// ============================================================================
+// fixtures 加载 (tests/data/fixtures + rois.json)
+// ============================================================================
+
+std::string fixturesDir() {
+    return gpnp_test::defaultFixturesDir();
+}
+
+std::string roisPath() {
+    return gpnp_test::roisJsonPath(fixturesDir());
+}
+
+// 加载场景灰度图并裁剪 ROI (来自 rois.json); 失败返回空 Mat
+cv::Mat loadGrayRoi(const std::string& scene, int frame, const std::string& cls) {
+    std::string imgPath = gpnp_test::fixtureImagePath(fixturesDir(), scene, "left", frame);
+    if (!std::filesystem::exists(imgPath)) return {};
+    cv::Mat full = cv::imread(imgPath, cv::IMREAD_GRAYSCALE);
+    if (full.empty()) return {};
+    cv::Rect roi = gpnp_test::loadFixtureRoi(roisPath(), scene, frame, "left", cls);
+    if (roi.width <= 0 || roi.height <= 0) return {};
+    return full(roi).clone();
 }
 
 // ============================================================================
@@ -79,12 +97,17 @@ REGISTER_TEST(test_binary_corner_static_reorder);
 
 void test_binary_corner_draw_corners() {
     // drawCorners 不崩溃且输出同尺寸彩色图
-    cv::Mat gray = makeGrayImage();
-    std::vector<cv::Point2f> corners = {{10, 10}, {190, 10}, {190, 190}, {10, 190}};
-    cv::Mat out = BinaryCornerExtractor::drawCorners(gray, corners);
+    // 画布使用真实 fixtures 图片 (mono_bc 左图, 640×480), 内部自动 gray→BGR
+    std::string imgPath = gpnp_test::fixtureImagePath(fixturesDir(), "mono_bc", "left", 0);
+    if (!std::filesystem::exists(imgPath)) return;  // fixtures 缺失则跳过
+
+    cv::Mat canvas = cv::imread(imgPath);
+    TEST_ASSERT(!canvas.empty());
+    std::vector<cv::Point2f> corners = {{50, 50}, {590, 50}, {590, 430}, {50, 430}};
+    cv::Mat out = BinaryCornerExtractor::drawCorners(canvas, corners);
     TEST_ASSERT(!out.empty());
     TEST_ASSERT(out.type() == CV_8UC3);
-    TEST_ASSERT(out.size() == gray.size());
+    TEST_ASSERT(out.size() == canvas.size());
 }
 REGISTER_TEST(test_binary_corner_draw_corners);
 
@@ -115,11 +138,11 @@ void test_binary_corner_synthetic_rectangle() {
     cfg.pixel_to_meter_scale_class0 = 0.002;
     BinaryCornerExtractor ext(cfg, kMuBanDir);
 
-    // 生成一张 100×100 白色图像中绘制黑色实心矩形（对应 4 角点目标）
-    cv::Mat img(200, 200, CV_8UC1, cv::Scalar(255));
-    cv::rectangle(img, cv::Rect(60, 60, 80, 80), cv::Scalar(0), cv::FILLED);
+    // 使用 fixtures: mono_bc 左图 (640×480) 裁剪 class0 ROI (244,165,152,150)
+    cv::Mat grayRoi = loadGrayRoi("mono_bc", 0, "class0");
+    if (grayRoi.empty()) return;  // fixtures 缺失则跳过
 
-    PipelineResult r = ext.extractMono(img, img);
+    PipelineResult r = ext.extractMono(grayRoi, grayRoi);
     // 允许两种结果：
     //   - 成功：4 个角点
     //   - 失败：success=false
@@ -156,21 +179,22 @@ void test_tiny_target_small_black_square() {
     if (!templateDirExists()) return;
 
     TinyTargetExtractor::Config cfg;
-    // 小目标：40×40 像素（面积 ≤ 800 对应 State 1）
+    // 小目标：短边 20px（面积 400 ≤ 800 对应 State 1）
     cfg.square_size_m_class0 = 0.05;  // 5cm
     TinyTargetExtractor ext(cfg, kMuBanDir);
 
-    cv::Mat img(100, 100, CV_8UC1, cv::Scalar(255));
-    cv::rectangle(img, cv::Rect(30, 30, 40, 40), cv::Scalar(0), cv::FILLED);
+    // 使用 fixtures: mono_tiny 左图 (640×480) 裁剪 class0 ROI (310,230,20,20)
+    cv::Mat grayRoi = loadGrayRoi("mono_tiny", 0, "class0");
+    if (grayRoi.empty()) return;  // fixtures 缺失则跳过
 
-    PipelineResult r = ext.extractMono(img, img);
+    PipelineResult r = ext.extractMono(grayRoi, grayRoi);
     if (r.success) {
         // 成功时应提取到 4 个角点
         TEST_ASSERT_EQ(r.pts_left_match.size(), size_t(4));
-        // 角点应位于 ROI 内（0~100）
+        // 角点应位于 ROI 内（ROI 局部坐标）
         for (const auto& p : r.pts_left_match) {
-            TEST_ASSERT(p.x >= 0.0f && p.x <= 100.0f);
-            TEST_ASSERT(p.y >= 0.0f && p.y <= 100.0f);
+            TEST_ASSERT(p.x >= 0.0f && p.x <= static_cast<float>(grayRoi.cols));
+            TEST_ASSERT(p.y >= 0.0f && p.y <= static_cast<float>(grayRoi.rows));
         }
         // 模板匹配角度应有效
         TEST_ASSERT(ext.lastMatchedAngle() >= 0);

@@ -7,12 +7,12 @@
 | `test_config.cpp` | 8 | 配置工厂函数 | 纯代码，无外部依赖 | 精确值 / 异常类型 |
 | `test_roi_generator.cpp` | 16 | ROI 生成 & 五状态判定 | 代码合成 `Detection` 结构体 | 精确面积/尺寸/布尔值 |
 | `test_pose_solvers.cpp` | 7 | InitialPnP / MonoPnP / GPnP | 代码合成 Z=0 平面 8 点 + 高斯噪声 | 误差阈值 (5%~15%) |
-| `test_extractors.cpp` | 8 | BinaryCorner / TinyTarget 提取器 | `cv::circle`/`rectangle` 合成图 + `data/NewMuBan(reordered)/` 模板 | 结构性 (成功/不崩溃) |
+| `test_extractors.cpp` | 8 | BinaryCorner / TinyTarget 提取器 | `data/fixtures/` 图片 (mono_bc/mono_tiny) + `rois.json` + `data/NewMuBan(reordered)/` 模板 | 结构性 (成功/不崩溃) |
 | `test_input_system.cpp` | 13 | 输入系统 & RingBuffer | `cv::imwrite` 临时目录 (自动创建+清理) | 精确尺寸/FIFO 顺序 |
-| `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `synthPair()` 合成双目图 + 模板目录 | 冒烟 (仅验证不崩溃) |
+| `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `data/fixtures/` 图片 (mono_akaze/synthetic_akaze/synthetic_dual) + `rois.json` + 模板目录 | 冒烟 (仅验证不崩溃) |
 | **合计** | **55** | | | |
 
-> 数据依赖层级：纯代码 → 临时文件 (自动) → 模板目录 (可选, 缺失时 SKIP)
+> 数据依赖层级：纯代码 → 临时文件 (自动) → fixtures 图片 + 模板目录 (可选, 缺失时 SKIP)
 
 ---
 
@@ -36,14 +36,25 @@ tests/
 ├── CMakeLists.txt               # -DGPNP_BUILD_TESTS=ON 启用
 ├── framework/
 │   └── TestAssert.hpp           # TEST_ASSERT / REGISTER_TEST / TestRegistry
+├── scripts/
+│   └── generate_assets.py       # fixtures 生成脚本 (真实背景+目标合成)
 ├── unit/
+│   ├── TestDataLoader.hpp       # fixtures 加载工具 (rois.json → ROI)
 │   ├── test_config.cpp          # [L0] 配置工厂
 │   ├── test_roi_generator.cpp   # [L0] ROI 生成 & 五状态判定
 │   ├── test_pose_solvers.cpp    # [L0] PnP 位姿求解器
 │   ├── test_extractors.cpp      # [L1] 特征提取器
 │   ├── test_input_system.cpp    # [L1] 输入系统
 │   └── test_integration.cpp     # [L2] 端到端冒烟
-└── data/                        # gitignored, 合成输出目录
+└── data/fixtures/               # gitignored, 由 generate_assets.py 生成
+    ├── synthetic_tiny|bc|akaze/          # 双目 State 1/2/3 (class0-only)
+    ├── synthetic_bc_class1|akaze_class1/ # 双目 State 5/6 (class1-only)
+    ├── synthetic_dual/                   # 双目 State 4 (class0+class1)
+    ├── mono_tiny|bc|akaze/               # 单目仅左图 (class0-only)
+    ├── mono_bc_class1|akaze_class1/      # 单目仅左图 (class1-only)
+    ├── mono_dual/                        # 单目仅左图 (class0+class1)
+    ├── rois.json                         # 每场景每帧每侧 class0/class1 ROI
+    └── manual_roi.json                   # Debug 模式手动 ROI (对齐 synthetic_bc)
 ```
 
 ---
@@ -151,20 +162,20 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 ### 4.4 `test_extractors.cpp` — 特征提取器 (8 用例)
 
 **被测 API**: `BinaryCornerExtractor::extract()` / `TinyTargetExtractor::extractMono()`
-**输入数据**: 合成白底黑目标灰度图 + `data/NewMuBan(reordered)/` 模板目录
+**输入数据**: `data/fixtures/` 图片 (ROI 按 `rois.json` 裁剪) + `data/NewMuBan(reordered)/` 模板目录
 
 | # | 用例 | 依赖模板 | 输入 | 判断标准 |
 |---|------|:---:|------|---------|
 | 1 | `test_interface_names` | 否 | 无 | StrategyType: Akaze=0, BC=1, TT=2 |
 | 2 | `test_binary_corner_static_reorder` | 否 | 乱序 4 角点, 中心 (50,50), 参考角 -90° | 4 个互异有效索引 |
-| 3 | `test_binary_corner_draw_corners` | 否 | 200×200 图 + 4 角点 | 输出 CV_8UC3, 同尺寸 |
+| 3 | `test_binary_corner_draw_corners` | 否 | `fixtures/mono_bc/left_000.png` (640×480) + 4 角点 | 输出 CV_8UC3, 同尺寸 |
 | 4 | `test_binary_corner_empty_input` | 是 | 空 cv::Mat | 不崩溃, !success, kp 为空 |
-| 5 | `test_binary_corner_synthetic_rectangle` | 是 | 200×200 白底+80×80 黑矩形 | 不崩溃; 成功时 pts≤8 |
+| 5 | `test_binary_corner_synthetic_rectangle` | 是 | `fixtures/mono_bc/left_000.png` 裁剪 class0 ROI (244,165,152×150) | 不崩溃; 成功时 pts≤8 |
 | 6 | `test_tiny_target_empty_input` | 是 | 空 cv::Mat | 不崩溃, !success, kp 为空 |
-| 7 | `test_tiny_target_small_black_square` | 是 | 100×100 白底+40×40 黑方块 | 不崩溃; 成功时 4 角点, 坐标∈[0,100] |
+| 7 | `test_tiny_target_small_black_square` | 是 | `fixtures/mono_tiny/left_000.png` 裁剪 class0 ROI (310,230,20×20) | 不崩溃; 成功时 4 角点, 坐标∈ROI |
 | 8 | `test_tiny_target_set_use_class1` | 是 | 切换 class0/class1 物理尺寸 | setUseClass1(true/false) 不崩溃 |
 
-> 模板目录缺失时用例 4~8 静默跳过 (不打 FAIL)。
+> 模板目录或 fixtures 缺失时用例 3/5/7 静默跳过 (不打 FAIL)；用例 4~8 仅在模板目录缺失时跳过。
 
 ---
 
@@ -196,15 +207,15 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 ### 4.6 `test_integration.cpp` — 端到端冒烟 (3 用例)
 
 **被测模块**: MonoTracker::process() / StereoTracker::process() (含 Dual-ROI 独立路径)
-**输入数据**: `synthPair()` 将 Z=0 平面 3×3 模板点投影到 1280×1024 白色背景画黑色圆点 + `data/NewMuBan(reordered)/` 模板
+**输入数据**: `data/fixtures/` 真实背景+真实目标 (data/big/img_1.png) 合成图, ROI 取自 `rois.json` + 模板目录
 
 | # | 用例 | 输入 | 判断标准 |
 |---|------|------|---------|
-| 1 | `MonoTracker 冒烟` | 合成点云 (ry=0.15, tz=1.5m) + 手动 ROI 480×480 | time≥0, frameCount≥1, logs≥1 |
-| 2 | `StereoTracker 冒烟: warm-start 两帧` | 双目合成 (baseline=120mm, ry=0.1, tz=1.5m) + 同 ROI × 2 帧 | 两帧 time≥0, frameCount≥2 |
-| 3 | `Dual-ROI 冒烟: is_dual=true 独立路径` | 外部椭圆 + 内部小圆, 全图→内部图 | 两帧 time≥0, frameCount≥2, 不崩溃 |
+| 1 | `MonoTracker 冒烟` | `fixtures/mono_akaze/left_000.png` (640×480) + class0 ROI (214,135,213×210) | time≥0, frameCount≥1, logs≥1 |
+| 2 | `StereoTracker 冒烟: warm-start 两帧` | `fixtures/synthetic_akaze/` 双目对 (640×480, 右图偏移16px) × 2 帧, 左右 ROI 各自从 rois.json 取 | 两帧 time≥0, frameCount≥2 |
+| 3 | `Dual-ROI 冒烟: is_dual=true 独立路径` | `fixtures/synthetic_dual/` 双目对 (1280×960): class0 外框 731×720 + class1 中心 120×120 | 两帧 time≥0, frameCount≥2, 不崩溃 |
 
-> ⚠️ **冒烟定位**: 合成白底黑点图与真实模板纹理截然不同——AKAZE 二值描述子无法匹配 (good_matches=0)，流水线走满退化链 (AKAZE→BC→硬编码深度)，但**不崩溃**。精度验证由 `test_pose_solvers.cpp` 完成。模板缺失时 SKIP。
+> ⚠️ **冒烟定位**: fixtures 目标图为 AKAZE 模板 (data/big/img_1.png) 的缩放产物, AKAZE 描述子匹配应能成功; 断言仍保持宽松 (仅验证不崩溃、计时合法)。相机内参主点取图像中心 (640×480 → cx=320, cy=240; 1280×960 → cx=640, cy=480)。模板或 fixtures 缺失时 SKIP。
 
 ---
 
@@ -213,7 +224,7 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 ```bash
 # 配置 (独立构建目录)
 mkdir build-tests && cd build-tests
-cmake .. -DGPNP_BUILD_TESTS=ON
+cmake .. -DGPNP_BUILD_TESTS=ON -DTEST_FIXTURES_DIR=../tests/data/fixtures
 
 # 构建全部测试
 cmake --build . --config Release
@@ -230,11 +241,12 @@ cmake --build . --target check
 ./tests/test_extractors
 ./tests/test_input_system
 
-# 集成测试需模板目录
+# 集成测试需模板目录 + fixtures
 ./tests/test_integration \
-    --template-dir data/NewMuBan\(reordered\)/img_1.png \
-    --binary-template-dir data/NewMuBan\(reordered\) \
-    --tiny-template-dir data/NewMuBan\(reordered\)
+    --template-dir ../data/big/img_1.png \
+    --binary-template-dir ../data/NewMuBan\(reordered\) \
+    --tiny-template-dir ../data/NewMuBan\(reordered\) \
+    --fixtures-dir ../tests/data/fixtures
 ```
 
 ### 依赖注入
@@ -244,6 +256,9 @@ cmake --build . --target check
 | OpenCV / Eigen3 | REQUIRED, CMake 自动查找 | 构建失败 |
 | ONNX Runtime | 可选, `-DGPNP_ONNXRUNTIME_ROOT=<path>` | `test_input_system` 跳过编译 |
 | 模板目录 | 可选, `-DTEST_TEMPLATE_DIR=<path>` | `test_extractors` 静默跳过, `test_integration` SKIP |
+| fixtures 图片 | 可选, `-DTEST_FIXTURES_DIR=<path>` 或 `--fixtures-dir` | 相关用例静默跳过 / SKIP |
+
+> fixtures 由 `tests/scripts/generate_assets.py` 生成 (输入: `data/big/img_1.png` + 背景图 + CLASS1_RECT)。
 
 ---
 

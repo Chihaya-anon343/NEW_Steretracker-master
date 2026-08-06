@@ -158,6 +158,11 @@ function(gpnp_add_test name)
             GPNP_TEST_TEMPLATE_DIR="${TEST_TEMPLATE_DIR}"
         )
     endif()
+    if(TEST_FIXTURES_DIR)
+        target_compile_definitions(${name} PRIVATE
+            GPNP_TEST_FIXTURES_DIR="${TEST_FIXTURES_DIR}"
+        )
+    endif()
 
     add_test(NAME ${name} COMMAND ${name})
 endfunction()

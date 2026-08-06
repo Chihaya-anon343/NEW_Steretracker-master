@@ -9,14 +9,18 @@
 // 数据依赖:
 //   - AKAZE 模板目录 data/NewMuBan(reordered)/
 //   - BinaryCorner / TinyTarget 模板目录 (缺省回退到 AKAZE 目录)
-//   依赖通过 --template-dir / --binary-template-dir / --tiny-template-dir 传入;
-//   目录不存在时用例自动 SKIP(不打 FAIL), 便于无数据 CI 环境仍可编译执行。
+//   - 输入图片: tests/data/fixtures/ (真实背景 + data/big/img_1.png 目标合成)
+//     ROI 取自同目录 rois.json
+//   路径通过 --template-dir / --binary-template-dir / --tiny-template-dir /
+//   --fixtures-dir 传入; 依赖缺失时用例自动 SKIP(不打 FAIL),
+//   便于无数据 CI 环境仍可编译执行。
 //
 // 定位: 冒烟测试 —— 断言管线可运行、无异常、计时合法、输出目录可创建;
-//       不对具体位姿精度做强断言(合成图与真实模板差异大, 强断言会过于脆弱)。
+//       不对具体位姿精度做强断言。
 // =============================================================================
 
 #include "../framework/TestAssert.hpp"
+#include "TestDataLoader.hpp"
 
 #include "common/Config.hpp"
 #include "tracker/MonoTracker.hpp"
@@ -26,6 +30,7 @@
 #include "feature/TinyTargetExtractor.hpp"
 
 #include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <Eigen/Geometry>
@@ -47,6 +52,9 @@ namespace {
 std::string g_template_dir  = "data/big/img_1.png";
 std::string g_binary_dir    = "data/NewMuBan(reordered)";
 std::string g_tiny_dir      = "data/NewMuBan(reordered)";
+
+// fixtures 目录 (tests/data/fixtures) + rois.json, 可通过 --fixtures-dir 覆盖
+std::string g_fixtures_dir = "tests/data/fixtures";
 
 // ---------------------------------------------------------------------------
 // 轻量级冒烟测试框架: 与 TestAssert.hpp 不同, 该文件使用可跳过的
@@ -86,56 +94,32 @@ void runTest(const char* name, const std::function<void()>& fn) {
 }
 
 // ---------------------------------------------------------------------------
-// 合成双目图对: 将平面 3D 点投影到左右相机, 画白底黑点目标
+// fixtures 加载: tests/data/fixtures/<scene>/<tag>_<frame:03d>.png + rois.json
 // ---------------------------------------------------------------------------
-struct SynthPair {
-    cv::Mat left, right;
-    int width = 1280;
-    int height = 1024;
-};
 
-SynthPair synthPair(const Eigen::Matrix3d& K,
-                    const Eigen::Matrix3d& R,
-                    const Eigen::Vector3d& t,
-                    const std::vector<Eigen::Vector3d>& pts3d,
-                    const Eigen::Vector3d& t_rl) {
-    SynthPair p;
-    p.left  = cv::Mat(p.height, p.width, CV_8UC1, cv::Scalar::all(255));
-    p.right = cv::Mat(p.height, p.width, CV_8UC1, cv::Scalar::all(255));
-
-    auto project = [&](const Eigen::Vector3d& Pc) -> cv::Point2f {
-        Eigen::Vector3d uv = K * Pc;
-        return cv::Point2f(static_cast<float>(uv.x() / uv.z()),
-                           static_cast<float>(uv.y() / uv.z()));
-    };
-
-    for (const auto& P : pts3d) {
-        Eigen::Vector3d Pl = R * P + t;              // 左相机系
-        Eigen::Vector3d Pr = R * P + t + t_rl;       // 右相机系
-        if (Pl.z() <= 0 || Pr.z() <= 0) continue;
-        cv::Point2f l = project(Pl);
-        cv::Point2f r = project(Pr);
-        cv::circle(p.left,  l, 8, 0, -1);
-        cv::circle(p.right, r, 8, 0, -1);
-    }
-    return p;
-}
-
-// 200×150mm 模板平面点 (Z=0)
-std::vector<Eigen::Vector3d> makeTemplatePlane(double mm = 1.0) {
-    std::vector<Eigen::Vector3d> pts;
-    for (double x : {-100.0, 0.0, 100.0})
-        for (double y : {-75.0, 0.0, 75.0})
-            pts.emplace_back(x * mm, y * mm, 0.0);
-    return pts;
-}
-
-Eigen::Matrix3d makeK() {
+// 相机内参, 主点取图像中心 (fx=fy=1000 与真实参数量级一致)
+Eigen::Matrix3d makeK(int img_w, int img_h) {
     Eigen::Matrix3d K;
-    K << 1000.0, 0.0, 640.0,
-         0.0, 1000.0, 512.0,
+    K << 1000.0, 0.0, img_w / 2.0,
+         0.0, 1000.0, img_h / 2.0,
          0.0, 0.0, 1.0;
     return K;
+}
+
+// 加载场景图片 (左右); 缺失返回 false 并清空图像
+bool loadFixture(const std::string& scene, int frame,
+                 cv::Mat& left, cv::Mat& right) {
+    left  = cv::imread(gpnp_test::fixtureImagePath(g_fixtures_dir, scene, "left",  frame));
+    right = cv::imread(gpnp_test::fixtureImagePath(g_fixtures_dir, scene, "right", frame));
+    return !left.empty() && !right.empty();
+}
+
+// 从 rois.json 读取 ROI 并转为 gpnp::RoiRect
+RoiRect roiFromJson(const std::string& scene, int frame,
+                    const std::string& side, const std::string& cls) {
+    cv::Rect r = gpnp_test::loadFixtureRoi(
+        gpnp_test::roisJsonPath(g_fixtures_dir), scene, frame, side, cls);
+    return RoiRect{r.x, r.y, r.width, r.height};
 }
 
 TrackerConfig makeTrackerCfg() {
@@ -172,16 +156,8 @@ bool templatesAvailable() {
 }
 
 void skipNotice(const char* name) {
-    std::printf("  [SKIP] %s (缺少模板, 指定 --template-dir 后启用)\n", name);
+    std::printf("  [SKIP] %s (缺少模板/fixtures, 指定 --template-dir / --fixtures-dir 后启用)\n", name);
     throw SkipTestException();
-}
-
-// 断言 ROI 在图像范围内
-void clampRoi(RoiRect& r, int w, int h) {
-    r.x = std::max(0, r.x);
-    r.y = std::max(0, r.y);
-    r.width  = std::min<int>(r.width,  w - r.x);
-    r.height = std::min<int>(r.height, h - r.y);
 }
 
 } // namespace
@@ -192,118 +168,112 @@ int main(int argc, char** argv) {
         if (a == "--template-dir" && i + 1 < argc)        g_template_dir = argv[++i];
         else if (a == "--binary-template-dir" && i + 1 < argc) g_binary_dir = argv[++i];
         else if (a == "--tiny-template-dir" && i + 1 < argc)  g_tiny_dir = argv[++i];
+        else if (a == "--fixtures-dir" && i + 1 < argc)       g_fixtures_dir = argv[++i];
         else if (a == "--help") {
             std::printf("用法: %s [--template-dir FILE] [--binary-template-dir DIR] "
-                        "[--tiny-template-dir DIR]\n"
-                        "默认: AKAZE=%s | BC/TT=%s\n",
-                        argv[0], g_template_dir.c_str(), g_binary_dir.c_str());
+                        "[--tiny-template-dir DIR] [--fixtures-dir DIR]\n"
+                        "默认: AKAZE=%s | BC/TT=%s | fixtures=%s\n",
+                        argv[0], g_template_dir.c_str(), g_binary_dir.c_str(),
+                        g_fixtures_dir.c_str());
             return 0;
         }
     }
 
     int exit_code = 0;
 
-    runTest("MonoTracker 冒烟: 合成点云 + 手动 ROI", [&] {
+    runTest("MonoTracker 冒烟: mono_akaze fixture + rois.json ROI", [&] {
         if (!templatesAvailable()) { skipNotice(__func__); }
 
-        Eigen::Matrix3d K = makeK();
-        Eigen::Matrix3d R = Eigen::AngleAxisd(0.15, Eigen::Vector3d::UnitY())
-                                .toRotationMatrix();
-        Eigen::Vector3d t(0.0, 0.0, 1500.0);
-        auto pair = synthPair(K, R, t, makeTemplatePlane(), Eigen::Vector3d::Zero());
-
-        RoiRect roi{400, 300, 480, 480};
-        clampRoi(roi, pair.width, pair.height);
+        // 输入: mono_akaze 左图 (640×480), ROI = class0 (214,135,213×210)
+        cv::Mat left = cv::imread(
+            gpnp_test::fixtureImagePath(g_fixtures_dir, "mono_akaze", "left", 0));
+        if (left.empty()) { skipNotice(__func__); }
+        RoiRect roi = roiFromJson("mono_akaze", 0, "left", "class0");
+        if (roi.width <= 0 || roi.height <= 0) { skipNotice(__func__); }
         RoiGroup group{roi, RoiRect{}, false};
 
-        MonoTracker tracker(K, g_template_dir, makeTrackerCfg(),
+        MonoTracker tracker(makeK(left.cols, left.rows), g_template_dir,
+                            makeTrackerCfg(),
                             makeBinaryCfg(), g_binary_dir,
                             makeTinyCfg(), g_tiny_dir);
         tracker.setVerboseConsole(false);
         tracker.setOutputDir("output/test_mono");
 
-        PipelineResult res = tracker.process(pair.left, /*visualize=*/false, &group);
+        PipelineResult res = tracker.process(left, /*visualize=*/false, &group);
         CHECK(res.total_time_ms() >= 0.0);
         CHECK(tracker.frameCount() >= 1);
         CHECK(tracker.getLogs().size() >= 1);
     });
 
-    runTest("StereoTracker 冒烟: 合成点云 + 双目 ROI + warm-start 两帧", [&] {
+    runTest("StereoTracker 冒烟: synthetic_akaze fixture + warm-start 两帧", [&] {
         if (!templatesAvailable()) { skipNotice(__func__); }
 
-        Eigen::Matrix3d K = makeK();
-        Eigen::Matrix3d R = Eigen::AngleAxisd(0.1, Eigen::Vector3d::UnitY())
-                                .toRotationMatrix();
-        Eigen::Vector3d t(0.0, 0.0, 1500.0);
         Eigen::Vector3d t_rl(-120.0, 0.0, 0.0);   // 基线 120mm
-        auto pair = synthPair(K, R, t, makeTemplatePlane(), t_rl);
 
-        RoiRect roi{400, 300, 480, 480};
-        clampRoi(roi, pair.width, pair.height);
-        RoiGroup lg{roi, RoiRect{}, false};
-        RoiGroup rg{roi, RoiRect{}, false};
+        // 输入: synthetic_akaze 双目对 (640×480, 右图水平偏移 16px)
+        // 左右 ROI 不同 (右图 x = 左图 x + 视差)
+        cv::Mat l0, r0, l1, r1;
+        if (!loadFixture("synthetic_akaze", 0, l0, r0) ||
+            !loadFixture("synthetic_akaze", 1, l1, r1)) {
+            skipNotice(__func__);
+        }
+        RoiRect lg0 = roiFromJson("synthetic_akaze", 0, "left",  "class0");
+        RoiRect rg0 = roiFromJson("synthetic_akaze", 0, "right", "class0");
+        RoiRect lg1 = roiFromJson("synthetic_akaze", 1, "left",  "class0");
+        RoiRect rg1 = roiFromJson("synthetic_akaze", 1, "right", "class0");
+        if (lg0.width <= 0 || rg0.width <= 0 || lg1.width <= 0 || rg1.width <= 0) {
+            skipNotice(__func__);
+        }
+        RoiGroup lg0g{lg0, RoiRect{}, false};
+        RoiGroup rg0g{rg0, RoiRect{}, false};
+        RoiGroup lg1g{lg1, RoiRect{}, false};
+        RoiGroup rg1g{rg1, RoiRect{}, false};
 
-        StereoTracker tracker(K, Eigen::Matrix3d::Identity(), t_rl,
-                              g_template_dir, makeTrackerCfg(),
+        StereoTracker tracker(makeK(l0.cols, l0.rows), Eigen::Matrix3d::Identity(),
+                              t_rl, g_template_dir, makeTrackerCfg(),
                               makeBinaryCfg(), g_binary_dir,
                               makeTinyCfg(), g_tiny_dir);
         tracker.setVerboseConsole(false);
         tracker.setOutputDir("output/test_stereo");
 
         // 两帧连续处理验证 warm-start 路径无异常
-        PipelineResult r1 = tracker.process(pair.left, pair.right, false, &lg, &rg);
-        PipelineResult r2 = tracker.process(pair.left, pair.right, false, &lg, &rg);
-        CHECK(r1.total_time_ms() >= 0.0);
-        CHECK(r2.total_time_ms() >= 0.0);
+        PipelineResult r1res = tracker.process(l0, r0, false, &lg0g, &rg0g);
+        PipelineResult r2res = tracker.process(l1, r1, false, &lg1g, &rg1g);
+        CHECK(r1res.total_time_ms() >= 0.0);
+        CHECK(r2res.total_time_ms() >= 0.0);
         CHECK(tracker.frameCount() >= 2);
     });
 
     runTest("StereoTracker Dual-ROI 冒烟: is_dual=true 独立路径", [&] {
         if (!templatesAvailable()) { skipNotice(__func__); }
 
-        Eigen::Matrix3d K = makeK();
-        Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
-        Eigen::Vector3d t(0.0, 0.0, 1200.0);
         Eigen::Vector3d t_rl(-120.0, 0.0, 0.0);
 
-        // 外矩形(class0 边缘) + 内矩形(class1 中心)
-        std::vector<Eigen::Vector3d> outer;
-        for (double a : {0.0, 90.0, 180.0, 270.0}) {
-            double rad = a * M_PI / 180.0;
-            outer.emplace_back(100.0 * std::cos(rad), 75.0 * std::sin(rad), 0.0);
+        // 输入: synthetic_dual 双目对 (1280×960)
+        //   primary(class0) = 外框 731×720; secondary(class1) = 中心 120×120
+        cv::Mat l0, r0, l1, r1;
+        if (!loadFixture("synthetic_dual", 0, l0, r0) ||
+            !loadFixture("synthetic_dual", 1, l1, r1)) {
+            skipNotice(__func__);
         }
-        std::vector<Eigen::Vector3d> inner;
-        for (double a : {0.0, 90.0, 180.0, 270.0}) {
-            double rad = a * M_PI / 180.0;
-            inner.emplace_back(40.0 * std::cos(rad), 30.0 * std::sin(rad), 0.0);
-        }
-        // 场景点(外+内) 与 纯 inner 图
-        std::vector<Eigen::Vector3d> all = outer;
-        all.insert(all.end(), inner.begin(), inner.end());
-
-        auto pairAll  = synthPair(K, R, t, all, t_rl);
-        auto pairInner = synthPair(K, R, t, inner, t_rl);
-
-        // primary(class0) 覆盖 whole 目标; secondary(class1) 覆盖中心
-        RoiRect pri{300, 250, 680, 520};
-        RoiRect sec{420, 350, 340, 260};
-        clampRoi(pri, pairAll.width, pairAll.height);
-        clampRoi(sec, pairAll.width, pairAll.height);
+        RoiRect pri = roiFromJson("synthetic_dual", 0, "left",  "class0");
+        RoiRect sec = roiFromJson("synthetic_dual", 0, "left",  "class1");
+        if (pri.width <= 0 || sec.width <= 0) { skipNotice(__func__); }
 
         RoiGroup lg{pri, sec, /*is_dual=*/true};
         RoiGroup rg{pri, sec, /*is_dual=*/true};
 
-        StereoTracker tracker(K, Eigen::Matrix3d::Identity(), t_rl,
-                              g_template_dir, makeTrackerCfg(),
+        StereoTracker tracker(makeK(l0.cols, l0.rows), Eigen::Matrix3d::Identity(),
+                              t_rl, g_template_dir, makeTrackerCfg(),
                               makeBinaryCfg(), g_binary_dir,
                               makeTinyCfg(), g_tiny_dir);
         tracker.setVerboseConsole(false);
 
         // Dual-ROI 为独立路径: process 不应抛出, 且 frame_count 递增
-        PipelineResult r1 = tracker.process(pairAll.left, pairAll.right, false, &lg, &rg);
-        PipelineResult r2 = tracker.process(pairInner.left, pairInner.right, false, &lg, &rg);
-        CHECK(r1.total_time_ms() >= 0.0);
-        CHECK(r2.total_time_ms() >= 0.0);
+        PipelineResult r1res = tracker.process(l0, r0, false, &lg, &rg);
+        PipelineResult r2res = tracker.process(l1, r1, false, &lg, &rg);
+        CHECK(r1res.total_time_ms() >= 0.0);
+        CHECK(r2res.total_time_ms() >= 0.0);
         CHECK(tracker.frameCount() >= 2);
     });
 

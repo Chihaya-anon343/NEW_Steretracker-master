@@ -18,6 +18,7 @@
     ├── synthetic_akaze_class1/  # State 6 (仅 class1, 短边 200px, >40000 px²)
     ├── mono_tiny/ mono_bc/ mono_akaze/           # 单目仅左图 (class0-only 场景)
     ├── mono_bc_class1/ mono_akaze_class1/        # 单目仅左图 (class1-only 场景)
+    ├── mono_dual/                                # 单目仅左图 (Dual-ROI 场景, class0+class1)
     ├── manual_roi.json          # Debug 模式手动 ROI (对齐 synthetic_bc 实际 bbox)
     └── rois.json                # 每帧每图 class0 / class1 ROI 表 (供后续读取)
 
@@ -303,12 +304,15 @@ def main():
 
     bc_left0 = bc_right0 = None
     # 记录单目场景对应的双目父场景, 用于复用左帧 ROI
+    # mono_dual 的 class1 ROI 由父场景 synthetic_dual 记录的 c1 bbox 提供
+    # (该值由 gen_dual_scene 从 CLASS1_RECT 裁剪 → 缩放 120×120 → 粘贴后计算得出)
     mono_parents = {
         "mono_tiny": "synthetic_tiny",
         "mono_bc": "synthetic_bc",
         "mono_akaze": "synthetic_akaze",
         "mono_bc_class1": "synthetic_bc_class1",
         "mono_akaze_class1": "synthetic_akaze_class1",
+        "mono_dual": "synthetic_dual",
     }
     roi_data = {}
 
