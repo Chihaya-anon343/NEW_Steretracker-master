@@ -7,6 +7,7 @@
 #include "detection/YoloDetector.hpp"
 #include "common/LogConfig.hpp"
 
+#include <future>
 #include <iostream>
 
 namespace gpnp {
@@ -45,8 +46,23 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
     if (!isReady()) return {};
 
     std::vector<Detection> det_left, det_right;
-    Status sl = detector_->detect(left_img,  det_left);
-    Status sr = detector_->detect(right_img, det_right);
+    Status sl = Status::UnknownError;
+    Status sr = Status::UnknownError;
+
+    // H1: 左右推理并行 — 两次推理完全独立且 YoloDetector::detect() 线程安全
+    // (共享成员构造后只读, Ort::Session::Run 支持并发, 输出向量各自独立)
+    try {
+        auto fut_right = std::async(std::launch::async,
+                                    [&]() { return detector_->detect(right_img, det_right); });
+        sl = detector_->detect(left_img, det_left);
+        sr = fut_right.get();
+    } catch (const std::exception&) {
+        // 极端情况 (如线程创建失败) → 回退串行, 行为与修改前一致
+        det_left.clear();
+        det_right.clear();
+        sl = detector_->detect(left_img, det_left);
+        sr = detector_->detect(right_img, det_right);
+    }
 
     // 双侧都有检测 → 生成立体配对；仅一侧检测 → 各自独立生成，另一侧返回 invalid
     RoiGroup lg, rg;

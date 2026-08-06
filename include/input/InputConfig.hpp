@@ -20,7 +20,7 @@ enum class ImageSourceType {
     File,       ///< 静态文件对（当前行为）
     Directory,  ///< 目录中的双目编号图像序列 (left_*/right_*)
     Sequence,   ///< 目录中的单目图像序列 (frame_0000.jpg, frame_0001.jpg...)
-    Camera      ///< 实时摄像头（未来）
+    Camera      ///< 实时摄像头（Phase 3 已实现）
 };
 
 // ============================================================================

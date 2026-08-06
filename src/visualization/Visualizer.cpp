@@ -1,5 +1,6 @@
 #include "visualization/Visualizer.hpp"
 #include "common/GeometryUtils.hpp"
+#include "utils/AsyncImageSaver.hpp"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -107,7 +108,7 @@ void Visualizer::drawStereoMatched(
                 cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
 
     std::string path = output_dir_ + "/stereo_matched" + prefix + ".png";
-    cv::imwrite(path, stitched);
+    utils::AsyncImageSaver::write(path, stitched);
 }
 
 // ============================================================================
@@ -150,7 +151,7 @@ void Visualizer::drawStereoProjection(
     }
 
     std::string path = output_dir_ + "/stereo_projection" + prefix + ".png";
-    cv::imwrite(path, left_ann);
+    utils::AsyncImageSaver::write(path, left_ann);
 }
 
 // ============================================================================
@@ -192,7 +193,7 @@ void Visualizer::drawTemplateMatch(
     }
 
     std::string path = output_dir_ + "/stereo_left_template_match" + prefix + ".png";
-    cv::imwrite(path, st_lt);
+    utils::AsyncImageSaver::write(path, st_lt);
 }
 
 // ============================================================================
@@ -251,7 +252,7 @@ void Visualizer::drawPoseAxes(
                 cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
 
     std::string path = output_dir_ + "/stereo_axes" + prefix + ".png";
-    cv::imwrite(path, left_axes);
+    utils::AsyncImageSaver::write(path, left_axes);
 }
 
 } // namespace gpnp

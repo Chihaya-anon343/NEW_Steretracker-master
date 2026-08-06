@@ -8,6 +8,7 @@
 #include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
+#include "utils/AsyncImageSaver.hpp"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -334,7 +335,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             cv::putText(p0, "class1 (AK)",
                 cv::Point(left_sec.x + 4, left_sec.y + 14),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 0), 1);
-            cv::imwrite(output_dir_ + "/dual_roi_mono_overview" + prefix + ".png", p0);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_overview" + prefix + ".png", p0);
         }
 
         // Panel 1: Class 0 ROI zoomed — BC (red) + AK (green) merged points
@@ -350,7 +351,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 else
                     cv::circle(p1, pt, 3, AK_COLOR, -1);
             }
-            cv::imwrite(output_dir_ + "/dual_roi_mono_corners" + prefix + ".png", p1);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_corners" + prefix + ".png", p1);
         }
 
         } // end visualize_detailed_ (overview/corners)
@@ -374,7 +375,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
-            cv::imwrite(output_dir_ + "/dual_roi_mono_axes" + prefix + ".png", p2);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_axes" + prefix + ".png", p2);
         }
 
         // ---- 诊断面板 (reproj) 仅 Debug 模式 ----
@@ -400,7 +401,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 cv::circle(p3, po, 4, obs_color, 1);
                 cv::line(p3, pd, po, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
             }
-            cv::imwrite(output_dir_ + "/dual_roi_mono_reproj" + prefix + ".png", p3);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_reproj" + prefix + ".png", p3);
         }
 
         } // end visualize_detailed_ dual-ROI panels
@@ -622,7 +623,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                     cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255, 0, 0), 3);
                 }
             }
-            cv::imwrite(output_dir_ + "/mono_f"
+            utils::AsyncImageSaver::write(output_dir_ + "/mono_f"
                 + std::to_string(current_frame_) + ".png", vis);
         }
 
@@ -659,7 +660,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
             std::string axes_name = is_bc   ? "/mono_bc_axes" + prefix + ".png" :
                                     is_tiny ? "/mono_tt_axes" + prefix + ".png"
                                             : "/mono_ak_axes" + prefix + ".png";
-            cv::imwrite(output_dir_ + axes_name, p_axes);
+            utils::AsyncImageSaver::write(output_dir_ + axes_name, p_axes);
         }
 
         // ================================================================
@@ -680,14 +681,14 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                         static_cast<int>(result.pts_left_match[i].y - ly_roi));
                     cv::circle(bl_bgr, p, 4, CORNER_COLORS[i % 10], -1);
                 }
-                cv::imwrite(output_dir_ + "/mono_bc_binary" + prefix + ".png", bl_bgr);
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_binary" + prefix + ".png", bl_bgr);
             }
 
             // -- Panel: Upright (rotated-back) binary --
             if (bce && !bce->lastUprightBinary().empty()) {
                 cv::Mat up;
                 cv::cvtColor(bce->lastUprightBinary(), up, cv::COLOR_GRAY2BGR);
-                cv::imwrite(output_dir_ + "/mono_bc_upright" + prefix + ".png", up);
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_upright" + prefix + ".png", up);
             }
 
             // -- Panel: Template correspondence (left-view | matched-template) --
@@ -721,7 +722,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                 }
                 cv::Mat p_tmpl;
                 cv::hconcat(p_tmpl_l, p_tmpl_r, p_tmpl);
-                cv::imwrite(output_dir_ + "/mono_bc_template" + prefix + ".png", p_tmpl);
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_template" + prefix + ".png", p_tmpl);
             }
 
             // -- Panel: Reprojection error on expanded left view --
@@ -748,7 +749,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                             cv::circle(p_reproj, po, 4, CORNER_COLORS[i % 10], -1);
                         }
                     }
-                    cv::imwrite(output_dir_ + "/mono_bc_reproj" + prefix + ".png", p_reproj);
+                    utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_reproj" + prefix + ".png", p_reproj);
                 }
             }
         }
@@ -781,7 +782,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                         cv::circle(p_reproj, po, 4, CORNER_COLORS[i % 10], -1);
                     }
                 }
-                cv::imwrite(output_dir_ + "/mono_tt_reproj" + prefix + ".png", p_reproj);
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_tt_reproj" + prefix + ".png", p_reproj);
             }
         }
 
@@ -798,7 +799,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                         cv::Point(static_cast<int>(pv.x), static_cast<int>(pv.y)),
                         4, CORNER_COLORS[i % 10], -1);
                 }
-                cv::imwrite(output_dir_ + "/mono_ak_matches" + prefix + ".png", p_match);
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_ak_matches" + prefix + ".png", p_match);
             }
         }
 

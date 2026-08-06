@@ -179,7 +179,7 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 
 ---
 
-### 4.5 `test_input_system.cpp` — 输入系统 (13 场景)
+### 4.5 `test_input_system.cpp` — 输入系统 (14 场景)
 
 **被测模块**: `FileStereoSource` / `DirectoryStereoSource` / `SequenceSource` / `InputProvider` / `RingBuffer`
 **输入数据**: `cv::imwrite` 写入临时目录 (自动创建 + 自动清理)

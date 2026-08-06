@@ -26,7 +26,7 @@
 | 线程 | 位置 | 职责 | 同步机制 |
 |------|------|------|---------|
 | 采集线程 ×1 | InputProvider.cpp:144-168 `captureLoop()` | 图像源读帧 → RingBuffer take-latest | mutex + condition_variable + atomic；Camera 自动启用，其他源 `use_threaded_capture` 显式启用 |
-| 主线程 ×1 | main.cpp:359 `processFrame()` | YOLO(左右两次推理, 串行) → tracker.process → 可视化/日志，全程同步 | 无（被采集队列节流） |
+| 主线程 ×1 | main.cpp:359 `processFrame()` | YOLO(左右两次推理, std::async 并行) → tracker.process → 可视化/日志，全程同步 | 无（被采集队列节流） |
 | Dual-ROI 临时线程 ×2 | StereoTracker.cpp:1053/1057、MonoTracker.cpp:189/192 | BC 提取 ‖ AK 提取（**项目唯一应用级并行点**） | `std::async` + future，每帧临时创建 |
 | 库内部线程 | YoloDetector.hpp:117 `SetIntraOpNumThreads`(intra_op_threads=4)、OpenCV 内部 | 单次 YOLO 推理内部、图像算法内部 | 不归应用管理 |
 
@@ -50,7 +50,7 @@
 
 | # | 优化项 | 现状（代码证据） | 方案 | 收益 | 风险/工作量 |
 |---|--------|-----------------|------|------|-----------|
-| H1 | **左右 YOLO 推理并行** | YoloRoiProvider.cpp:47-49 串行两次 detect() | `std::async` 并行左右推理（两次调用完全独立） | YOLO 耗时近乎减半，改动 ~5 行，复用 Dual-ROI 既有模式 | 低。注意线程池开销：短耗时场景可接受 |
+| H1 | **左右 YOLO 推理并行** | YoloRoiProvider.cpp:47-49 串行两次 detect() | ✅ **已完成 (2026-08-06)**：`std::async` 并行左右推理 + 异常回退串行（YoloRoiProvider.cpp:47-62） | YOLO 耗时近乎减半（CPU 下受 intra_op 争抢影响略小于 2×） | 低。已确认 YoloDetector::detect() 线程安全（共享成员只读 + session Run 并发安全） |
 | H2 | **YOLO 检测降频 + ROI 预测** | 每帧全图推理 ×2；采集已线程化但处理侧仍逐帧全跑 | 每 N 帧检测一次，中间帧用上帧位姿/光流预测 ROI（无人机场景目标帧间位移有界） | 实时帧率显著提升，是 webcam 模式最直接收益 | 中。需 ROI 预测失效回退逻辑（预测失败→下帧补检测） |
 | H3 | **单目 warm-start + 帧间追踪** | MonoPnPSolver 每帧独立无缓存（§6.3）；单目无光流/投影/MAD，退化面窄 | 帧间 LK 追踪关键点 + 上帧位姿注入 MonoPnP 初值；或 R,t 时域平滑（EMA/Kalman） | 消除单目位姿帧间抖动——webcam 实时模式是唯一已实现实时路径，收益直接 | 中。改动集中在 Tracker 层，可单测 |
 | H4 | **面积阈值标定** | tiny_max_area/akaze_min_area/dual_trigger_area 为占位值（README 自标注 ⚠️）；webcam 配置 tiny_max_area=400 与文档默认 800 不一致 | 录制带真值数据集 → 标定工具/脚本自动搜索最优阈值 | 五状态分级是策略系统地基，阈值错则状态切换错乱级联下游 | 中。需要数据集，属流程而非纯代码 |
@@ -63,7 +63,7 @@
 | M1 | **策略切换防抖 (hysteresis)** | RoiGenerator 每帧按面积直接判状态，阈值边界抖动导致 TT↔BC/BC↔AKAZE 频繁切换 | 切换需跨阈值后保持 N 帧；或上下行用不同阈值 | 位姿输出稳定，避免策略来回横跳 | 低，可单测（test_roi_generator 已有五状态用例基础） |
 | M2 | **退化链时间一致性先验** | 每帧从主策略开始探测，失败才降级，最坏 3 倍耗时 | 上帧成功策略优先直接尝试，降级探测延后 | 避免"已知会失败"的主策略白跑 | 中。需处理策略状态缓存失效 |
 | M3 | **YOLO 提前一拍 (double-buffer)** | 处理侧串行：YOLO → 提取 → PnP | 处理帧 N 提取/PnP 时，std::async 预跑帧 N+1 的 YOLO（一个 pending 槽位） | 等效"准三级流水"主干效果，帧率提升 | 中。关键点：ROI 必须与帧严格配对，不得错位 |
-| M4 | **可视化/日志异步落盘** | 每帧 imwrite + 逐帧日志同步 IO（real-time 已用 visualize=false 规避） | IO 线程 + 队列（同采集线程模式），日志批量刷盘 | 低帧率场景占比可观 | 低 |
+| M4 | **可视化/日志异步落盘** | 每帧 imwrite 同步 IO；日志本已一次性批量落盘（main.cpp 末尾），无需改 | ✅ **已完成 (2026-08-06)**：AsyncImageSaver 后台线程写盘（include/utils/AsyncImageSaver.hpp，header-only 无 CMake 改动），32 处 imwrite 调用点替换，帧循环结束 flush | 低帧率场景占比可观 | 低。深拷贝入队保证线程安全，拷贝成本远低于 PNG 编码 |
 | M5 | **README §4.1 文档修正** | §4.1 写"对左图推理，左右 ROI 共享检测结果"，与代码矛盾 | 改为"左右各推理一次，生成独立 ROI 后立体配对" | 消除文档误导（本方案的认知偏差源头） | 零 |
 
 ### 2.3 低优先级 — 工程化/可测性
@@ -92,9 +92,9 @@
 
 ## 4. 建议推进顺序
 
-1. **零成本修正**：M5（README §4.1）、L4（InputConfig.hpp 注释）、L5（tests/README 计数）——立即做；
+1. **零成本修正**：M5（README §4.1）、L4（InputConfig.hpp 注释）、L5（tests/README 计数）——✅ **已完成 (2026-08-06)**；
 2. **快速见效（Tracker 层，可单测）**：M1 策略防抖、H3 单目 warm-start；
-3. **处理侧并行**：H1 左右 YOLO 并行 → M3 YOLO 提前一拍（先补阶段计时日志测量验证瓶颈）；
+3. **处理侧并行**：H1 左右 YOLO 并行 ✅ → M3 YOLO 提前一拍（先补阶段计时日志测量验证瓶颈）；
 4. **实时性深化**：H2 检测降频 + ROI 预测、H5 单侧丢帧回退；
 5. **工程化**：L1/L2 CameraSource 可测化 + 测试、L3 配置文档对齐；
 6. **数据驱动**：H4 阈值标定（需先建真值数据集）。

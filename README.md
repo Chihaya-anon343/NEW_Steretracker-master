@@ -216,7 +216,7 @@ struct SensorPacket {
 
 检测接口因模式不同：
 
-- **双目**: `yolo.detect(L, R)` — 对左图推理，左右 ROI 共享检测结果
+- **双目**: `yolo.detect(L, R)` — 对左右图**各推理一次**（并行，`std::async`），双侧均有检测时生成相互独立的 ROI 并立体配对；仅单侧检测时另一侧 invalid（main.cpp 依 `stereo_mono_fallback` 决定单目降级或跳过）
 - **单目**: `yolo.detectMono(L)` — 仅左图推理
 
 > YOLO 未检测到任何目标时 **直接跳过当前帧**，不触发策略退化链。退化仅在特征提取失败时发生。

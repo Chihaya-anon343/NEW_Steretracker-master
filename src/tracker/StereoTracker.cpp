@@ -8,6 +8,7 @@
 #include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
+#include "utils/AsyncImageSaver.hpp"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -594,7 +595,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 if (verbose_console_)
                     std::cout << "  [Viz] No axes: result.success=false" << std::endl;
             }
-            cv::imwrite(output_dir_ + "/stereo" + prefix + ".png", vis);
+            utils::AsyncImageSaver::write(output_dir_ + "/stereo" + prefix + ".png", vis);
         } else if (winning_strategy == "AkazeGpnp") {
             if (!visualizer_) visualizer_ = std::make_unique<Visualizer>(camera_.K, output_dir_);
             cv::Mat tmpl_color = template_.color_image;
@@ -675,7 +676,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                     }
                     cv::Mat p0;
                     cv::hconcat(bl_bgr, br_bgr, p0);
-                    cv::imwrite(output_dir_ + "/binary_corner_binary" + prefix + ".png", p0);
+                    utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_binary" + prefix + ".png", p0);
                 }
             }
 
@@ -685,7 +686,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 if (bce && !bce->lastUprightBinary().empty()) {
                     cv::Mat up;
                     cv::cvtColor(bce->lastUprightBinary(), up, cv::COLOR_GRAY2BGR);
-                    cv::imwrite(output_dir_ + "/binary_corner_upright" + prefix + ".png", up);
+                    utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_upright" + prefix + ".png", up);
                 }
             }
 
@@ -704,7 +705,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 cv::line(p1, o_p, ax_p, cv::Scalar(0,0,255), 2, cv::LINE_AA);
                 cv::line(p1, o_p, ay_p, cv::Scalar(0,255,0), 2, cv::LINE_AA);
                 cv::line(p1, o_p, az_p, cv::Scalar(255,0,0), 2, cv::LINE_AA);
-                cv::imwrite(output_dir_ + "/binary_corner_axes" + prefix + ".png", p1);
+                utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_axes" + prefix + ".png", p1);
             }
 
             // --- Panel 2: template corner correspondence (BinaryCorner only) ---
@@ -735,7 +736,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 }
                 cv::Mat p2;
                 cv::hconcat(p2_l, p2_tmpl, p2);
-                cv::imwrite(output_dir_ + "/binary_corner_template" + prefix + ".png", p2);
+                utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_template" + prefix + ".png", p2);
             }
 
             // --- Panel 3: Left-right expanded view corner correspondence ---
@@ -752,7 +753,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 }
                 cv::Mat p3;
                 cv::hconcat(p3_l, p3_r, p3);
-                cv::imwrite(output_dir_ + "/binary_corner_stereo" + prefix + ".png", p3);
+                utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_stereo" + prefix + ".png", p3);
             }
 
             // --- Panel 4: Reprojection on expanded left view ---
@@ -818,7 +819,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                     cv::circle(p4, pm, 1, cv::Scalar(0, 0, 255), 1);
                     cv::line(p4, pd, pm, cv::Scalar(0, 255, 255), 1);
                 }
-                cv::imwrite(output_dir_ + "/binary_corner_reproj" + prefix + ".png", p4);
+                utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_reproj" + prefix + ".png", p4);
             }
 
             // --- Panel 5: Stereo projection (disparity-based) ---
@@ -880,7 +881,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                                    cv::MARKER_TILTED_CROSS, 10, 2);
                     cv::line(p5, pt_L, pt_R, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
                 }
-                cv::imwrite(output_dir_ + "/binary_corner_stereo_proj" + prefix + ".png", p5);
+                utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_stereo_proj" + prefix + ".png", p5);
             }
         }
     }
@@ -1318,7 +1319,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                     cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255,0,0), 3);
                 }
             }
-            cv::imwrite(output_dir_ + "/stereo_dualroi" + prefix + ".png", vis);
+            utils::AsyncImageSaver::write(output_dir_ + "/stereo_dualroi" + prefix + ".png", vis);
         } else {
 
         const cv::Scalar BC_COLOR(0, 0, 255);    // red: BinaryCorner corners (class 0 edges)
@@ -1346,7 +1347,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             cv::putText(p0, "class1 (AK)",
                 cv::Point(left_sec.x + 4, left_sec.y + 14),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 0), 1);
-            cv::imwrite(output_dir_ + "/dual_roi_overview" + prefix + ".png", p0);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_overview" + prefix + ".png", p0);
         }
 
         // --- Panel 1: Class 0 ROI zoomed — BC corners (red) + AK features (green) ---
@@ -1362,7 +1363,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                 else
                     cv::circle(p1, pt, 3, AK_COLOR, -1);
             }
-            cv::imwrite(output_dir_ + "/dual_roi_corners" + prefix + ".png", p1);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_corners" + prefix + ".png", p1);
         }
 
         // --- Panel 2: 3D axes on original image (origin = template center) ---
@@ -1378,7 +1379,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
-            cv::imwrite(output_dir_ + "/dual_roi_axes" + prefix + ".png", p2);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_axes" + prefix + ".png", p2);
         }
 
         // --- Panel 3: Reprojection error on class 0 ROI zoomed ---
@@ -1397,7 +1398,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                 cv::circle(p3, po, 4, obs_color, 1);                        // observed = color ring
                 cv::line(p3, pd, po, cv::Scalar(0, 255, 255), 1, cv::LINE_AA); // error = yellow
             }
-            cv::imwrite(output_dir_ + "/dual_roi_reproj" + prefix + ".png", p3);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_reproj" + prefix + ".png", p3);
         }
 
         // --- Panel 4: Right-image class 0 ROI with matched corners ---
@@ -1413,7 +1414,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                 else
                     cv::circle(p4, pt, 3, AK_COLOR, -1);
             }
-            cv::imwrite(output_dir_ + "/dual_roi_right" + prefix + ".png", p4);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_right" + prefix + ".png", p4);
         }
 
         // --- Panel 5: Image ↔ Template correspondence (side-by-side) ---
@@ -1466,7 +1467,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                 cv::circle(p5, pt_tmpl, 2, color, -1);
                 cv::line(p5, pt_img, pt_tmpl, color, 1, cv::LINE_AA);
             }
-            cv::imwrite(output_dir_ + "/dual_roi_correspondence" + prefix + ".png", p5);
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_correspondence" + prefix + ".png", p5);
         }
 
         if (verbose_console_)
@@ -1691,7 +1692,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
             }
         }
         std::string mono_path = output_dir_ + "/mono_f" + std::to_string(current_frame_) + ".png";
-        cv::imwrite(mono_path, vis);
+        utils::AsyncImageSaver::write(mono_path, vis);
         if (verbose_console_)
             std::cout << "[StereoMono] Visualization saved: " << mono_path << std::endl;
     }

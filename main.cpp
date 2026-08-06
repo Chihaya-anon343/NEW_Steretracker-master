@@ -13,6 +13,7 @@
 #include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
+#include "utils/AsyncImageSaver.hpp"
 
 // 输入系统 (Phase 1)
 #include "input/InputProvider.hpp"
@@ -528,6 +529,9 @@ int main(int argc, char** argv) {
                 }
             }
         }
+
+        // M4: 帧循环结束 → 等待异步图像全部落盘, 避免程序退出时丢失
+        gpnp::utils::AsyncImageSaver::flush();
 
         if (verbose_console)
             tracker->printLogs();
