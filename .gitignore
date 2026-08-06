@@ -14,3 +14,4 @@
 /.idea/.name
 /.idea/NEW_Steretracker-master.iml
 __pycache__/
+/tests/data/fixtures/

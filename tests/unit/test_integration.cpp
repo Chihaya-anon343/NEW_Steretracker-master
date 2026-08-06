@@ -45,7 +45,7 @@ using namespace gpnp;
 
 namespace {
 
-// 默认模板路径: 相对 CLion 工作目录(项目根)解析, 指向 data/ 下。
+// 默认模板路径: 硬编码为 Windows 侧项目根的绝对路径 (WSL 下通过 /mnt/c/ 访问)。
 //   - AKAZE 模板: 单个图像文件 (cv::imread 读取) → data/big/img_1.png
 //   - BC/TT 模板: 目录 (含 N_degrees.txt/.png) → data/NewMuBan(reordered)
 // 均可通过 --template-dir / --binary-template-dir / --tiny-template-dir 覆盖。
@@ -55,7 +55,6 @@ std::string g_tiny_dir      = "data/NewMuBan(reordered)";
 
 // fixtures 目录 (tests/data/fixtures) + rois.json, 可通过 --fixtures-dir 覆盖
 std::string g_fixtures_dir = "tests/data/fixtures";
-
 // ---------------------------------------------------------------------------
 // 轻量级冒烟测试框架: 与 TestAssert.hpp 不同, 该文件使用可跳过的
 // (SKIP) 用例, 因此维护独立的 runTest / CHECK 统计。
@@ -163,6 +162,22 @@ void skipNotice(const char* name) {
 } // namespace
 
 int main(int argc, char** argv) {
+    // [诊断] 打印运行时路径解析情况 (排查 SKIP 根因用)
+    std::printf("=== [诊断] test_integration 路径解析 ===\n");
+    std::printf("  CWD        : %s\n", std::filesystem::current_path().string().c_str());
+    std::printf("  template   : %s  exists=%d\n", g_template_dir.c_str(),
+                std::filesystem::exists(g_template_dir));
+    std::printf("  binary_dir : %s  exists=%d\n", g_binary_dir.c_str(),
+                std::filesystem::exists(g_binary_dir));
+    std::printf("  tiny_dir   : %s  exists=%d\n", g_tiny_dir.c_str(),
+                std::filesystem::exists(g_tiny_dir));
+    std::printf("  fixtures   : %s  exists=%d\n", g_fixtures_dir.c_str(),
+                std::filesystem::exists(g_fixtures_dir));
+    std::string probe = gpnp_test::fixtureImagePath(g_fixtures_dir, "mono_akaze", "left", 0);
+    cv::Mat probe_img = cv::imread(probe);
+    std::printf("  探针图     : %s  imread_empty=%d\n", probe.c_str(), probe_img.empty());
+    std::printf("=== [诊断] 结束 ===\n");
+
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--template-dir" && i + 1 < argc)        g_template_dir = argv[++i];
@@ -182,14 +197,14 @@ int main(int argc, char** argv) {
     int exit_code = 0;
 
     runTest("MonoTracker 冒烟: mono_akaze fixture + rois.json ROI", [&] {
-        if (!templatesAvailable()) { skipNotice(__func__); }
+        if (!templatesAvailable()) { skipNotice("M1:templates"); }
 
         // 输入: mono_akaze 左图 (640×480), ROI = class0 (214,135,213×210)
         cv::Mat left = cv::imread(
             gpnp_test::fixtureImagePath(g_fixtures_dir, "mono_akaze", "left", 0));
-        if (left.empty()) { skipNotice(__func__); }
+        if (left.empty()) { skipNotice("M2:imread"); }
         RoiRect roi = roiFromJson("mono_akaze", 0, "left", "class0");
-        if (roi.width <= 0 || roi.height <= 0) { skipNotice(__func__); }
+        if (roi.width <= 0 || roi.height <= 0) { skipNotice("M3:roi"); }
         RoiGroup group{roi, RoiRect{}, false};
 
         MonoTracker tracker(makeK(left.cols, left.rows), g_template_dir,
@@ -206,7 +221,7 @@ int main(int argc, char** argv) {
     });
 
     runTest("StereoTracker 冒烟: synthetic_akaze fixture + warm-start 两帧", [&] {
-        if (!templatesAvailable()) { skipNotice(__func__); }
+        if (!templatesAvailable()) { skipNotice("S1:templates"); }
 
         Eigen::Vector3d t_rl(-120.0, 0.0, 0.0);   // 基线 120mm
 
@@ -215,14 +230,14 @@ int main(int argc, char** argv) {
         cv::Mat l0, r0, l1, r1;
         if (!loadFixture("synthetic_akaze", 0, l0, r0) ||
             !loadFixture("synthetic_akaze", 1, l1, r1)) {
-            skipNotice(__func__);
+            skipNotice("S2:loadFixture");
         }
         RoiRect lg0 = roiFromJson("synthetic_akaze", 0, "left",  "class0");
         RoiRect rg0 = roiFromJson("synthetic_akaze", 0, "right", "class0");
         RoiRect lg1 = roiFromJson("synthetic_akaze", 1, "left",  "class0");
         RoiRect rg1 = roiFromJson("synthetic_akaze", 1, "right", "class0");
         if (lg0.width <= 0 || rg0.width <= 0 || lg1.width <= 0 || rg1.width <= 0) {
-            skipNotice(__func__);
+            skipNotice("S3:roi");
         }
         RoiGroup lg0g{lg0, RoiRect{}, false};
         RoiGroup rg0g{rg0, RoiRect{}, false};
@@ -245,7 +260,7 @@ int main(int argc, char** argv) {
     });
 
     runTest("StereoTracker Dual-ROI 冒烟: is_dual=true 独立路径", [&] {
-        if (!templatesAvailable()) { skipNotice(__func__); }
+        if (!templatesAvailable()) { skipNotice("D1:templates"); }
 
         Eigen::Vector3d t_rl(-120.0, 0.0, 0.0);
 
@@ -254,11 +269,11 @@ int main(int argc, char** argv) {
         cv::Mat l0, r0, l1, r1;
         if (!loadFixture("synthetic_dual", 0, l0, r0) ||
             !loadFixture("synthetic_dual", 1, l1, r1)) {
-            skipNotice(__func__);
+            skipNotice("D2:loadFixture");
         }
         RoiRect pri = roiFromJson("synthetic_dual", 0, "left",  "class0");
         RoiRect sec = roiFromJson("synthetic_dual", 0, "left",  "class1");
-        if (pri.width <= 0 || sec.width <= 0) { skipNotice(__func__); }
+        if (pri.width <= 0 || sec.width <= 0) { skipNotice("D3:roi"); }
 
         RoiGroup lg{pri, sec, /*is_dual=*/true};
         RoiGroup rg{pri, sec, /*is_dual=*/true};

@@ -1,5 +1,5 @@
 {
-  "mode": "normal",
+  "mode": "debug",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/只有class 1/cj01_image_0008.jpg",
-    "right": "data/只有class 1/cj01_image_0008.jpg"
+    "left": "tests/data/fixtures/synthetic_akaze/left_000.png",
+    "right": "tests/data/fixtures/synthetic_akaze/right_000.png"
   },
 
   "manual_roi": {

@@ -21,6 +21,8 @@
 #include <opencv2/core.hpp>   // cv::Rect, cv::FileStorage
 
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 namespace gpnp_test {
@@ -65,25 +67,104 @@ inline std::string fixtureImagePath(const std::string& fixturesDir,
 /// @param frame    帧号 (0 起)
 /// @param side     "left" / "right"
 /// @param cls      "class0" / "class1"
+namespace detail {
+
+/// 简单 JSON 键值提取: 在 text 中查找 "\"key\":" 后的数字 (支持浮点取整)。
+/// 返回是否找到; 找不到时 out 保持不变。
+inline bool jsonIntValue(const std::string& text, const std::string& key, int& out) {
+    std::string pat = "\"" + key + "\":";
+    std::size_t pos = text.find(pat);
+    if (pos == std::string::npos) return false;
+    pos += pat.size();
+    while (pos < text.size() &&
+           (text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\n' ||
+            text[pos] == '\r')) {
+        ++pos;
+    }
+    if (pos >= text.size()) return false;
+    bool neg = (text[pos] == '-');
+    if (neg) ++pos;
+    long long v = 0;
+    bool any = false;
+    while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9') {
+        v = v * 10 + (text[pos] - '0');
+        ++pos;
+        any = true;
+    }
+    if (!any) return false;
+    out = static_cast<int>(neg ? -v : v);
+    return true;
+}
+
+} // namespace detail
+
 /// @return cv::Rect{x, y, w, h}; 读取失败或条目缺失时返回空 Rect (width<=0 即无效)
+///
+/// 说明: 不使用 cv::FileStorage 解析 JSON —— OpenCV 的 FileStorage 对标准
+/// JSON 的 null/嵌套数组支持不完整, 会导致解析失败。rois.json 结构固定简单,
+/// 这里用字符串查找直接提取所需字段值。
 inline cv::Rect loadFixtureRoi(const std::string& jsonPath,
                                const std::string& scene, int frame,
                                const std::string& side, const std::string& cls) {
     cv::Rect out{};  // 空 Rect, width<=0 表示无效
     try {
-        cv::FileStorage fs(jsonPath, cv::FileStorage::READ);
-        if (!fs.isOpened()) return out;
+        std::ifstream in(jsonPath);
+        if (!in) return out;
+        std::string text((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+        if (text.empty()) return out;
 
-        cv::FileNode node = fs["scenes"][scene]["frames"][frame][side][cls];
-        if (node.empty() || node.isNone()) return out;
+        // 1) 定位 "scenes" 中的 scene 段
+        std::string sceneKey = "\"" + scene + "\"";
+        std::size_t scenePos = text.find(sceneKey);
+        if (scenePos == std::string::npos) return out;
 
-        int x = static_cast<int>(node["x"]);
-        int y = static_cast<int>(node["y"]);
-        int w = static_cast<int>(node["width"]);
-        int h = static_cast<int>(node["height"]);
+        // 2) 在该段内定位目标 frame (只查该 scene 的 frames 数组)
+        //    帧记录形如: { "frame": N, ... }
+        int target = -1;
+        std::size_t searchFrom = scenePos;
+        while (true) {
+            std::size_t fpos = text.find("\"frame\":", searchFrom);
+            if (fpos == std::string::npos) return out;
+            int fn = -1;
+            if (!detail::jsonIntValue(text.substr(fpos, 40), "frame", fn))
+                return out;
+            if (fn == frame) { target = static_cast<int>(fpos); break; }
+            searchFrom = fpos + 9;  // 跳到下一个 "frame":
+        }
+        if (target < 0) return out;
+
+        // 3) 在该帧记录段内定位 side/cls
+        //    "side": { "class0": {...}, "class1": null }
+        std::string sideKey = "\"" + side + "\"";
+        std::size_t sidePos = text.find(sideKey, target);
+        if (sidePos == std::string::npos) return out;
+        std::string clsKey = "\"" + cls + "\"";
+        std::size_t clsPos = text.find(clsKey, sidePos);
+        if (clsPos == std::string::npos) return out;
+
+        // 3.5) 守卫: 目标 cls 值必须是对象 "{...}", 而非 null/字符串
+        //       (如 "class1": null)。否则会误读到下一个对象的字段。
+        std::size_t colon = text.find(':', clsPos);
+        if (colon == std::string::npos) return out;
+        std::size_t v = colon + 1;
+        while (v < text.size() &&
+               (text[v] == ' ' || text[v] == '\t' || text[v] == '\n' ||
+                text[v] == '\r')) {
+            ++v;
+        }
+        if (v >= text.size() || text[v] != '{') return out;
+
+        // 4) 提取 x/y/width/height; 用段起点限制查找范围
+        std::string seg = text.substr(clsPos, 512);
+        int x = 0, y = 0, w = 0, h = 0;
+        if (!detail::jsonIntValue(seg, "x", x))     return out;
+        if (!detail::jsonIntValue(seg, "y", y))     return out;
+        if (!detail::jsonIntValue(seg, "width", w)) return out;
+        if (!detail::jsonIntValue(seg, "height", h)) return out;
         if (w > 0 && h > 0) out = cv::Rect(x, y, w, h);
     } catch (...) {
-        // FileStorage 解析失败 (如 JSON 格式不兼容) → 视为缺失
+        // 读取/解析异常 → 视为缺失
     }
     return out;
 }
