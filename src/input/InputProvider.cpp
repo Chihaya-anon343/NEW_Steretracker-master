@@ -222,6 +222,11 @@ bool InputProvider::getNextPacket(SensorPacket& packet, int timeout_ms) {
     }
 
     // ---- 同步模式 (File/Directory/Sequence): 逐帧直读 ----
+    // 帧数上限检查: FileStereoSource 等无限重播源通过帧计数截断
+    if (totalFrames() > 0 && current_frame_ >= totalFrames()) {
+        return false;
+    }
+
     // 1. 从图像源获取下一帧
     cv::Mat left, right;
     int64_t ts_us = 0;
