@@ -1,0 +1,64 @@
+@startuml
+skinparam style strictuml
+skinparam DefaultFontName Arial
+skinparam ActivityBackgroundColor #F9F9F9
+skinparam ActivityBorderColor #333333
+skinparam NoteBackgroundColor #FEFECE
+
+title 图3-1: 多模态目标位姿跟踪系统整体流水线
+
+|传感器输入|
+start
+split
+   :双目/单目图像流;
+   
+   |视觉观测前端|
+   :轻量级目标检测网络;
+   note right: 提取感兴趣区域 (ROI)\n包含 class 0 (整体) & class 1 (中心)
+   
+   :五状态目标分级;
+   note right: 基于投影面积 s 的跨度\n判定为 State 1 ~ 5
+   
+   repeat :自适应特征提取策略分配;
+     note right
+       依据状态调用策略库:
+       - 远距: 超分辨率微目标
+       - 中距: 二值角点
+       - 中近距: AKAZE描述子
+       - 近距: Dual-ROI混合
+     end note
+     
+     :2D-3D特征观测与匹配;
+     
+     :位姿解算;
+     note right: 双目 GPnP 交叉射线优化\n或单目 EPnP 重投影优化
+     
+     if (后验物理有效性校验通过?) then (是)
+       break
+     else (否)
+       :单向退化后备链\n/ 跨状态回退机制;
+       note right: 若校验失败或提取失败\n触发降级重分配逻辑
+     endif
+   repeat while (退化链未耗尽?) is (是)
+   -> 否;
+   :当前帧位姿跟踪失败;
+   kill
+
+   |视觉观测前端|
+   :输出有效视觉观测位姿;
+
+split again
+   |传感器输入|
+   :IMU 等高频传感器数据;
+   
+   |跨模态估计后端|
+   :高频数据预积分;
+end split
+
+|跨模态估计后端|
+:基于 ESKF 的多模态信息融合;
+note right: 融合高频运动先验(预积分)\n与跨状态视觉位姿观测
+
+:输出平滑、高频且全局一致的\n目标 6-DoF 最终位姿;
+stop
+@enduml
