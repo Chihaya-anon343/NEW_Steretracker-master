@@ -26,6 +26,9 @@ find_package(OpenCV REQUIRED COMPONENTS
 # --- Eigen3 ---
 find_package(Eigen3 REQUIRED)
 
+# --- Threads (Phase 4: ESKF 融合工作线程 std::thread) ---
+find_package(Threads REQUIRED)
+
 # --- ONNX Runtime (YOLO detection, required) ---
 set(ONNXRUNTIME_ROOT
     "/opt/onnxruntime-linux-x64-gpu-1.20.1"
@@ -108,6 +111,9 @@ endif()
 
 # Link ONNX Runtime (YOLO detection)
 target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime)
+
+# Link Threads (Phase 4: 融合工作线程 std::thread)
+target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 
 # ============================================================================
 # Compiler Options

@@ -24,11 +24,16 @@
  */
 
 #include "eskf/eskf_vio.hpp"
+#include "fusion/FusionTypes.hpp"
 
 #include <Eigen/Dense>
 
+#include <atomic>
+#include <condition_variable>
 #include <deque>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace gpnp {
@@ -37,6 +42,12 @@ namespace fusion {
 // ============================================================================
 // 融合配置
 // ============================================================================
+
+/// 相机延迟测量兜底策略 (延迟超出反向传播窗口时)
+enum class LatencyFallback {
+    Inflate,   ///< 协方差膨胀: 把延迟折算成额外观测噪声, 按到达时刻应用
+    Reject     ///< 直接丢弃该相机观测
+};
 
 struct EskfFusionConfig {
     bool enabled = false;              ///< 是否启用 ESKF 融合
@@ -60,6 +71,39 @@ struct EskfFusionConfig {
     // ---- 坐标约定 ----
     /// 模板系 → 世界系修正旋转 (默认单位阵: 世界系 = 模板系, Z 轴向上)
     Eigen::Matrix3d R_template_world = Eigen::Matrix3d::Identity();
+
+    // ---- 反向传播 (延迟测量) 参数 ----
+    double backprop_window_s = 0.2;         ///< 状态快照/IMU 历史回退窗口 (s)
+    int    state_hist_hz    = 100;          ///< 状态快照记录频率 (Hz)
+    LatencyFallback latency_fallback = LatencyFallback::Inflate;  ///< 延迟超窗兜底策略
+    double max_output_age_s = 0.5;          ///< 相机更新间隔超此值 → DEGRADED (仍输出惯导)
+
+    // ---- 线程化 (Phase 4) ----
+    bool threaded = false;                  ///< 是否启用内部融合工作线程 (异步消费)
+};
+
+// ============================================================================
+// 融合输出状态
+// ============================================================================
+
+/// 融合状态可信度分级
+enum class FusionQuality {
+    Uninitialized,  ///< 尚未完成 lazy init (无有效相机位姿)
+    Normal,         ///< 相机更新新鲜, 输出可信
+    Degraded,       ///< 相机丢失但未超 max_cam_gap_s, 仅惯性/雷达传播
+    Stale           ///< 相机丢失超过 max_cam_gap_s, 已重置/不可信
+};
+
+/// 对外输出的融合状态快照 (线程安全读取)
+struct FusionState {
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();   ///< 位置 (m, 世界系)
+    Eigen::Vector3d velocity = Eigen::Vector3d::Zero();   ///< 速度 (m/s)
+    Eigen::Matrix<double, 4, 1> quaternion =
+        Eigen::Matrix<double, 4, 1>::Zero();               ///< 姿态 [w,x,y,z]
+    double cov_trace = 0.0;                                ///< 位置协方差迹 (可信度信号)
+    double last_cam_t = -1.0;                              ///< 最近相机观测时刻 (s)
+    FusionQuality quality = FusionQuality::Uninitialized;
+    bool initialized = false;
 };
 
 // ============================================================================
@@ -69,6 +113,7 @@ struct EskfFusionConfig {
 class EskfFusionManager {
 public:
     explicit EskfFusionManager(const EskfFusionConfig& cfg);
+    ~EskfFusionManager();
 
     // ========================================================================
     // 输入接口 (主循环调用; 时间戳统一为 double 秒)
@@ -88,6 +133,10 @@ public:
                         const Eigen::Matrix3d& R_tpl_cam,
                         const Eigen::Vector3d& t_cam_mm,
                         bool valid);
+
+    /// 投喂相机位姿 (带曝光/送达双时间戳, 支持延迟测量反向传播)。
+    /// obs.t_exposure = 曝光时刻 (t0), obs.t_arrival = 送达时刻 (t1)。
+    void feedCameraPose(const CameraObservation& obs);
 
     /// 排干 IMU/雷达缓冲, 将状态传播至 t_sec (无相机位姿帧时调用)。
     void propagateTo(double t_sec);
@@ -111,6 +160,10 @@ public:
     /// 融合姿态: 四元数 [w, x, y, z]
     Eigen::Matrix<double, 4, 1> quaternion() const;
 
+    /// 融合状态快照 (含可信度分级 + 协方差迹)。
+    /// 注: 单线程模式下无锁; 多线程化 (Phase 4 融合线程) 后由读侧加锁。
+    FusionState getLatestState() const;
+
     /// 原始滤波器引用 (诊断/高级使用)
     const eskf::ESKF_VIO& filter() const { return eskf_; }
 
@@ -122,21 +175,32 @@ public:
         int cam_rot_skipped = 0;  ///< 位置已更新, 姿态 NIS 超门限跳过
         int radar_accepted  = 0;  ///< 雷达接受更新数
         int radar_rejected  = 0;  ///< 雷达拒绝数 (跳变/NIS/无效)
+        int cam_late_fallback = 0; ///< 相机延迟超窗 → 协方差膨胀/Reject 兜底次数
     };
     Stats stats() const;
 
     /// 重置滤波器: 清空缓冲 + 回到未初始化态
     void reset();
 
+    // ========================================================================
+    // 线程化 (Phase 4): 启动/停止内部融合工作线程
+    // ========================================================================
+
+    /// 启动融合工作线程。启动后 feedImu/feedRadar/feedCameraPose 变为异步入队,
+    /// 融合线程独立以 IMU 节拍预测、相机/雷达异步更新; 相机缺席时状态继续传播。
+    void start();
+
+    /// 停止工作线程并 join (析构时自动调用)。
+    void stop();
+
+    /// 是否运行在线程化模式 (start() 后为 true)。
+    bool threaded() const { return threaded_; }
+
 private:
-    struct ImuSample {
+    /// 反向传播快照: 某时刻的完整滤波器状态 (ESKF_VIO 整体拷贝)。
+    struct StateSnap {
         double t;
-        Eigen::Vector3d acc;
-        Eigen::Vector3d gyro;
-    };
-    struct RadarSample {
-        double t;
-        double height;
+        eskf::ESKF_VIO eskf;
     };
 
     /// 排干 IMU 缓冲至 t_sec (逐样本 predict)
@@ -155,6 +219,32 @@ private:
                             Eigen::Matrix3d& R_cam_w_out,
                             Eigen::Vector3d& p_cam_w_out);
 
+    /// 记录 IMU 样本到重放历史, 并按 state_hist_hz 记状态快照 + 按窗口裁剪。
+    void recordHistory(const ImuSample& s);
+
+    /// 反向传播核心: 回退到 ≤ t_exposure 的最近快照, 重放 IMU, 在 t0 应用
+    /// 相机更新, 再重放到当前, 并重建历史。返回是否成功回退 (否则走兜底)。
+    bool applyCameraBackprop(double t_exposure, double t_now,
+                             const Eigen::Vector3d& p_cam_w,
+                             const Eigen::Matrix<double, 4, 1>& q_meas);
+
+    /// 相机观测处理体 (无锁, 调用方须持有 mtx_)。原 feedCameraPose(obs) 主体。
+    void processCameraObs(const CameraObservation& obs);
+
+    /// propagateTo 的处理体 (无锁, 调用方须持有 mtx_)。
+    void propagateInternal(double t_sec);
+
+    /// 融合工作线程主循环。
+    void fusionLoop();
+
+    // 线程化状态
+    std::thread worker_;
+    std::atomic<bool> running_{false};
+    bool threaded_ = false;
+    mutable std::mutex mtx_;                 ///< 保护输入缓冲 + 滤波状态
+    std::condition_variable cv_;
+    std::deque<CameraObservation> cam_buf_;  ///< 待处理相机观测 (mtx_ 保护)
+
     EskfFusionConfig cfg_;
     eskf::ESKF_VIO eskf_;
 
@@ -163,6 +253,11 @@ private:
     std::deque<RadarSample> radar_buf_;
     double last_prop_t_ = -1.0;   ///< 状态已传播到的时刻 (s); <0 = 未传播过
     double last_cam_t_  = -1.0;   ///< 上一相机位姿帧时刻 (s)
+
+    // 反向传播历史 (窗口 = backprop_window_s)
+    std::deque<ImuSample> imu_hist_;    ///< 窗口内原始 IMU 样本 (重放用)
+    std::deque<StateSnap> state_hist_;  ///< 窗口内滤波器状态快照 (回退用)
+    double last_snap_t_ = -1.0;         ///< 上一快照时刻 (s)
 
     // 滤波器子模块
     eskf::RadarAltimeter radar_validator_;

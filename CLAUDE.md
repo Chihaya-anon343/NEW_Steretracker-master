@@ -931,6 +931,36 @@ getNextPacket → t_cam = timestamp_us×1e-6
 5. ⚠️ 合成源仅悬停近似 (比力 = -g 旋转到相机系 + 白噪声 + 偏置), 用于链路验证, 非物理仿真
 6. ⚠️ 相机更新走 `update_camera_pose_hybrid` (生产路径): 位置永远更新 + 姿态 NIS 自洽 (×rot_detect_scale=4.0 < χ²₉₅) 才追加 — 坏帧被 FDI 拒掉是预期行为
 
+### 6.9 延迟测量反向传播与退化监控 (方案B 核心)
+
+> 相机位姿是 **t0 曝光时刻** 拍的, 但 PnP 处理完送达时已是 **t1**。反向传播把延迟测量贴回真实时刻, 避免"拿 t0 位姿纠 t1 状态"的延迟误差。
+
+**反向传播 (IMU 重放)**:
+- `feedCameraPose(const CameraObservation&)` — 显式区分 `t_exposure`(t0) / `t_arrival`(t1)
+- 内部: 若 `latency > 1ms`, 回退到 ≤ t0 的最近状态快照 (`StateSnap`, **ESKF_VIO 整体拷贝**), 重放 IMU 到 t0 → 在 t0 应用 `update_camera_pose_hybrid` → 重放 IMU 到当前 → 重建历史
+- 快照按 `state_hist_hz`(默认 100Hz) 记录, 窗口 = `backprop_window_s`(默认 0.2s)
+
+**协方差膨胀兜底** (延迟超窗):
+- `latency_fallback = Inflate`(默认): `cam_pos_noise² += σ_pos_rw²·Δt`, `cam_rot_noise² += σ_gyro²·Δt`, 按到达时刻应用 (一阶有界近似)
+- `latency_fallback = Reject`: 直接丢弃该观测
+
+**退化监控**:
+- `getLatestState() → FusionState{position, velocity, quaternion, cov_trace, quality, last_cam_t}`
+- `FusionQuality`: `Normal` → `Degraded`(相机丢失 > `max_output_age_s`) → `Stale`(> `max_cam_gap_s`)
+- `cov_trace` = 位置协方差迹, 作为可信度信号
+
+**线程化 (Phase 4, `eskf.threaded: true`)**:
+- `start()` 启动内部融合工作线程; `feedImu/feedRadar/feedCameraPose` 异步入队 (mutex + condition_variable)
+- 融合线程独立: 按到达序处理相机观测 (内部 `propagateInternal` + lazyInit/反向传播), 无相机时把已缓冲 IMU/雷达传播到最新 (相机缺席状态继续跑)
+- `getLatestState()`/`stats()` 用 `mtx_` 加锁 (线程安全); 旧 `position()/velocity()/rotation()/quaternion()/initialized()` 为同步 API, 线程化模式下勿用
+- `stop()` 停线程并 join (析构自动); 未 `start()` 时保持单线程同步语义 (向后兼容)
+
+**陷阱**:
+1. ⚠️ 反向传播仅重放 IMU, **不重放雷达** — 回退窗口内已应用的雷达更新在回退后丢失 (20Hz、Z 轴单维, 影响小, 已知简化)
+2. ⚠️ 无延迟 (`latency ≤ 1ms`) 时**不走**反向传播, 按到达时刻直接更新, 与旧同步路径一致
+3. ⚠️ 线程化输出有一拍异步 (worker 尚未消费完当帧相机观测时, `getLatestState()` 返回前一状态)
+4. ⚠️ 反向传播历史内存 ≈ 100Hz × 0.2s × ~470 double ≈ 150KB, 可忽略
+
 ---
 
 ## 7. 输入系统
@@ -1546,7 +1576,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `include/input/RingBuffer.hpp` | 环形缓冲区 (线程采集预留, 已单测) |
 | `src/input/` | FileStereoSource, DirectoryStereoSource, SequenceSource 实现 |
 | `extracted_input_system/` | 独立可复用输入系统模块 (CanSocket/TimeSyncUnit, Phase 2 参考) |
-| `include/fusion/EskfFusionManager.hpp` + `src/fusion/EskfFusionManager.cpp` | **ESKF 多源融合适配层** (缓冲/排干对齐/lazy init/位姿转换/统计) |
+| `include/fusion/FusionTypes.hpp` | ImuSample/RadarSample/CameraObservation (延迟测量样本/观测类型) |
+| `include/fusion/EskfFusionManager.hpp` + `src/fusion/EskfFusionManager.cpp` | **ESKF 多源融合适配层** (缓冲/排干对齐/lazy init/反向传播/退化监控/位姿转换/统计) |
 | `include/input/SimulatedSensors.hpp` + `src/input/SimulatedSensors.cpp` | 合成 IMU/雷达源 (离线链路验证) |
 | `eskf/eskf_vio.hpp` | ESKF 库 (header-only, 第三方, 不改动) |
 | `config/tracker_config_eskf.json` | ESKF 融合示例配置 |
@@ -1594,6 +1625,9 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | approxPolyDP 二分搜索 | 0.001~0.05×perimeter, 8次 | BC | — |
 | max_imu_gap_s | 0.1 s | eskf 配置 | IMU 间隙超限丢弃样本 |
 | max_cam_gap_s | 1.0 s | eskf 配置 | 相机间隔超限重置滤波器 |
+| backprop_window_s | 0.2 s | eskf 配置 | 反向传播回退窗口 |
+| state_hist_hz | 100 | eskf 配置 | 状态快照记录频率 |
+| max_output_age_s | 0.5 s | eskf 配置 | 相机更新间隔超限 → DEGRADED |
 | 相机 FDI 门限 | χ²₉₅(3)=7.8147 / χ²₉₉₉(3)=16.266 | eskf_vio.hpp | 位置/姿态 NIS 分级 |
 | 姿态追加门限 | nis_rot×4.0 < 7.8147 | eskf_vio.hpp | hybrid 路径姿态自洽 |
 | 雷达跳变/NIS 门限 | 30.0 m / 7.879 | RadarAltimeter | 默认值 |

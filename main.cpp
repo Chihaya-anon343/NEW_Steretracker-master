@@ -286,6 +286,19 @@ int main(int argc, char** argv) {
             eskf_cfg.max_imu_gap_s = readDouble(ek, "max_imu_gap_s", 0.1);
             eskf_cfg.max_cam_gap_s = readDouble(ek, "max_cam_gap_s", 1.0);
 
+            // 反向传播 (延迟测量) 参数
+            eskf_cfg.backprop_window_s = readDouble(ek, "backprop_window_s", 0.2);
+            eskf_cfg.state_hist_hz = static_cast<int>(readDouble(ek, "state_hist_hz", 100.0));
+            eskf_cfg.max_output_age_s = readDouble(ek, "max_output_age_s", 0.5);
+            {
+                cv::FileNode lf = ek["latency_fallback"];
+                std::string lf_str = lf.empty() ? "inflate" : static_cast<std::string>(lf);
+                eskf_cfg.latency_fallback =
+                    (lf_str == "reject") ? fusion::LatencyFallback::Reject
+                                         : fusion::LatencyFallback::Inflate;
+            }
+            eskf_cfg.threaded = static_cast<int>(ek["threaded"]) != 0;
+
             cv::FileNode nz = ek["noise"];
             if (!nz.empty()) {
                 eskf_cfg.params.sigma_acc       = readDouble(nz, "sigma_acc", 0.3);
@@ -479,6 +492,10 @@ int main(int argc, char** argv) {
             std::cerr << "[ESKF] debug 模式无时间序列, 融合已禁用 (eskf.enabled 忽略)"
                       << std::endl;
         }
+        if (fusion_active && eskf_cfg.threaded) {
+            fusion.start();
+            std::cout << "[ESKF] 融合工作线程已启动 (异步消费)" << std::endl;
+        }
         // 合成源真值参考 (最近一帧相机位姿)
         Eigen::Matrix3d last_R_cam_w = Eigen::Matrix3d::Identity();
         double last_cam_height = sim_radar_cfg.initial_height;
@@ -606,8 +623,10 @@ int main(int argc, char** argv) {
                             for (const auto& s : sim_radar.generate(t_prev, t_cam, last_cam_height))
                                 fusion.feedRadar(s.t, s.height);
                         }
-                        // 排干 IMU/雷达至 t_cam (覆盖 YOLO 丢失路径的惯性传播)
-                        fusion.propagateTo(t_cam);
+                        // 排干 IMU/雷达至 t_cam (覆盖 YOLO 丢失路径的惯性传播);
+                        // 线程化模式下由融合工作线程自动排干, 无需在此显式调用
+                        if (!eskf_cfg.threaded)
+                            fusion.propagateTo(t_cam);
                     }
                     t_prev = t_cam;   // 提前推进, 异常路径也安全
 
@@ -628,14 +647,17 @@ int main(int argc, char** argv) {
                     // ---- normal 模式: 每帧一行 → 终端 (ESKF 融合为主输出) ----
                     if (!verbose_console || capture_log) {
                         std::ostringstream os;
-                        if (fusion_active && fusion.initialized()) {
-                            Eigen::Vector3d p = fusion.position();
-                            Eigen::Vector3d v = fusion.velocity();
-                            Eigen::Matrix<double, 4, 1> q = fusion.quaternion();
+                        fusion::FusionState st = fusion.getLatestState();
+                        if (fusion_active && st.initialized) {
+                            const char* qs =
+                                (st.quality == fusion::FusionQuality::Normal)   ? "N"
+                              : (st.quality == fusion::FusionQuality::Degraded) ? "D"
+                              : (st.quality == fusion::FusionQuality::Stale)    ? "S" : "?";
                             os << "[Frame " << frame << "] ESKF"
-                               << " p=[" << p.x() << ", " << p.y() << ", " << p.z() << "]m"
-                               << " v=[" << v.x() << ", " << v.y() << ", " << v.z() << "]"
-                               << " q=[" << q(0) << ", " << q(1) << ", " << q(2) << ", " << q(3) << "]";
+                               << " p=[" << st.position.x() << ", " << st.position.y() << ", " << st.position.z() << "]m"
+                               << " v=[" << st.velocity.x() << ", " << st.velocity.y() << ", " << st.velocity.z() << "]"
+                               << " q=[" << st.quaternion(0) << ", " << st.quaternion(1) << ", " << st.quaternion(2) << ", " << st.quaternion(3) << "]"
+                               << " Q=" << qs;
                             if (result.success) {
                                 os << " | PnP t(mm)=[" << result.t.x() << ", "
                                    << result.t.y() << ", " << result.t.z() << "]";
@@ -660,6 +682,9 @@ int main(int argc, char** argv) {
                     // 继续下一帧，不中断整条序列
                 }
             }
+
+            // ---- 停止融合工作线程 (若已启动) ----
+            if (fusion_active && eskf_cfg.threaded) fusion.stop();
 
             // ---- Phase 3.2: 收尾汇总 — 停止采集线程 → 打印统计 ----
             input_provider.shutdown();
@@ -698,7 +723,8 @@ int main(int argc, char** argv) {
                             + "  FDI忽略=" + std::to_string(fst.cam_ignored)
                             + "  姿态跳过=" + std::to_string(fst.cam_rot_skipped)
                             + "  雷达接受=" + std::to_string(fst.radar_accepted)
-                            + "  雷达拒绝=" + std::to_string(fst.radar_rejected) + "\n");
+                            + "  雷达拒绝=" + std::to_string(fst.radar_rejected)
+                            + "  延迟兜底=" + std::to_string(fst.cam_late_fallback) + "\n");
                 }
             }
         } else {

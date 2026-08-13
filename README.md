@@ -465,6 +465,12 @@ OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无�
 
 适配层接口: `fusion::EskfFusionManager` (include/fusion/EskfFusionManager.hpp) — `feedImu` / `feedRadar` / `feedCameraPose` / `propagateTo`,输出 `position()/velocity()/rotation()/quaternion()/stats()`。
 
+**延迟测量反向传播 (方案B 核心)**: 相机位姿是 t0 曝光时刻拍的、t1 才送达。`feedCameraPose(CameraObservation{t_exposure, t_arrival, ...})` 在延迟 > 1ms 时回退到 ≤ t0 的最近状态快照、重放 IMU 到 t0、在 t0 应用相机更新、再重放到当前;延迟超窗 (`backprop_window_s`) 时用协方差膨胀兜底 (`latency_fallback=inflate`) 或直接丢弃 (`reject`)。
+
+**退化监控**: `getLatestState() → FusionState{position, velocity, quaternion, cov_trace, quality}`;`quality ∈ Normal/Degraded/Stale`,相机丢失后仍输出惯导结果并用协方差迹标记可信度。详见 CLAUDE.md §6.9。
+
+> **线程化 (Phase 4, 已实现)**: `eskf.threaded: true` 时 `fusion.start()` 启动内部融合工作线程 — feedImu/feedRadar/feedCameraPose 异步入队, 融合线程独立以 IMU 节拍预测、相机/雷达异步更新, 相机缺席时状态继续传播; 输出经 `getLatestState()` 线程安全读取。默认 `false` 保持同步排干 (向后兼容)。
+
 ---
 
 ## 7. 可视化与输出
@@ -575,6 +581,11 @@ TrackerBase
 | `eskf.p_imu_in_cam` | 零 | IMU 杆臂 (m) |
 | `eskf.R_template_world` | 单位阵 | 模板系→世界系修正旋转 |
 | `eskf.init_std.*` | — | 首个相机位姿 lazy init 的标准差 (P0) |
+| `eskf.backprop_window_s` | `0.2` | 反向传播回退窗口 (s) |
+| `eskf.state_hist_hz` | `100` | 状态快照记录频率 (Hz) |
+| `eskf.latency_fallback` | `"inflate"` | 延迟超窗兜底: `"inflate"`(协方差膨胀) / `"reject"`(丢弃) |
+| `eskf.max_output_age_s` | `0.5` | 相机更新间隔超限 → DEGRADED |
+| `eskf.threaded` | `false` | 启用内部融合工作线程 (异步消费; 默认同步排干) |
 | `input_system.imu.type` | `"custom"` | `"simulated"` = 合成 IMU 源 (rate_hz/sigma_acc/sigma_gyro/bias) |
 | `input_system.altimeter.type` | `"can"` | `"simulated"` = 合成雷达源 (rate_hz/noise_m/inject_jump_every_s) |
 | `strategies.tiny_max_area` | 800 | State 1/2 分界 (占位值) |
