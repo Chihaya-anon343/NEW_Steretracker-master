@@ -895,6 +895,42 @@ auto mad_result = mad_filter_.filter(disparity, inlier_mask);
 // 仅用 mad_result.filtered_points 做 GPnP 优化
 ```
 
+### 6.8 ESKF 多源信息融合 (适配层)
+
+> **库**: `eskf/eskf_vio.hpp` (header-only, 第三方, **不改动**) — `eskf::ESKF_VIO` 误差状态卡尔曼 (16维名义态 `[p,v,q,b_a,b_g]` + 15×15 误差协方差, SI 单位), `eskf::RadarAltimeter` (跳变+NIS 检验), `eskf::GravityEstimator` (在线重力, 第一版未启用)
+> **适配层**: `fusion::EskfFusionManager` (include/fusion/EskfFusionManager.hpp + src/fusion/EskfFusionManager.cpp)
+> **合成源**: `input::SimulatedImu/SimulatedRadar` (include/input/SimulatedSensors.hpp, main.cpp 驱动, 不改 InputProvider)
+
+**数据流** (main.cpp normal 模式, `eskf.enabled=true` 时):
+
+```
+getNextPacket → t_cam = timestamp_us×1e-6
+  ├─ sim_imu.generate(t_prev, t_cam, R_cam_w)   → fusion.feedImu(t, acc, gyro)
+  ├─ sim_radar.generate(t_prev, t_cam, height)  → fusion.feedRadar(t, h)
+  ├─ fusion.propagateTo(t_cam)     // 排干 IMU 逐样本 predict + 雷达 validate/update
+  ├─ processFrame → PipelineResult
+  └─ fusion.feedCameraPose(t_cam, R, t_mm, success)
+      └─ 内部: propagateTo → 位姿转换 → lazy init 或 update_camera_pose_hybrid
+输出: [Frame N] ESKF p=[..]m v=[..] q=[..] | PnP t(mm)=[..]  (融合为主输出)
+```
+
+**位姿转换** (世界系=模板系, Z 向上): PnP 输出 `R(模板→相机), t(mm)` →
+`R_cam_w = R_template_world·Rᵀ`, `p_cam_w = R_cam_w·(-t/1000)` (m), 姿态四元数 `[w,x,y,z]`。
+
+**关键接口**:
+- `feedImu(t, acc, gyro)` / `feedRadar(t, height)` — 仅入缓冲 (IMU ~2s / 雷达 ~1s 上限, 溢出丢最旧)
+- `propagateTo(t)` — 排干式对齐: 逐样本 `predict_adaptive(acc, gyro, dt)` 传播; 雷达逐样本 `RadarAltimeter::validate` + `update_altitude`
+- `feedCameraPose(t, R, t_mm, valid)` — 内部先 `propagateTo(t)`; `valid=false` (视觉失败) 仅惯性传播; 间隔 > `max_cam_gap_s` 自动 `reset()` 重新 lazy init
+- 输出: `position()/velocity()/rotation()/quaternion()/stats()` (`Stats{imu_samples, cam_updates, cam_ignored, cam_rot_skipped, radar_accepted, radar_rejected}`)
+
+**陷阱**:
+1. ⚠️ 世界系=模板系 Z 向上假设; 实际朝向不同用 `eskf.R_template_world` 修正
+2. ⚠️ 单位: PnP `t` 为 mm, 适配层内部 ÷1000 转 m; 雷达高度 m
+3. ⚠️ debug 模式 (固定2帧) 无时间序列, ESKF 自动禁用 (main.cpp 打警告)
+4. ⚠️ `lazyInit` 后 `last_prop_t_ = -1` 重新锚定: 初始化时刻之前的 IMU 样本已排干, 下一个样本作积分起点
+5. ⚠️ 合成源仅悬停近似 (比力 = -g 旋转到相机系 + 白噪声 + 偏置), 用于链路验证, 非物理仿真
+6. ⚠️ 相机更新走 `update_camera_pose_hybrid` (生产路径): 位置永远更新 + 姿态 NIS 自洽 (×rot_detect_scale=4.0 < χ²₉₅) 才追加 — 坏帧被 FDI 拒掉是预期行为
+
 ---
 
 ## 7. 输入系统
@@ -1510,6 +1546,10 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `include/input/RingBuffer.hpp` | 环形缓冲区 (线程采集预留, 已单测) |
 | `src/input/` | FileStereoSource, DirectoryStereoSource, SequenceSource 实现 |
 | `extracted_input_system/` | 独立可复用输入系统模块 (CanSocket/TimeSyncUnit, Phase 2 参考) |
+| `include/fusion/EskfFusionManager.hpp` + `src/fusion/EskfFusionManager.cpp` | **ESKF 多源融合适配层** (缓冲/排干对齐/lazy init/位姿转换/统计) |
+| `include/input/SimulatedSensors.hpp` + `src/input/SimulatedSensors.cpp` | 合成 IMU/雷达源 (离线链路验证) |
+| `eskf/eskf_vio.hpp` | ESKF 库 (header-only, 第三方, 不改动) |
+| `config/tracker_config_eskf.json` | ESKF 融合示例配置 |
 
 ### 10.12 配置与模型
 
@@ -1552,6 +1592,11 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 深度有效范围 | [10, 100000] mm (MonoPnP), [10, 20000] mm (GPnP) | 位姿校验 | — |
 | ITERATIVE 发散阈值 | \|t\| > 100000 mm | MonoPnPSolver | 检测到发散时回退到 RANSAC |
 | approxPolyDP 二分搜索 | 0.001~0.05×perimeter, 8次 | BC | — |
+| max_imu_gap_s | 0.1 s | eskf 配置 | IMU 间隙超限丢弃样本 |
+| max_cam_gap_s | 1.0 s | eskf 配置 | 相机间隔超限重置滤波器 |
+| 相机 FDI 门限 | χ²₉₅(3)=7.8147 / χ²₉₉₉(3)=16.266 | eskf_vio.hpp | 位置/姿态 NIS 分级 |
+| 姿态追加门限 | nis_rot×4.0 < 7.8147 | eskf_vio.hpp | hybrid 路径姿态自洽 |
+| 雷达跳变/NIS 门限 | 30.0 m / 7.879 | RadarAltimeter | 默认值 |
 
 ---
 
@@ -1576,3 +1621,11 @@ Phase 3 已完成（`CameraSource`）。扩展新视频源（如 USB 双目、RT
 ### B.4 调优 YOLO 模型
 
 替换 `best.onnx` 文件，相应调整 `yolo.conf_threshold` 和 `yolo.target_class_id`。模型输入尺寸自动从 ONNX 读取。
+
+### B.5 启用/调优 ESKF 融合
+
+1. 配置 `eskf.enabled: true` + `input_system.imu/altimeter.type: "simulated"` (见 config/tracker_config_eskf.json)
+2. 运行验证: 终端输出 `[Frame N] ESKF p=[..]m ... | PnP t(mm)=[..]`; 汇总含 ESKF 统计
+3. 调优方向: `noise.cam_pos_noise/cam_rot_noise` (相机观测信任度), `noise.sigma_acc/sigma_gyro` (IMU 信任度), `noise.radar_alt_noise` (雷达), `init_std.*` (首帧协方差), `max_cam_gap_s` (视觉丢失容忍)
+4. 接入真实硬件 (Phase 2): 串口/CAN 源以"带时间戳样本流"模式产出, 直接喂 `feedImu/feedRadar` 即可, 对齐逻辑在适配层内
+5. ⚠️ 融合输出为主输出; 需保留原始 PnP 时看 verbose 日志 `PnP t(mm)=[...]`

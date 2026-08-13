@@ -1,0 +1,155 @@
+{
+  "_comment_top": "═════ ESKF 多源融合示例配置 (mode=normal + eskf.enabled=true) ═════",
+  "_comment_use": "运行: ./build/Steretracker config/tracker_config_eskf.json  ⚠️ ESKF 仅 normal 模式可用 (debug 无时间序列, 自动禁用)",
+
+  "mode": "normal",
+
+  "input_system": {
+    "_comment": "⚠️ 本示例用 file 模式单帧验证链路 (ESKF 首帧 lazy init)。",
+    "_comment2": "多帧验证: 改用 type=directory, 目录内放 left_000.png / right_000.png 序列 (参考 data/stere_frames)。",
+    "max_frames": 0,
+    "image": {
+      "type": "file",
+      "left_path": "data/big/cj01_image_0032.jpg",
+      "right_path": "data/big/cj01_image_0032.jpg",
+      "directory_path": "data/stere_frames",
+      "left_pattern": "left",
+      "right_pattern": "right",
+      "sequence_pattern": "frame"
+    },
+    "imu": {
+      "_comment": "type=simulated: 合成 200Hz IMU (离线链路验证, 无需硬件)",
+      "enabled": true,
+      "type": "simulated",
+      "rate_hz": 200,
+      "sigma_acc": 0.1,
+      "sigma_gyro": 0.005,
+      "bias_acc": [0, 0, 0],
+      "bias_gyro": [0, 0, 0]
+    },
+    "altimeter": {
+      "_comment": "type=simulated: 合成 20Hz 雷达高度; inject_jump_every_s>0 周期性注入跳变验证检验器",
+      "enabled": true,
+      "type": "simulated",
+      "rate_hz": 20,
+      "noise_m": 0.3,
+      "initial_height": 10.0,
+      "inject_jump_every_s": 2.0,
+      "jump_m": 50.0
+    }
+  },
+
+  "manual_roi": {
+    "enabled": false,
+    "left":  { "x": 416, "y": 113, "width": 300, "height": 300 },
+    "right": { "x": 410, "y": 113, "width": 300, "height": 300 }
+  },
+
+  "mono_mode": true,
+
+  "output": {
+    "visualize": false,
+    "log_file": true
+  },
+
+  "camera": {
+    "fx": 541.764,
+    "fy": 541.764,
+    "cx": 553.682,
+    "cy": 232.397,
+    "baseline_mm": 60.0
+  },
+
+  "yolo": {
+    "model_path": "best.onnx",
+    "conf_threshold": 0.5,
+    "target_class_id": 0,
+    "roi_expand_ratio": 0.0,
+    "roi_min_size": 0
+  },
+
+  "strategies": {
+    "akaze_min_area": 40001,
+    "tiny_max_area": 400,
+    "dual_trigger_area": 490000,
+    "stereo_mono_fallback": false,
+
+    "close_range": {
+      "enabled": true,
+      "class1_min_area": 100,
+      "roi_expand_ratio": 1,
+      "min_expand_pixels": 1,
+      "akaze_min_area": 4000000,
+      "tiny_max_area": 400
+    },
+
+    "akaze_gpnp": {
+      "template_path": "data/big/img_1.png",
+      "template_real_width_mm": 500.0,
+      "template_real_height_mm": 500.0,
+      "scale": 0.5,
+      "gpnp_min_pts": 4,
+      "use_initial_pnp": true
+    },
+
+    "binary_corner": {
+      "template_dir": "data/NewMuBan(reordered)",
+      "corners": 10,
+      "kernel_size": 3,
+      "corner_scale": 3.0,
+      "target_width": 100,
+      "target_height": 100,
+      "pixel_to_meter_scale_class0": 0.004,
+      "pixel_to_meter_scale_class1": 0.0004,
+      "roi_pad_pixels": 3,
+      "otsu_ratio": 1
+    },
+
+    "tiny_target": {
+      "template_dir": "data/NewMuBan(reordered)",
+      "target_width": 50,
+      "target_height": 50,
+      "scale_factor": 4,
+      "square_size_m_class0": 0.2,
+      "square_size_m_class1": 0.04,
+      "roi_pad_pixels": 5
+    },
+
+    "dual_roi": {
+      "secondary_expand_pixels": 50,
+      "akaze": { "scale": 1 }
+    }
+  },
+
+  "_comment_eskf": "═════ ESKF 多源融合 ═════",
+  "eskf": {
+    "enabled": true,
+    "imu_rate_hz": 200,
+    "radar_rate_hz": 20,
+    "max_imu_gap_s": 0.1,
+    "max_cam_gap_s": 1.0,
+
+    "noise": {
+      "sigma_acc": 0.3,
+      "sigma_gyro": 0.02,
+      "sigma_acc_bias": 0.01,
+      "sigma_gyro_bias": 0.001,
+      "sigma_pos_rw": 0.5,
+      "cam_pos_noise": 0.1,
+      "cam_rot_noise": 1.0,
+      "use_cam_z_noise_decoupling": false,
+      "cam_pos_z_noise": 5.0,
+      "radar_alt_noise": 0.30
+    },
+
+    "gravity": [0.0, 0.0, -9.81],
+
+    "R_imu_cam": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    "p_imu_in_cam": [0, 0, 0],
+
+    "init_std": { "p": 1.0, "v": 1.0, "q": 0.1, "ba": 0.1, "bg": 0.01 },
+
+    "_comment_world": "模板系→世界系修正旋转 (默认: 世界系=模板系, Z轴向上)",
+    "R_template_world": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  }
+}

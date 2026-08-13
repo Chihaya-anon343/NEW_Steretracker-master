@@ -437,6 +437,34 @@ OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无�
 | 帧间缓存 | ✅ 上帧位姿 | ❌ | ❌ |
 | 适用模式 | 双目 | 双目首帧 | 单目全策略 |
 
+### 6.6 ESKF 多源信息融合 (可选)
+
+> 对应融合需求;默认关闭 (`eskf.enabled=false`),启用后**融合位姿为主输出**。
+
+基于 `eskf/eskf_vio.hpp` (header-only 误差状态卡尔曼滤波器) 的适配层,将 **PnP 位姿 (相机观测) + IMU (预测) + 雷达高度 (Z 轴观测)** 融合输出平滑位姿:
+
+```
+数据流 (normal 模式, 以相机帧为节拍):
+  相机帧 t_cam
+    ├─ 合成/硬件 IMU 样本 (t ≤ t_cam) ──逐样本 predict 积分传播──▶ 状态
+    ├─ 合成/硬件 雷达样本 (t ≤ t_cam) ──validate + update_altitude──▶ 状态
+    └─ PnP 位姿 (成功时) ──update_camera_pose_hybrid (内置 FDI 拒坏帧)──▶ 状态
+  输出: 融合 p/v/q (m, m/s, 四元数) → 终端每帧一行 + 日志
+```
+
+| 要点 | 说明 |
+|------|------|
+| 对齐方案 | **排干式 (drain-to-camera-time)**: 以相机帧为基准, 排干所有 `t ≤ t_cam` 的 IMU 样本逐样本积分 (保留高频信息), 雷达逐样本检验后更新 |
+| 世界系 | 模板系, Z 轴向上 (重力 (0,0,-9.81), 雷达高度沿 Z); 可用 `R_template_world` 修正 |
+| 单位 | PnP `t(mm)` → 内部 SI (m); 相机位姿 `p = -Rᵀ·t/1000`, `R_cam_w = Rᵀ` |
+| 初始化 | 首个有效相机位姿 lazy init (置名义态, 不经过更新); 视觉丢失 > `max_cam_gap_s` 自动重置 |
+| 视觉丢失 | YOLO miss / PnP 失败帧 → 状态由 IMU 继续传播 (ESKF 核心价值) |
+| 数据源 | `input_system.imu/altimeter.type: "simulated"` 合成源 (离线链路验证); 硬件源 (Phase 2) 以同样样本流模式接入 |
+| 运行 | `./build/Steretracker config/tracker_config_eskf.json` (示例配置) |
+| 输出 | `[Frame N] ESKF p=[x,y,z]m v=[..] q=[w,x,y,z] | PnP t(mm)=[...]`; 汇总含 ESKF 统计 (FDI 忽略/姿态跳过/雷达接受率) |
+
+适配层接口: `fusion::EskfFusionManager` (include/fusion/EskfFusionManager.hpp) — `feedImu` / `feedRadar` / `feedCameraPose` / `propagateTo`,输出 `position()/velocity()/rotation()/quaternion()/stats()`。
+
 ---
 
 ## 7. 可视化与输出
@@ -540,6 +568,15 @@ TrackerBase
 | `input_system.image.target_fps` | 0 | 实时目标帧率, 0 = 不限制 |
 | `output.visualize` | `true` | 是否保存可视化图像 |
 | `output.log_file` | `false` | Normal 模式下是否输出 TXT 日志文件 |
+| `eskf.enabled` | `false` | 启用 ESKF 多源融合 (normal 模式; debug 自动禁用) |
+| `eskf.noise.*` | — | ESKF 噪声参数 (sigma_acc/gyro/bias, cam_pos/rot_noise, radar_alt_noise...) |
+| `eskf.gravity` | `[0,0,-9.81]` | 世界系重力向量 (世界系=模板系, Z 向上) |
+| `eskf.R_imu_cam` | 单位阵 | IMU→相机安装外参旋转 |
+| `eskf.p_imu_in_cam` | 零 | IMU 杆臂 (m) |
+| `eskf.R_template_world` | 单位阵 | 模板系→世界系修正旋转 |
+| `eskf.init_std.*` | — | 首个相机位姿 lazy init 的标准差 (P0) |
+| `input_system.imu.type` | `"custom"` | `"simulated"` = 合成 IMU 源 (rate_hz/sigma_acc/sigma_gyro/bias) |
+| `input_system.altimeter.type` | `"can"` | `"simulated"` = 合成雷达源 (rate_hz/noise_m/inject_jump_every_s) |
 | `strategies.tiny_max_area` | 800 | State 1/2 分界 (占位值) |
 | `strategies.akaze_min_area` | 40001 | State 2/3 分界 (占位值) |
 | `strategies.dual_trigger_area` | 490000 | State 3/4 分界 (占位值) |
@@ -607,6 +644,9 @@ cmake --build . --config Release
 ./build/Steretracker config/tracker_config_webcam.json
 # 先验证摄像头可用性
 python scripts/camera_capture.py --preview
+
+# ESKF 多源融合 (合成 IMU/雷达, 见 §6.6)
+./build/Steretracker config/tracker_config_eskf.json
 ```
 
 ---
@@ -630,13 +670,17 @@ Steretracker/
 │   ├── common/                 # Types.hpp, Config.hpp, GeometryUtils.hpp
 │   ├── detection/              # YoloDetector, YoloRoiProvider, RoiGenerator
 │   ├── feature/                # FeatureExtractor, AkazeGpnp, BinaryCorner, TinyTarget
-│   ├── input/                  # InputProvider, IStereoImageSource, CameraSource, RingBuffer
+│   ├── fusion/                 # EskfFusionManager (ESKF 多源融合适配层)
+│   ├── input/                  # InputProvider, IStereoImageSource, CameraSource, RingBuffer, SimulatedSensors
 │   ├── matching/               # TemplateMatcher
 │   ├── pose/                   # InitialPnPSolver, GPnPSolver, MonoPnPSolver
 │   ├── stereo/                 # StereoProjector
 │   ├── tracker/                # TrackerBase, MonoTracker, StereoTracker
 │   ├── visualization/          # Visualizer
 │   └── utils/                  # PoseUtils
+│
+├── eskf/                       # ESKF 多源融合库 (header-only, 第三方)
+│   └── eskf_vio.hpp            # ESKF_VIO + GravityEstimator + RadarAltimeter
 │
 ├── src/                        # 对应 .cpp 实现
 ├── scripts/camera_capture.py   # 摄像头预览/抓拍辅助脚本

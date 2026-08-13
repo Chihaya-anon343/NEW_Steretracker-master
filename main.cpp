@@ -19,6 +19,10 @@
 #include "input/InputProvider.hpp"
 #include "input/InputConfig.hpp"
 #include "input/FileStereoSource.hpp"
+#include "input/SimulatedSensors.hpp"
+
+// ESKF 多源融合 (可选)
+#include "fusion/EskfFusionManager.hpp"
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -35,6 +39,38 @@ namespace {
 volatile std::sig_atomic_t g_stop_requested = 0;
 void handleSignal(int) {
     g_stop_requested = 1;
+}
+
+// ---- 配置读取辅助 (ESKF 节) ----
+double readDouble(const cv::FileNode& n, const char* key, double def) {
+    cv::FileNode v = n[key];
+    return v.empty() ? def : static_cast<double>(v);
+}
+
+/// 读取 3×3 矩阵 [[r00,r01,r02],...]; 失败 (缺省/尺寸不符) 保持 out 原值并返回 false
+bool readMat3(const cv::FileNode& node, Eigen::Matrix3d& out) {
+    if (node.empty() || node.size() != 3) return false;
+    for (int i = 0; i < 3; ++i) {
+        cv::FileNode row = node[i];
+        if (row.empty() || row.size() != 3) return false;
+        for (int j = 0; j < 3; ++j) {
+            cv::FileNode e = row[j];
+            if (e.empty()) return false;
+            out(i, j) = static_cast<double>(e);
+        }
+    }
+    return true;
+}
+
+/// 读取 3 维向量 [x,y,z]; 失败保持 out 原值并返回 false
+bool readVec3(const cv::FileNode& node, Eigen::Vector3d& out) {
+    if (node.empty() || node.size() != 3) return false;
+    for (int i = 0; i < 3; ++i) {
+        cv::FileNode e = node[i];
+        if (e.empty()) return false;
+        out(i) = static_cast<double>(e);
+    }
+    return true;
 }
 } // namespace
 
@@ -234,6 +270,87 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ========================================================================
+    // ①-c ESKF 融合配置 (可选, 默认关闭) + 合成 IMU/雷达源配置
+    // ========================================================================
+    fusion::EskfFusionConfig eskf_cfg;
+    input::SimulatedImuConfig sim_imu_cfg;
+    input::SimulatedRadarConfig sim_radar_cfg;
+
+    cv::FileNode ek = fs["eskf"];
+    if (!ek.empty()) {
+        eskf_cfg.enabled = static_cast<int>(ek["enabled"]) != 0;
+        if (eskf_cfg.enabled) {
+            eskf_cfg.imu_rate_hz   = readDouble(ek, "imu_rate_hz", 200.0);
+            eskf_cfg.radar_rate_hz = readDouble(ek, "radar_rate_hz", 20.0);
+            eskf_cfg.max_imu_gap_s = readDouble(ek, "max_imu_gap_s", 0.1);
+            eskf_cfg.max_cam_gap_s = readDouble(ek, "max_cam_gap_s", 1.0);
+
+            cv::FileNode nz = ek["noise"];
+            if (!nz.empty()) {
+                eskf_cfg.params.sigma_acc       = readDouble(nz, "sigma_acc", 0.3);
+                eskf_cfg.params.sigma_gyro      = readDouble(nz, "sigma_gyro", 0.02);
+                eskf_cfg.params.sigma_acc_bias  = readDouble(nz, "sigma_acc_bias", 0.01);
+                eskf_cfg.params.sigma_gyro_bias = readDouble(nz, "sigma_gyro_bias", 0.001);
+                eskf_cfg.params.sigma_pos_rw    = readDouble(nz, "sigma_pos_rw", 0.5);
+                eskf_cfg.params.cam_pos_noise   = readDouble(nz, "cam_pos_noise", 0.1);
+                eskf_cfg.params.cam_rot_noise   = readDouble(nz, "cam_rot_noise", 1.0);
+                eskf_cfg.params.use_cam_z_noise_decoupling =
+                    static_cast<int>(nz["use_cam_z_noise_decoupling"]) != 0;
+                eskf_cfg.params.cam_pos_z_noise = readDouble(nz, "cam_pos_z_noise", 5.0);
+                eskf_cfg.params.radar_alt_noise = readDouble(nz, "radar_alt_noise", 0.30);
+            }
+            cv::FileNode ng = ek["gravity"];
+            if (!ng.empty() && ng.size() == 3) {
+                Eigen::Vector3d g;
+                bool ok = true;
+                for (int i = 0; i < 3; ++i) {
+                    if (ng[i].empty()) { ok = false; break; }
+                    g(i) = static_cast<double>(ng[i]);
+                }
+                if (ok) eskf_cfg.params.gravity = g;
+            }
+            readMat3(ek["R_imu_cam"], eskf_cfg.params.R_imu_cam);      // 失败保持默认 (I)
+            readVec3(ek["p_imu_in_cam"], eskf_cfg.params.p_imu_in_cam); // 失败保持默认 (0)
+            readMat3(ek["R_template_world"], eskf_cfg.R_template_world);
+
+            cv::FileNode ni = ek["init_std"];
+            if (!ni.empty()) {
+                eskf_cfg.init_std_p  = readDouble(ni, "p", 1.0);
+                eskf_cfg.init_std_v  = readDouble(ni, "v", 1.0);
+                eskf_cfg.init_std_q  = readDouble(ni, "q", 0.1);
+                eskf_cfg.init_std_ba = readDouble(ni, "ba", 0.1);
+                eskf_cfg.init_std_bg = readDouble(ni, "bg", 0.01);
+            }
+        }
+    }
+
+    // 合成数据源: input_system.imu.type == "simulated" / altimeter.type == "simulated"
+    if (!input_sys_node.empty()) {
+        cv::FileNode inode = input_sys_node["imu"];
+        if (!inode.empty()
+            && static_cast<std::string>(inode["type"]) == "simulated") {
+            sim_imu_cfg.enabled    = true;
+            sim_imu_cfg.rate_hz    = readDouble(inode, "rate_hz", 200.0);
+            sim_imu_cfg.sigma_acc  = readDouble(inode, "sigma_acc", 0.1);
+            sim_imu_cfg.sigma_gyro = readDouble(inode, "sigma_gyro", 0.005);
+            readVec3(inode["bias_acc"], sim_imu_cfg.bias_acc);
+            readVec3(inode["bias_gyro"], sim_imu_cfg.bias_gyro);
+        }
+        cv::FileNode anode = input_sys_node["altimeter"];
+        if (!anode.empty()
+            && static_cast<std::string>(anode["type"]) == "simulated") {
+            sim_radar_cfg.enabled = true;
+            sim_radar_cfg.rate_hz = readDouble(anode, "rate_hz", 20.0);
+            sim_radar_cfg.noise_m = readDouble(anode, "noise_m", 0.30);
+            sim_radar_cfg.initial_height =
+                readDouble(anode, "initial_height", 10.0);
+            sim_radar_cfg.inject_jump_every_s =
+                readDouble(anode, "inject_jump_every_s", 0.0);
+            sim_radar_cfg.jump_m = readDouble(anode, "jump_m", 50.0);
+        }
+    }
+
     fs.release();
 
     // ========================================================================
@@ -352,23 +469,39 @@ int main(int argc, char** argv) {
         }
 
         // ====================================================================
+        // ③-b ESKF 融合 + 合成数据源 (仅 normal 模式; debug 固定2帧无时间序列)
+        // ====================================================================
+        fusion::EskfFusionManager fusion(eskf_cfg);
+        input::SimulatedImu   sim_imu(sim_imu_cfg);
+        input::SimulatedRadar sim_radar(sim_radar_cfg);
+        bool fusion_active = eskf_cfg.enabled && use_input_system;
+        if (eskf_cfg.enabled && !use_input_system) {
+            std::cerr << "[ESKF] debug 模式无时间序列, 融合已禁用 (eskf.enabled 忽略)"
+                      << std::endl;
+        }
+        // 合成源真值参考 (最近一帧相机位姿)
+        Eigen::Matrix3d last_R_cam_w = Eigen::Matrix3d::Identity();
+        double last_cam_height = sim_radar_cfg.initial_height;
+
+        // ====================================================================
         // ④ 逐帧处理
         // ====================================================================
         // Phase 3.2: 位姿成功帧计数 (汇总统计用)
         int processed_ok = 0;
 
-        auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) {
-            PipelineResult result;
+        // 终端每帧一行输出。capture_log 时 cout 被重定向到日志，这里直写原始终端缓冲区
+        auto termLine = [&](const std::string& s) {
+            if (capture_log && saved_cout) {
+                std::string t = s + '\n';
+                saved_cout->sputn(t.data(), t.size());
+            } else {
+                std::cout << s << std::endl;
+            }
+        };
 
-            // 终端每帧一行输出。capture_log 时 cout 被重定向到日志，这里直写原始终端缓冲区
-            auto termLine = [&](const std::string& s) {
-                if (capture_log && saved_cout) {
-                    std::string t = s + '\n';
-                    saved_cout->sputn(t.data(), t.size());
-                } else {
-                    std::cout << s << std::endl;
-                }
-            };
+        // 处理单帧: YOLO/ROI → 策略 → PnP; 返回 PipelineResult (失败帧 success=false)
+        auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) -> PipelineResult {
+            PipelineResult result;
 
             if (mono_mode) {
                 auto* mt = static_cast<MonoTracker*>(tracker.get());
@@ -379,7 +512,7 @@ int main(int argc, char** argv) {
                     left_group = yolo.detectMono(L);
                     if (!left_group.valid()) {
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
-                        return;
+                        return result;
                     }
                 }
                 tracker->setFrameNumber(frame);
@@ -400,7 +533,7 @@ int main(int argc, char** argv) {
                     std::tie(lg, rg) = yolo.detect(L, R);
                     if (!lg.valid() && !rg.valid()) {
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
-                        return;
+                        return result;
                     }
                     if (lg.is_dual && verbose_console) {
                         std::cout << "  双 ROI 模式: secondary=(" << lg.secondary.width
@@ -417,14 +550,13 @@ int main(int argc, char** argv) {
                                               lg.valid() ? &lg : &rg);
                 } else {
                     termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
-                    return;
+                    return result;
                 }
             }
 
-            // ---- 输出 ----
+            // ---- 详细输出（verbose / capture_log 时进日志）----
             if (result.success) ++processed_ok;   // 汇总统计
             if (verbose_console) {
-                // 详细统计 → cout（capture_log 时被重定向到日志文件）
                 std::cout << "  特征点: " << result.n_kp_left
                           << "  匹配: " << result.n_matched
                           << "  投影: " << result.n_projected
@@ -435,26 +567,15 @@ int main(int argc, char** argv) {
                     std::cout << "  视差: " << computeMedian(std::move(abs_disp)) << "px";
                 }
                 std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
-                          << "  耗时: " << result.total_time_ms() << "ms" << std::endl;
+                          << "  耗时: " << result.total_time_ms() << "ms";
+                if (result.success) {
+                    std::cout << "  PnP t(mm)=[" << result.t.x() << ", "
+                              << result.t.y() << ", " << result.t.z() << "]";
+                }
+                std::cout << std::endl;
             }
 
-            // normal 模式：每帧一行 → 终端
-            if (!verbose_console || capture_log) {
-                if (result.success) {
-                    Eigen::AngleAxisd aa(result.R);
-                    Eigen::Vector3d rvec = aa.angle() * aa.axis();
-                    std::string sname = result.strategy_name.empty()
-                        ? "Unknown" : result.strategy_name;
-                    std::ostringstream os;
-                    os << "[Frame " << frame << "] " << sname
-                       << "  n=" << result.n_matched
-                       << "  r=[" << rvec.x() << ", " << rvec.y() << ", " << rvec.z() << "]"
-                       << "  t=[" << result.t.x() << ", " << result.t.y() << ", " << result.t.z() << "]";
-                    termLine(os.str());
-                } else {
-                    termLine("[Frame " + std::to_string(frame) + "] FAILED");
-                }
-            }
+            return result;
         };
 
         if (use_input_system) {
@@ -465,6 +586,7 @@ int main(int argc, char** argv) {
             // 新版输入系统路径 —— 数据驱动的帧循环
             int frame = 0;
             input::SensorPacket packet;
+            double t_prev = -1.0;   ///< 上一相机帧时刻 (s), 合成源生成区间用
             auto t_start = std::chrono::steady_clock::now();
             while (frame < max_frames && !g_stop_requested) {
                 // 有限超时取帧: 让循环周期性醒来检查 Ctrl+C;
@@ -474,11 +596,65 @@ int main(int argc, char** argv) {
                     continue;                                       // 超时 → 重试
                 }
                 ++frame;
+                double t_cam = packet.timestamp_us * 1e-6;
                 try {
+                    // ---- ESKF: 合成源按 [t_prev, t_cam] 生成 IMU/雷达样本 ----
+                    if (fusion_active) {
+                        if (t_prev >= 0.0) {
+                            for (const auto& s : sim_imu.generate(t_prev, t_cam, last_R_cam_w))
+                                fusion.feedImu(s.t, s.acc, s.gyro);
+                            for (const auto& s : sim_radar.generate(t_prev, t_cam, last_cam_height))
+                                fusion.feedRadar(s.t, s.height);
+                        }
+                        // 排干 IMU/雷达至 t_cam (覆盖 YOLO 丢失路径的惯性传播)
+                        fusion.propagateTo(t_cam);
+                    }
+                    t_prev = t_cam;   // 提前推进, 异常路径也安全
+
                     if (verbose_console)
                         std::cout << "\n===== 第 " << frame << " 帧"
                                   << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
-                    processFrame(frame, packet.left_image, packet.right_image);
+                    PipelineResult result = processFrame(frame, packet.left_image, packet.right_image);
+
+                    // ---- ESKF: PnP 位姿 → 相机观测 (同时更新合成源真值参考) ----
+                    if (fusion_active) {
+                        fusion.feedCameraPose(t_cam, result.R, result.t, result.success);
+                        if (result.success) {
+                            last_R_cam_w = eskf_cfg.R_template_world * result.R.transpose();
+                            last_cam_height = fusion.position()(2);
+                        }
+                    }
+
+                    // ---- normal 模式: 每帧一行 → 终端 (ESKF 融合为主输出) ----
+                    if (!verbose_console || capture_log) {
+                        std::ostringstream os;
+                        if (fusion_active && fusion.initialized()) {
+                            Eigen::Vector3d p = fusion.position();
+                            Eigen::Vector3d v = fusion.velocity();
+                            Eigen::Matrix<double, 4, 1> q = fusion.quaternion();
+                            os << "[Frame " << frame << "] ESKF"
+                               << " p=[" << p.x() << ", " << p.y() << ", " << p.z() << "]m"
+                               << " v=[" << v.x() << ", " << v.y() << ", " << v.z() << "]"
+                               << " q=[" << q(0) << ", " << q(1) << ", " << q(2) << ", " << q(3) << "]";
+                            if (result.success) {
+                                os << " | PnP t(mm)=[" << result.t.x() << ", "
+                                   << result.t.y() << ", " << result.t.z() << "]";
+                            }
+                            termLine(os.str());
+                        } else if (result.success) {
+                            Eigen::AngleAxisd aa(result.R);
+                            Eigen::Vector3d rvec = aa.angle() * aa.axis();
+                            std::string sname = result.strategy_name.empty()
+                                ? "Unknown" : result.strategy_name;
+                            os << "[Frame " << frame << "] " << sname
+                               << "  n=" << result.n_matched
+                               << "  r=[" << rvec.x() << ", " << rvec.y() << ", " << rvec.z() << "]"
+                               << "  t=[" << result.t.x() << ", " << result.t.y() << ", " << result.t.z() << "]";
+                            termLine(os.str());
+                        } else {
+                            termLine("[Frame " + std::to_string(frame) + "] FAILED");
+                        }
+                    }
                 } catch (const std::exception& e) {
                     std::cerr << "[Frame " << frame << "] 异常: " << e.what() << std::endl;
                     // 继续下一帧，不中断整条序列
@@ -514,6 +690,15 @@ int main(int argc, char** argv) {
                             + " 帧 ("
                             + std::to_string(100.0 * ist.dropped / ist.captured)
                             + "%)\n");
+                }
+                if (fusion_active) {
+                    auto fst = fusion.stats();
+                    termOut("ESKF 统计: IMU样本=" + std::to_string(fst.imu_samples)
+                            + "  相机更新=" + std::to_string(fst.cam_updates)
+                            + "  FDI忽略=" + std::to_string(fst.cam_ignored)
+                            + "  姿态跳过=" + std::to_string(fst.cam_rot_skipped)
+                            + "  雷达接受=" + std::to_string(fst.radar_accepted)
+                            + "  雷达拒绝=" + std::to_string(fst.radar_rejected) + "\n");
                 }
             }
         } else {

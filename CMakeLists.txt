@@ -77,6 +77,9 @@ set(SOURCES
     src/input/SequenceSource.cpp
     src/input/CameraSource.cpp
     src/input/InputProvider.cpp
+    src/input/SimulatedSensors.cpp
+    # ESKF 多源融合 (适配层; eskf/eskf_vio.hpp 为 header-only)
+    src/fusion/EskfFusionManager.cpp
 )
 
 # ============================================================================
@@ -87,6 +90,7 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${PROJECT_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}   # eskf/ (header-only 库)
 )
 
 # Link OpenCV (works with both modern targets and legacy lib list)
