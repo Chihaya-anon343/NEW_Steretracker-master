@@ -10,7 +10,8 @@
 | `test_extractors.cpp` | 8 | BinaryCorner / TinyTarget 提取器 | `data/fixtures/` 图片 (mono_bc/mono_tiny) + `rois.json` + `data/NewMuBan(reordered)/` 模板 | 结构性 (成功/不崩溃) |
 | `test_input_system.cpp` | 14 | 输入系统 & RingBuffer & 线程化采集 | `cv::imwrite` 临时目录 (自动创建+清理) | 精确尺寸/FIFO 顺序 |
 | `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `data/fixtures/` 图片 (mono_akaze/synthetic_akaze/synthetic_dual) + `rois.json` + 模板目录 | 冒烟 (仅验证不崩溃) |
-| **合计** | **56** | | | |
+| `test_eskf_fusion.cpp` | 13 | ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化 | 代码合成悬停/匀加速 IMU + 精确相机位姿 (零噪声) | 逐元素一致 (1e-6~1e-9) / 分级枚举 / 严格不等式 |
+| **合计** | **69** | | | |
 
 > 数据依赖层级：纯代码 → 临时文件 (自动) → fixtures 图片 + 模板目录 (可选, 缺失时 SKIP)
 
@@ -220,6 +221,38 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 
 ---
 
+### 4.7 `test_eskf_fusion.cpp` — ESKF 方案B (13 用例)
+
+**被测模块**: `fusion::EskfFusionManager` — 延迟测量反向传播 / 协方差膨胀兜底 / 退化监控 / 线程化 (Phase 4)
+**输入数据**: 纯代码合成 — 悬停 IMU (`acc=(0,0,+9.81)` → 零漂移, 对齐 eskf_vio 重力约定) / 匀加速 IMU (移动场景) + 精确相机位姿 (R=I, `t_mm=-1000·p` 精确反推), 全程零噪声 → 确定性断言
+
+| # | 用例 | 输入 | 判断标准 |
+|---|------|------|---------|
+| | **分组 A: 基础链路回归** | | |
+| 1 | `test_lazy_init_and_first_update` | 悬停 IMU 0.01~1.0 + 相机 (1.0/1.0, P0) | initialized, p==P0 (1e-9), v==0, q==(1,0,0,0), Normal, imu_samples==0 (初始化前不积分) |
+| 2 | `test_invalid_camera_imu_only` | 悬停 IMU 0.01~2.0 + valid=false 帧 + 有效帧 | 无效帧不初始化 (Uninitialized/零值), 有效帧后 p==P0, 无残留 |
+| 3 | `test_gap_exceeds_max_cam_gap_resets` | IMU 0.01~3.0 + obs1 (1.0, P0) + obs2 (3.0, P1, 间隔2s>1s) | 精确重置: p==P1 (1e-12), v==0, stats 全 0 (reset 清零) |
+| | **分组 B: 延迟反向传播 (方案B 核心)** | | |
+| 4 | `test_backprop_matches_zero_latency_reference` | 悬停 IMU + obs2 延迟 80ms (1.50/1.58) vs 理想 (1.50/1.50)+propagateTo(1.58) | 终态逐元素一致 (1e-6), cam_late_fallback==0 (走反向传播) |
+| 5 | `test_backprop_beats_arrival_application` | 匀加速 IMU: 反向传播 vs 理想 vs 朴素到达时刻应用 | ‖p_B−p_R‖<1e-6 且 ‖p_A−p_R‖>5e-3 (朴素路径偏离 ~2cm) |
+| 6 | `test_sub_ms_latency_skips_backprop` | obs2 延迟 0.5ms (1.50/1.5005) vs 直接路径 (1.5005/1.5005) | 逐元素一致 (1e-9), cam_late_fallback==0, 更新生效 |
+| | **分组 C: 兜底策略** | | |
+| 7 | `test_latency_beyond_window_inflate` | obs2 延迟 0.5s>0.2s 窗口 (1.50/2.00) vs 无延迟参考 | cam_late_fallback==1, 观测仍应用 (p≈P2), 后验位置协方差迹 >1.01×参考 (膨胀生效) |
+| 8 | `test_latency_beyond_window_reject` | 同上, latency_fallback=Reject | cam_ignored==1, cam_updates==0, 状态保持惯性估计 (p≈P0) |
+| | **分组 D: 退化监控** | | |
+| 9 | `test_quality_normal_degraded_stale` | init 后停相机, propagateTo(1.30/1.70/2.50) | quality 依次 Normal/Degraded/Stale, 位置零漂移, cov_trace 严格递增 |
+| 10 | `test_uninitialized_state` | 仅 IMU, 无相机 | initialized==false, Uninitialized, 零值 |
+| | **分组 E: 线程化 (Phase 4)** | | |
+| 11 | `test_threaded_async_matches_sync` | start() 后同用例 4 场景 (IMU 只喂到 1.58), 轮询收敛; 相机缺席续喂 IMU→2.3 | 终态与同步参考逐元素一致 (1e-6), 缺席后 Degraded, stop() 幂等 |
+| 12 | `test_threaded_camera_order_preserved` | 三观测 A/B/C 连续投喂 (FIFO) | 终态==同步序列 (1e-6), p≈kPc (最后观测胜出), cam_updates==2 |
+| | **分组 F: 复位** | | |
+| 13 | `test_reset_clears_state_stats` | 产生非零 stats → reset() → 重新初始化 | 全零状态/统计/缓冲, 重初始化 p==P0 (1e-9) |
+
+> **确定性机制**: ① 悬停 IMU 比力 = −g → `a_world = R(acc−b_a)+g = 0`, 状态零漂移; ② 反向传播"真值" = 零延迟理想世界 (t0=t1), 回退快照 (100Hz 网格) 与 IMU 重放逐样本复现该理想 → 核心断言为**逐元素相等**; ③ 位置跳变 ≤0.3m + cam_pos_noise=0.1 → NIS ≪ χ²₉₅, hybrid 更新永不被 FDI 拒; ④ 线程化用例轮询 + 2s 截止防 flaky。
+> ⚠️ **测试依赖**: 依赖提交 aa00616 遗漏的 `include/fusion/FusionTypes.hpp` (2026-08-14 补写); 用例 8 记录当前实现语义: Reject 分支只计 `cam_ignored`、不计 `cam_late_fallback`。
+
+---
+
 ## 5. 构建与运行
 
 ```bash
@@ -241,6 +274,7 @@ cmake --build . --target check
 ./tests/test_pose_solvers
 ./tests/test_extractors
 ./tests/test_input_system
+./tests/test_eskf_fusion
 
 # 集成测试需模板目录 + fixtures
 ./tests/test_integration \
@@ -276,7 +310,9 @@ cmake --build . --target check
 | 2026-08 | `test_input_system.cpp` | `currentFrame()` 语义不一致: Dir/Seq 用 0, File 用 -1 | 统一为 -1=未取帧 (Dir/Seq open/reset 改 `current_index_=-1`) |
 | 2026-08 | `test_input_system.cpp` | `RUN` 宏裸逗号 + `PASS("case:"<<name)` + RingBuffer API 不匹配 | 拆分声明, 修 PASS, pop→popOldest, 加 capacity()/full() |
 | 2026-08 | `tests/CMakeLists.txt` | 缺少 `CameraSource.cpp` | 加入 TEST_SHARED_SOURCES |
+| 2026-08 | `include/fusion/FusionTypes.hpp` | 提交 aa00616 引用但不存在的文件 (ImuSample/RadarSample/CameraObservation 未定义, 主程序无法编译) | 按提交用法补写 (t_exposure/t_arrival 双时间戳) |
+| 2026-08 | `tests/CMakeLists.txt` | 缺少 `EskfFusionManager.cpp` + Threads 链接 | 加入 TEST_SHARED_SOURCES + `find_package(Threads)` + `Threads::Threads` |
 
 ---
 
-*最后更新: 2026-08-05*
+*最后更新: 2026-08-14*

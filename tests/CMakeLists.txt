@@ -52,6 +52,9 @@ find_package(OpenCV REQUIRED COMPONENTS
 # --- Eigen3 (REQUIRED; 兼容 target 与模块两种格式) ---
 find_package(Eigen3 REQUIRED)
 
+# --- Threads (test_eskf_fusion: ESKF 融合工作线程 std::thread) ---
+find_package(Threads REQUIRED)
+
 # --- ONNX Runtime (可选) ---
 # 优先使用根项目传入的 ONNXRUNTIME_ROOT; 未传入时尝试自动发现
 set(GPNP_ONNXRUNTIME_ROOT "${ONNXRUNTIME_ROOT}" CACHE PATH "ONNX Runtime root")
@@ -103,6 +106,7 @@ set(TEST_SHARED_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/SequenceSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/CameraSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/InputProvider.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/fusion/EskfFusionManager.cpp
 )
 
 if(GPNP_ONNXRUNTIME_FOUND)
@@ -125,6 +129,9 @@ function(gpnp_add_test name)
         target_include_directories(${name} PRIVATE ${OpenCV_INCLUDE_DIRS})
     endif()
     target_link_libraries(${name} PRIVATE ${OpenCV_LIBS})
+
+    # 融合工作线程 (std::thread)
+    target_link_libraries(${name} PRIVATE Threads::Threads)
 
     if(TARGET Eigen3::Eigen)
         target_link_libraries(${name} PRIVATE Eigen3::Eigen)
@@ -208,6 +215,11 @@ else()
         "跳过 test_input_system")
 endif()
 
+# 方案B: ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化 (纯 Eigen + Threads)
+gpnp_add_test(test_eskf_fusion
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_eskf_fusion.cpp
+)
+
 # ============================================================================
 # 辅助目标
 # ============================================================================
@@ -216,7 +228,7 @@ endif()
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS test_config test_roi_generator test_pose_solvers
-            test_extractors test_integration
+            test_extractors test_integration test_eskf_fusion
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "运行 Steretracker 单元与集成测试"
 )
@@ -224,7 +236,7 @@ add_custom_target(check
 # ============================================================================
 # 摘要
 # ============================================================================
-set(GPNP_TEST_LIST "test_config, test_roi_generator, test_pose_solvers, test_extractors, test_integration")
+set(GPNP_TEST_LIST "test_config, test_roi_generator, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion")
 if(GPNP_ONNXRUNTIME_FOUND)
     set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system")
 endif()
