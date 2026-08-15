@@ -465,11 +465,17 @@ OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无�
 
 适配层接口: `fusion::EskfFusionManager` (include/fusion/EskfFusionManager.hpp) — `feedImu` / `feedRadar` / `feedCameraPose` / `propagateTo`,输出 `position()/velocity()/rotation()/quaternion()/stats()`。
 
-**延迟测量反向传播 (方案B 核心)**: 相机位姿是 t0 曝光时刻拍的、t1 才送达。`feedCameraPose(CameraObservation{t_exposure, t_arrival, ...})` 在延迟 > 1ms 时回退到 ≤ t0 的最近状态快照、重放 IMU 到 t0、在 t0 应用相机更新、再重放到当前;延迟超窗 (`backprop_window_s`) 时用协方差膨胀兜底 (`latency_fallback=inflate`) 或直接丢弃 (`reject`)。
+> **输出四元数顺序**: 状态四元数为 `[w,x,y,z]` 序 (与 `eskf_vio.hpp` 一致), 输出访问器 `quaternion()/rotation()/getLatestState()` 已用 4 标量构造正确读取。
+>
+> **统计计数语义**: `stats().cam_updates` 只统计真正应用了更新的观测 (反向传播成功 / 非 Reject 的直接或膨胀更新); 被 `reject` 兜底丢弃的观测只计 `cam_ignored`; `cam_late_fallback` 统计延迟超窗走 inflate 兜底的次数 (reject 不计)。
+
+**延迟测量反向传播 (方案B 核心)**: 相机位姿是 t0 曝光时刻拍的、t1 才送达。`feedCameraPose(CameraObservation{t_exposure, t_arrival, ...})` 在延迟 > 1ms 时回退到 ≤ t0 的最近状态快照、重放 IMU 到 t0、在 t0 应用相机更新、再重放到当前;延迟超窗 (`backprop_window_s`) 时用协方差膨胀兜底 (`latency_fallback=inflate`) 或直接丢弃 (`reject`)。亚毫秒 (≤1ms) 延迟视为零延迟, 不走反向传播、也不套协方差膨胀, 按到达时刻直接更新。
 
 **退化监控**: `getLatestState() → FusionState{position, velocity, quaternion, cov_trace, quality}`;`quality ∈ Normal/Degraded/Stale`,相机丢失后仍输出惯导结果并用协方差迹标记可信度。详见 CLAUDE.md §6.9。
 
 > **线程化 (Phase 4, 已实现)**: `eskf.threaded: true` 时 `fusion.start()` 启动内部融合工作线程 — feedImu/feedRadar/feedCameraPose 异步入队, 融合线程独立以 IMU 节拍预测、相机/雷达异步更新, 相机缺席时状态继续传播; 输出经 `getLatestState()` 线程安全读取。默认 `false` 保持同步排干 (向后兼容)。
+>
+> 线程工作循环的"无相机传播"步骤仅在已初始化后执行; 未初始化前不排干 IMU, 等首帧相机按 `t_arrival` 排干。**已知限制**: 若 IMU 被大量预缓冲 (如离线回放先灌 IMU 再喂相机), 该步骤可能越过待处理观测的到达时刻抢先传播到最新 IMU, 裁剪反向传播快照窗口, 使该观测的反向传播降级为膨胀兜底 (终态与同步路径有 ~5mm 差异)。此竞态暂无测试覆盖。
 
 ---
 

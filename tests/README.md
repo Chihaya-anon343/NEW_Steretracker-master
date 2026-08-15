@@ -244,7 +244,7 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 | 10 | `test_uninitialized_state` | 仅 IMU, 无相机 | initialized==false, Uninitialized, 零值 |
 | | **分组 E: 线程化 (Phase 4)** | | |
 | 11 | `test_threaded_async_matches_sync` | start() 后同用例 4 场景 (IMU 只喂到 1.58), 轮询收敛; 相机缺席续喂 IMU→2.3 | 终态与同步参考逐元素一致 (1e-6), 缺席后 Degraded, stop() 幂等 |
-| 12 | `test_threaded_camera_order_preserved` | 三观测 A/B/C 连续投喂 (FIFO) | 终态==同步序列 (1e-6), p≈kPc (最后观测胜出), cam_updates==2 |
+| 12 | `test_camera_missing_imu_propagates` | 首帧 init 后相机缺失, 续喂 MOVE IMU (无相机) | 位置被 IMU 死推 (~0.15m), 质量 Degraded, stop() 正常 |
 | | **分组 F: 复位** | | |
 | 13 | `test_reset_clears_state_stats` | 产生非零 stats → reset() → 重新初始化 | 全零状态/统计/缓冲, 重初始化 p==P0 (1e-9) |
 

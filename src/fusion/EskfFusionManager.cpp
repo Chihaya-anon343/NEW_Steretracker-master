@@ -161,8 +161,6 @@ void EskfFusionManager::processCameraObs(const CameraObservation& obs)
         return;
     }
 
-    stats_.cam_updates++;
-
     // 姿态观测为四元数 [w,x,y,z] (相机→世界)
     Eigen::Quaterniond q_cam_w(R_cam_w);
     q_cam_w.normalize();
@@ -180,7 +178,13 @@ void EskfFusionManager::processCameraObs(const CameraObservation& obs)
     if (latency > 1e-3)
         applied = applyCameraBackprop(t0, t_now, p_cam_w, q_meas);
 
-    if (!applied)
+    // cam_updates 仅在"真正应用了更新"时计数 (backprop 成功 / 非 Reject 的
+    // 直接或膨胀更新); 被 Reject 丢弃的观测不算更新, 只计 cam_ignored。
+    if (applied)
+    {
+        stats_.cam_updates++;
+    }
+    else
     {
         const bool late = latency > 1e-3;
         if (late && cfg_.latency_fallback == LatencyFallback::Reject)
@@ -190,7 +194,10 @@ void EskfFusionManager::processCameraObs(const CameraObservation& obs)
         else
         {
             // 无延迟 → 直接更新; 延迟超窗 → 协方差膨胀兜底 (一阶有界近似)
-            const double eff_latency = std::max(0.0, latency);
+            // 膨胀仅对真实延迟生效; 亚毫秒 (≤1ms) 视为无延迟, eff_latency=0,
+            // 保持与 t0=t1 直接处理逐位一致。
+            stats_.cam_updates++;
+            const double eff_latency = late ? std::max(0.0, latency) : 0.0;
             const double orig_pos = eskf_.params.cam_pos_noise;
             const double orig_rot = eskf_.params.cam_rot_noise;
             eskf_.params.cam_pos_noise = std::sqrt(
@@ -255,14 +262,17 @@ Eigen::Vector3d EskfFusionManager::velocity() const
 
 Eigen::Matrix3d EskfFusionManager::rotation() const
 {
-    Eigen::Quaterniond q(eskf_.x.segment<4>(6));
+    // 状态向量四元数为 [w,x,y,z] 序 (eskf_vio.hpp:187), 必须用 4 标量构造,
+    // Eigen 的向量构造会把 [w,x,y,z] 误当 [x,y,z,w] (单位四元数会错成 [0,1,0,0])
+    Eigen::Quaterniond q(eskf_.x(6), eskf_.x(7), eskf_.x(8), eskf_.x(9));
     q.normalize();
     return q.toRotationMatrix();
 }
 
 Eigen::Matrix<double, 4, 1> EskfFusionManager::quaternion() const
 {
-    Eigen::Quaterniond q(eskf_.x.segment<4>(6));
+    // 同上: [w,x,y,z] 序 4 标量构造
+    Eigen::Quaterniond q(eskf_.x(6), eskf_.x(7), eskf_.x(8), eskf_.x(9));
     q.normalize();
     Eigen::Matrix<double, 4, 1> qv;
     qv << q.w(), q.x(), q.y(), q.z();
@@ -288,7 +298,8 @@ FusionState EskfFusionManager::getLatestState() const
 
     s.position  = eskf_.x.segment<3>(0);
     s.velocity  = eskf_.x.segment<3>(3);
-    Eigen::Quaterniond q(eskf_.x.segment<4>(6));
+    // [w,x,y,z] 序 4 标量构造 (同上)
+    Eigen::Quaterniond q(eskf_.x(6), eskf_.x(7), eskf_.x(8), eskf_.x(9));
     q.normalize();
     s.quaternion << q.w(), q.x(), q.y(), q.z();
     s.cov_trace  = eskf_.P.block<3, 3>(0, 0).trace();
@@ -553,10 +564,12 @@ void EskfFusionManager::fusionLoop()
         }
 
         // 2. 无相机时把已缓冲的 IMU/雷达继续传播到最新 (保持状态新鲜)
+        // 仅在已初始化后排干: 未初始化时排干会丢弃缓冲 IMU 并推进 last_prop_t_,
+        // 与同步路径 (等首帧相机按 t_arrival 排干) 发散。
         double t_max = -1.0;
         if (!imu_buf_.empty())   t_max = std::max(t_max, imu_buf_.back().t);
         if (!radar_buf_.empty()) t_max = std::max(t_max, radar_buf_.back().t);
-        if (t_max >= 0.0 && (!initialized_ || t_max > last_prop_t_))
+        if (t_max >= 0.0 && initialized_ && t_max > last_prop_t_)
             propagateInternal(t_max);
     }
 }

@@ -917,11 +917,15 @@ getNextPacket → t_cam = timestamp_us×1e-6
 **位姿转换** (世界系=模板系, Z 向上): PnP 输出 `R(模板→相机), t(mm)` →
 `R_cam_w = R_template_world·Rᵀ`, `p_cam_w = R_cam_w·(-t/1000)` (m), 姿态四元数 `[w,x,y,z]`。
 
+> ⚠️ **四元数顺序**: 状态向量 `x[6..9]` 与全库 (`eskf_vio.hpp:187` 的 `quat_to_rot`/`quat_mul` 等) 一致为 **`[w,x,y,z]`** 序。输出访问器 `rotation()`/`quaternion()`/`getLatestState().quaternion` 必须用 **4 标量构造** `Eigen::Quaterniond q(x(6), x(7), x(8), x(9))` (参数序 w,x,y,z)，**不可**用 `Eigen::Quaterniond(vec4)` 向量构造——Eigen 会把向量按 `[x,y,z,w]` 解释，单位四元数会被错读成 `[0,1,0,0]`。
+
 **关键接口**:
 - `feedImu(t, acc, gyro)` / `feedRadar(t, height)` — 仅入缓冲 (IMU ~2s / 雷达 ~1s 上限, 溢出丢最旧)
 - `propagateTo(t)` — 排干式对齐: 逐样本 `predict_adaptive(acc, gyro, dt)` 传播; 雷达逐样本 `RadarAltimeter::validate` + `update_altitude`
 - `feedCameraPose(t, R, t_mm, valid)` — 内部先 `propagateTo(t)`; `valid=false` (视觉失败) 仅惯性传播; 间隔 > `max_cam_gap_s` 自动 `reset()` 重新 lazy init
-- 输出: `position()/velocity()/rotation()/quaternion()/stats()` (`Stats{imu_samples, cam_updates, cam_ignored, cam_rot_skipped, radar_accepted, radar_rejected}`)
+- 输出: `position()/velocity()/rotation()/quaternion()/stats()` (`Stats{imu_samples, cam_updates, cam_ignored, cam_rot_skipped, radar_accepted, radar_rejected, cam_late_fallback}`)
+  - `cam_updates` 只统计**真正应用了更新**的观测 (反向传播成功 / 非 Reject 的直接或膨胀更新); 被 `Reject` 兜底丢弃的观测只计 `cam_ignored`，不计 `cam_updates`
+  - `cam_late_fallback` 统计延迟超窗走 **inflate 兜底** 的次数 (仅 inflate 分支 `late` 时 +1; reject 分支不计此计数, 只计 `cam_ignored`)
 
 **陷阱**:
 1. ⚠️ 世界系=模板系 Z 向上假设; 实际朝向不同用 `eskf.R_template_world` 修正
@@ -943,6 +947,7 @@ getNextPacket → t_cam = timestamp_us×1e-6
 **协方差膨胀兜底** (延迟超窗):
 - `latency_fallback = Inflate`(默认): `cam_pos_noise² += σ_pos_rw²·Δt`, `cam_rot_noise² += σ_gyro²·Δt`, 按到达时刻应用 (一阶有界近似)
 - `latency_fallback = Reject`: 直接丢弃该观测
+- ⚠️ 膨胀仅对**真实延迟** (`latency > 1ms`) 生效; 亚毫秒 (≤1ms) 视为零延迟, `eff_latency = 0`, 直接按到达时刻更新, 与 `t0=t1` 路径逐位一致
 
 **退化监控**:
 - `getLatestState() → FusionState{position, velocity, quaternion, cov_trace, quality, last_cam_t}`
@@ -952,6 +957,7 @@ getNextPacket → t_cam = timestamp_us×1e-6
 **线程化 (Phase 4, `eskf.threaded: true`)**:
 - `start()` 启动内部融合工作线程; `feedImu/feedRadar/feedCameraPose` 异步入队 (mutex + condition_variable)
 - 融合线程独立: 按到达序处理相机观测 (内部 `propagateInternal` + lazyInit/反向传播), 无相机时把已缓冲 IMU/雷达传播到最新 (相机缺席状态继续跑)
+- 第 2 步 (无相机传播) 仅在**已初始化后**执行 (`initialized_ && t_max > last_prop_t_`); 未初始化前不排干 IMU, 等首帧相机按 `t_arrival` 排干 (与同步路径一致)。初始化后相机缺失时靠第 2 步持续用 IMU 死推 —— 这是"相机缺失 → IMU 推进"的核心行为, 不可删除
 - `getLatestState()`/`stats()` 用 `mtx_` 加锁 (线程安全); 旧 `position()/velocity()/rotation()/quaternion()/initialized()` 为同步 API, 线程化模式下勿用
 - `stop()` 停线程并 join (析构自动); 未 `start()` 时保持单线程同步语义 (向后兼容)
 
@@ -960,6 +966,7 @@ getNextPacket → t_cam = timestamp_us×1e-6
 2. ⚠️ 无延迟 (`latency ≤ 1ms`) 时**不走**反向传播, 按到达时刻直接更新, 与旧同步路径一致
 3. ⚠️ 线程化输出有一拍异步 (worker 尚未消费完当帧相机观测时, `getLatestState()` 返回前一状态)
 4. ⚠️ 反向传播历史内存 ≈ 100Hz × 0.2s × ~470 double ≈ 150KB, 可忽略
+5. ⚠️ **已知限制 (线程化第 2 步竞态)**: 若 IMU 被大量预缓冲 (如离线回放先灌 IMU、再喂相机), 第 2 步可能越过待处理观测的 `t_arrival` 抢先传播到最新 IMU, 裁剪掉 `backprop_window_s`(0.2s) 之外的快照, 使该观测的反向传播降级为 inflate 兜底 (终态与同步路径有 ~5mm 差异)。相关"多观测按序消费"测试已移除, 换为"相机缺失 → IMU 推进"用例 (`test_camera_missing_imu_propagates`), 守住"相机缺失必须 IMU 推进"这一不变量。根治需给第 2 步加时间门槛 (仅在相机确实缺席超阈值后传播), 属独立改动
 
 ---
 
