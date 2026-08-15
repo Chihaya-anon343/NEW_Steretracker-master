@@ -4,6 +4,8 @@
 > **设计原则**：系统级理解优先，按数据流链路组织，关键常量/阈值集中列出，陷阱与边界条件醒目标注
 >
 > 基于对 `main.cpp`、全部 `include/` 头文件、全部 `src/` 源文件的深度阅读编写。阅读本文后，AI Agent 不再需要遍历代码即可操作和修改本项目。
+>
+> **构建 / 测试（Docker 工具链）**：本项目用 CLion Docker 工具链（镜像 `cpp_cuda_x64_0620:latest`，项目挂载到容器内 `/tmp/NEW_Steretracker-master`）。Claude Code 的 Bash 运行在 Windows 主机，不能直接调用工具链/运行 `cmake-build-debug/` 下的 Linux ELF 二进制；请一律经全局脚本 `docker-toolchain.sh <cmd>`（位于 `~/bin/`，任意项目可用）把命令转发进容器执行。例：`docker-toolchain.sh cmake --build cmake-build-debug --target test_eskf_multimodal`、`docker-toolchain.sh ./cmake-build-debug/tests/test_eskf_multimodal`。
 
 ---
 
@@ -1606,6 +1608,10 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `CLAUDE.md` | 本文档 (面向 AI Agent) |
 | `FEATURE_EXTRACTION_SPEC.md` | 特征提取规格说明 |
 | `dockerfile_0620` | Docker 构建文件 |
+| `tests/README.md` | 测试体系文档 (用例清单/构建运行/修复记录) |
+| `tests/unit/test_eskf_fusion.cpp` | ESKF 单链路测试 (反向传播/兜底/退化监控/线程化, 13 用例) |
+| `tests/unit/test_eskf_multimodal.cpp` | ESKF 多模态线程化集成测试 (螺旋轨迹 + 4 类错误注入 + CSV 输出) |
+| `tests/scripts/plot_eskf_traj.py` | ESKF 融合轨迹可视化脚本 (真值 vs 融合 + 错误段标注) |
 
 ---
 

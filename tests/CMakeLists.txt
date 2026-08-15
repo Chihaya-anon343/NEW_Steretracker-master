@@ -220,6 +220,11 @@ gpnp_add_test(test_eskf_fusion
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_eskf_fusion.cpp
 )
 
+# 方案B: ESKF 多模态线程化集成 (螺旋轨迹 + IMU/相机/雷达 + 错误注入 + CSV 输出)
+gpnp_add_test(test_eskf_multimodal
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_eskf_multimodal.cpp
+)
+
 # ============================================================================
 # 辅助目标
 # ============================================================================
@@ -228,7 +233,7 @@ gpnp_add_test(test_eskf_fusion
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS test_config test_roi_generator test_pose_solvers
-            test_extractors test_integration test_eskf_fusion
+            test_extractors test_integration test_eskf_fusion test_eskf_multimodal
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "运行 Steretracker 单元与集成测试"
 )
@@ -236,7 +241,7 @@ add_custom_target(check
 # ============================================================================
 # 摘要
 # ============================================================================
-set(GPNP_TEST_LIST "test_config, test_roi_generator, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion")
+set(GPNP_TEST_LIST "test_config, test_roi_generator, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
 if(GPNP_ONNXRUNTIME_FOUND)
     set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system")
 endif()

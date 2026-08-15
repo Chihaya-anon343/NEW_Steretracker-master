@@ -11,7 +11,8 @@
 | `test_input_system.cpp` | 14 | 输入系统 & RingBuffer & 线程化采集 | `cv::imwrite` 临时目录 (自动创建+清理) | 精确尺寸/FIFO 顺序 |
 | `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `data/fixtures/` 图片 (mono_akaze/synthetic_akaze/synthetic_dual) + `rois.json` + 模板目录 | 冒烟 (仅验证不崩溃) |
 | `test_eskf_fusion.cpp` | 13 | ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化 | 代码合成悬停/匀加速 IMU + 精确相机位姿 (零噪声) | 逐元素一致 (1e-6~1e-9) / 分级枚举 / 严格不等式 |
-| **合计** | **69** | | | |
+| `test_eskf_multimodal.cpp` | 1 | ESKF 多模态线程化集成 | 代码合成螺旋上升轨迹 + 反推 IMU/相机/雷达 + 4 类错误注入 | 软验证 (跑通 + smoke 断言 + CSV 输出) |
+| **合计** | **70** | | | |
 
 > 数据依赖层级：纯代码 → 临时文件 (自动) → fixtures 图片 + 模板目录 (可选, 缺失时 SKIP)
 
@@ -38,7 +39,8 @@ tests/
 ├── framework/
 │   └── TestAssert.hpp           # TEST_ASSERT / REGISTER_TEST / TestRegistry
 ├── scripts/
-│   └── generate_assets.py       # fixtures 生成脚本 (真实背景+目标合成)
+│   ├── generate_assets.py       # fixtures 生成脚本 (真实背景+目标合成)
+│   └── plot_eskf_traj.py        # ESKF 融合轨迹可视化 (真值 vs 融合 + 错误段标注)
 ├── unit/
 │   ├── TestDataLoader.hpp       # fixtures 加载工具 (rois.json → ROI)
 │   ├── test_config.cpp          # [L0] 配置工厂
@@ -46,6 +48,8 @@ tests/
 │   ├── test_pose_solvers.cpp    # [L0] PnP 位姿求解器
 │   ├── test_extractors.cpp      # [L1] 特征提取器
 │   ├── test_input_system.cpp    # [L1] 输入系统
+│   ├── test_eskf_fusion.cpp     # [L0] ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化
+│   ├── test_eskf_multimodal.cpp # [L1] ESKF 多模态线程化集成 (螺旋轨迹 + 错误注入 + CSV 输出)
 │   └── test_integration.cpp     # [L2] 端到端冒烟
 └── data/fixtures/               # gitignored, 由 generate_assets.py 生成
     ├── synthetic_tiny|bc|akaze/          # 双目 State 1/2/3 (class0-only)
@@ -253,7 +257,36 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 
 ---
 
+### 4.8 `test_eskf_multimodal.cpp` — ESKF 多模态线程化集成 (1 用例)
+
+**被测模块**: `fusion::EskfFusionManager` (线程化 `threaded=true`) + 完整辅助模块 (RadarAltimeter / camera FDI / 反向传播)
+**输入数据**: 纯代码合成 —— 螺旋上升地面真值轨迹 `p(t)=(R·cos ωt, R·sin ωt, h0+vz·t)`，由运动学反推三路数据:
+
+- **IMU** 比力 `f_b = R_cam_wᵀ·(a-g)` + 角速度 `(0,0,ω)` + 噪声 (200Hz)
+- **相机观测** (PnP 约定 `R_tpl_cam`/`t_cam_mm`) + 位置噪声 (10Hz)
+- **雷达高度** `p.z` + 噪声 (20Hz)
+
+| 错误注入 | 时段 | 验证点 |
+|---------|------|--------|
+| `radar_jump` 雷达跳变 +50m | 5.0~5.2s | `RadarAltimeter` 跳变拒绝 → `radar_rejected>0` |
+| `cam_jump` 相机位置跳变 +3m | 8.0~8.5s | camera FDI 位置 NIS 拒绝 → `cam_ignored>0` |
+| `cam_fail` 相机失效 | 13.0~13.6s | IMU 死推 + `quality→Degraded` |
+| `cam_delay` 相机延迟 0.1s | 16.0~18.0s | 反向传播 `applyCameraBackprop` (曝光=t-0.1, 送达=t) |
+
+**判定方式**: 软验证 —— 跑通全流程 + smoke 断言 (`initialized`/`imu_samples>0`/`cam_updates>0`/`radar_rejected>0`/`cam_ignored>0`), 轨迹/误差写 `eskf_traj.csv` + `eskf_events.csv` 供 `plot_eskf_traj.py` 可视化 (3D 真值 vs 融合 + 错误段标注)。
+
+> ⚠️ **踩坑记录**: ① 错误注入用**窗口**而非单点 (单点 + 浮点累加会漏注入); ② 相机失效窗口时长必须 < `max_cam_gap_s`(1.0s) 才能走 Degraded 而非触发 reset 清空 stats。
+
+---
+
 ## 5. 构建与运行
+
+> **Docker 工具链 (推荐, 与 CLion 一致)**: 本项目用 CLion Docker 工具链 (镜像 `cpp_cuda_x64_0620:latest`, 项目挂载于容器 `/tmp/NEW_Steretracker-master`)。Claude Code / 命令行经全局脚本 `docker-toolchain.sh <cmd>` (位于 `~/bin/`, 任意项目可用) 把命令转发进容器执行:
+> ```bash
+> docker-toolchain.sh cmake --build cmake-build-debug --target test_eskf_multimodal
+> docker-toolchain.sh ./cmake-build-debug/tests/test_eskf_multimodal
+> docker-toolchain.sh ctest --test-dir cmake-build-debug --output-on-failure
+> ```
 
 ```bash
 # 配置 (独立构建目录)
@@ -312,7 +345,10 @@ cmake --build . --target check
 | 2026-08 | `tests/CMakeLists.txt` | 缺少 `CameraSource.cpp` | 加入 TEST_SHARED_SOURCES |
 | 2026-08 | `include/fusion/FusionTypes.hpp` | 提交 aa00616 引用但不存在的文件 (ImuSample/RadarSample/CameraObservation 未定义, 主程序无法编译) | 按提交用法补写 (t_exposure/t_arrival 双时间戳) |
 | 2026-08 | `tests/CMakeLists.txt` | 缺少 `EskfFusionManager.cpp` + Threads 链接 | 加入 TEST_SHARED_SOURCES + `find_package(Threads)` + `Threads::Threads` |
+| 2026-08 | `test_eskf_multimodal.cpp` | 雷达跳变单点 `[5.0,5.0]` 浮点累加漏注入 → `radar_rejected==0` | 改为窗口 `[5.0,5.2]` |
+| 2026-08 | `test_eskf_multimodal.cpp` | 相机失效 `[13.0,14.0]`(1s) 致相机间隔 1.2s > `max_cam_gap_s` → reset 清空 stats | 缩短为 `[13.0,13.6]`(0.6s), 走 Degraded 而非 reset |
+| 2026-08 | `plot_eskf_traj.py` | 中文标题缺 CJK 字形 (`Glyph missing from current font`) | 配置 `font.sans-serif`(SimHei/微软雅黑) + `axes.unicode_minus=False` |
 
 ---
 
-*最后更新: 2026-08-14*
+*最后更新: 2026-08-15*

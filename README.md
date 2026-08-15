@@ -633,6 +633,13 @@ TrackerBase
 
 > 对应 SYS-REQ-700
 
+> **Docker 工具链 (推荐)**: 本项目开发环境为 CLion Docker 工具链 (镜像 `cpp_cuda_x64_0620:latest`, 项目挂载于容器 `/tmp/NEW_Steretracker-master`)。命令行 / Claude Code 经全局脚本 `docker-toolchain.sh <cmd>` (位于 `~/bin/`, 任意项目可用) 把命令转发进容器:
+> ```bash
+> docker-toolchain.sh cmake --build cmake-build-debug --target GPNP
+> docker-toolchain.sh ./cmake-build-debug/GPNP config/tracker_config.json
+> docker-toolchain.sh cmake --build cmake-build-debug --target test_eskf_multimodal
+> ```
+
 ### 依赖
 
 | 库 | 用途 |
@@ -700,6 +707,14 @@ Steretracker/
 │   └── eskf_vio.hpp            # ESKF_VIO + GravityEstimator + RadarAltimeter
 │
 ├── src/                        # 对应 .cpp 实现
+│
+├── tests/                      # 单元与集成测试 (cmake -DGPNP_BUILD_TESTS=ON)
+│   ├── CMakeLists.txt
+│   ├── framework/TestAssert.hpp # 断言框架 (TEST_ASSERT/REGISTER_TEST)
+│   ├── scripts/                 # generate_assets.py, plot_eskf_traj.py (ESKF 轨迹可视化)
+│   ├── unit/                    # test_config/roi/pose/extractors/input/eskf_fusion/eskf_multimodal/integration
+│   └── data/fixtures/           # 合成测试图 (gitignored, generate_assets.py 生成)
+│
 ├── scripts/camera_capture.py   # 摄像头预览/抓拍辅助脚本
 ├── sysml/                      # SysML 需求模型
 │   ├── sysrequire.puml         # 系统需求规格 (SYS-REQ)
