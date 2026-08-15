@@ -1,0 +1,55 @@
+================================================================
+ Steretracker 追踪日志
+================================================================
+运行模式: normal (单目)
+配置路径: config/tracker_config_eskf.json
+输入源目录:   type=file
+输出目录: output/sequence
+相机: fx=541.764 fy=541.764 cx=553.682 cy=232.397 baseline_mm=60
+YOLO: model=best.onnx conf=0.5 class=0 expand=0
+AKAZE模板: data/big/img_1.png  500x500mm  scale=0.5  min_pts=4
+BC模板: data/NewMuBan(reordered)  corners=10  kernel=3  p2m_c0=0.004  p2m_c1=0.0004
+TT模板: data/NewMuBan(reordered)  scale_factor=4  sq_c0=0.2  sq_c1=0.04
+面积阈值: akaze_min=40001  tiny_max=400  class1_akaze=4000000  class1_tiny=400
+close_range: enabled=1  class1_min=100  expand_ratio=1
+================================================================
+
+输出目录: output/sequence
+[输入系统] 初始化 InputProvider...
+[FileStereoSource] 已加载: data/big/cj01_image_0032.jpg / data/big/cj01_image_0032.jpg
+[InputProvider] 初始化完成, 总帧数: 1
+[输入系统] 就绪, 最大帧数: 999999
+[YoloRoiProvider] Ready. Model: best.onnx, conf=0.5, class=0, expand=0
+初始化 MonoTracker（单目模式）...
+[AkazeGpnp] Template features: 129 kp, 128.094 ms
+[PoseUtils] Loaded 24 templates from data/NewMuBan(reordered)
+[BinaryCorner] Loaded 24 templates from data/NewMuBan(reordered)
+[BinaryCorner] 3D pts (mm): 10 (angle=0, scale=4 mm/px  use_class1=false)
+[PoseUtils] Loaded 24 templates from data/NewMuBan(reordered)
+[TinyTarget] Loaded 24 templates from data/NewMuBan(reordered)
+[TinyTarget] 3D pts (mm): half=100  square_size_m=0.2  use_class1=false
+[TrackerBase] Pre-initialized 3 extractors: AkazeGpnp, BinaryCorner, TinyTarget
+[AkazeGpnp] Template features: 129 kp, 104.727 ms
+单目模式已启用（仅左图）
+
+===== 第 1 帧 (单目) =====
+[RoiGenerator] Dual-ROI mode triggered (class0 area=596744 > 490000)  primary=769x776  secondary=63x62
+[YoloRoiProvider] Mono ROI=(410,422,769,776) + secondary=(755,829,63,62)
+[DualRoi] BC template prepared: 10 corners on AKAZE template (798x786)  real_size=500x500mm
+[DualRoi][Mono] pad=50  primary=769x776  secondary(raw)=63x62  secondary(expanded)=163x162  offset=(295,357)
+[DualRoi][Mono] BinaryCorner on class 0: 10 corners
+[DualRoi][Mono] AKAZE on class 1: 20 template matches (kp=20)
+[DualRoi][Mono] Merged: 30 total (BC=10, AK=20)  pts3d=30
+[MonoPnP] EPnP 成功: inliers=30/30, t=(-97.2513, 112.774, 339.451) mm
+  Pose: rvec=[0.00818411, 0.00342125, -0.0033305]  tvec=[-97.2513, 112.774, 339.451] mm  n_pts=30
+[DualRoi][Mono] Frame done: n_pts=30  PnP=OK
+  特征点: 30  匹配: 30  投影: 0  模板: 0  GPNP: 成功  耗时: 0ms  PnP t(mm)=[-97.2513, 112.774, 339.451]
+===== 运行汇总 =====
+处理帧数: 1  位姿成功: 1 (100.000000%)
+实际处理 FPS: 9.704989
+ESKF 统计: IMU样本=0  相机更新=0  FDI忽略=0  姿态跳过=0  雷达接受=0  雷达拒绝=0  延迟兜底=0
++-----+------------+--------+--------+--------+----------+--------+----------+----------+
+|  Fr#|   Timestamp|     1st|      FB|     nKp|    nMatch|   nProj|     nTmpl|  Disp(px)|
++-----+------------+--------+--------+--------+----------+--------+----------+----------+
+|    0|1786788260.665|       Y|       N|      30|        30|       0|         0|         0|
++=====+============+========+========+========+==========+========+==========+==========+

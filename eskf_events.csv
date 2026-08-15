@@ -1,0 +1,5 @@
+type,t_start,t_end,magnitude
+radar_jump,5,5.2,50
+cam_jump,8,8.5,3
+cam_fail,13,13.6,0
+cam_delay,16,18,0.1
