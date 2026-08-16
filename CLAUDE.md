@@ -1622,6 +1622,19 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `tests/unit/test_yolo_detector.cpp` | YOLO 检测器端到端冒烟 (模型加载/状态码/YoloRoiProvider; 模型缺失 SKIP, 5 用例) |
 | `tests/scripts/plot_eskf_traj.py` | ESKF 融合轨迹可视化脚本 (真值 vs 融合 + 错误段标注) |
 
+### 10.14 脚本工具 (数据标注 / 合成数据生成)
+
+| 文件 | 关键内容 |
+|------|---------|
+| `scripts/camera_capture.py` | 摄像头预览/抓拍/连拍/流式导出 |
+| `scripts/annotate_points.py` | **交互式特征点标注**: 在目标图上点 2×N 个点 (前 N=class0 整体, 后 N=class1 中心), 输出 `Corner_N: X, Y` txt (与 `readCorners()` 兼容) |
+| `scripts/class0_points.txt` / `scripts/class1_points.txt` | 在 `data/big/img_1.png` (798×786) 上手工标注的 class0(10 点, 目标外轮廓)/class1(10 点, 中心) 特征点 |
+| `scripts/generate_synthetic_dataset.py` | **合成训练数据集生成**: 复用 `generate_assets.py` 图像参数+五状态分类, 平面单应透视投影目标到背景任意位置(不截断), 每图输出 class0/class1 特征点 txt + `manifest.json` |
+
+> **合成数据核心几何**: 目标为平面贴图, 其上所有点共享单应 `H = K·[r1 r2 t]·T_center` (针孔内参 `f=FOCAL_LEN=1000`, `R=Rz(yaw)·Rx(pitch)·Ry(roll)` (yaw 0-360° 全覆盖, pitch/roll 默认 ±10°), `tz=f·short/S` 控制尺度, 右图 `H_right=T_disp·H_left` 产生视差); 特征点 = `project(H, pts)`, 故目标缩放/旋转/平移时特征点**同步变化**。任意位置不截断由"目标 4 角投影 AABB + 右图视差并集落在画布内"的可行中心区间保证。
+> **特征点 txt 格式**: `#` 表头 + `Corner_N: x.xx, y.yy` (画布像素坐标), 与 `PoseUtils::readCorners()` (`src/utils/PoseUtils.cpp:176`) 正则 `Corner_\d+:\s*([-\d.]+),\s*([-\d.]+)` 完全兼容。
+> **运行**: Windows 主机 Python 3.8 + OpenCV 直接运行, 无需 Docker。`python scripts/annotate_points.py` (标注) → `python scripts/generate_synthetic_dataset.py --out tests/data/fixtures_rich --n 50` (生成; 输出目录已被 .gitignore 忽略)。
+
 ---
 
 ## 附录 A: 关键常量速查
