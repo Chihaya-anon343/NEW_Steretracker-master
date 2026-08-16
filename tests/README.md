@@ -12,7 +12,9 @@
 | `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `data/fixtures/` 图片 (mono_akaze/synthetic_akaze/synthetic_dual) + `rois.json` + 模板目录 | 冒烟 (仅验证不崩溃) |
 | `test_eskf_fusion.cpp` | 13 | ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化 | 代码合成悬停/匀加速 IMU + 精确相机位姿 (零噪声) | 逐元素一致 (1e-6~1e-9) / 分级枚举 / 严格不等式 |
 | `test_eskf_multimodal.cpp` | 1 | ESKF 多模态线程化集成 | 代码合成螺旋上升轨迹 + 反推 IMU/相机/雷达 + 4 类错误注入 | 软验证 (跑通 + smoke 断言 + CSV 输出) |
-| **合计** | **70** | | | |
+| `test_yolo_decode.cpp` | 10 | YOLO 原始输出解码 + NMS | 代码合成原始张量 (BCN/BNC, 无 ONNX 依赖) | 精确框坐标/置信度/类别/抑制 |
+| `test_yolo_detector.cpp` | 5 | YoloDetector / YoloRoiProvider 端到端 | `yolo_onnx/yolov8n.onnx` + `data/fixtures/` 图片 (缺失 SKIP) | 状态码 / 不崩溃 |
+| **合计** | **85** | | | |
 
 > 数据依赖层级：纯代码 → 临时文件 (自动) → fixtures 图片 + 模板目录 (可选, 缺失时 SKIP)
 
@@ -50,6 +52,8 @@ tests/
 │   ├── test_input_system.cpp    # [L1] 输入系统
 │   ├── test_eskf_fusion.cpp     # [L0] ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化
 │   ├── test_eskf_multimodal.cpp # [L1] ESKF 多模态线程化集成 (螺旋轨迹 + 错误注入 + CSV 输出)
+│   ├── test_yolo_decode.cpp     # [L0] YOLO 原始输出解码 + NMS (合成张量, 无 ONNX)
+│   ├── test_yolo_detector.cpp   # [L1] YOLO 检测器端到端冒烟 (模型缺失 SKIP)
 │   └── test_integration.cpp     # [L2] 端到端冒烟
 └── data/fixtures/               # gitignored, 由 generate_assets.py 生成
     ├── synthetic_tiny|bc|akaze/          # 双目 State 1/2/3 (class0-only)
@@ -279,6 +283,45 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 
 ---
 
+### 4.9 `test_yolo_decode.cpp` — YOLO 原始输出解码 + NMS (10 用例)
+
+**被测 API**: `gpnp::decodeYoloOutput()` (`include/detection/YoloDecode.hpp`)
+**输入数据**: 代码合成原始 YOLOv8 张量（BCN `[6,N]` / BNC `[N,6]`，2 类），无图像、无 ONNX —— 确定性、可离线运行。
+
+> 背景: 2026-08 将 YOLO 模型从 `best.onnx`（NMS-export, `[1,300,6]` 已解码）换成 `yolo_onnx/yolov8n.onnx`（原始 YOLOv8 导出, `[1,6,8400]` 未解码）。解码 + NMS 逻辑从 `YoloDetector::postprocess()` 抽为纯函数以便单测。
+
+| # | 用例 | 输入 | 判断标准 |
+|---|------|------|---------|
+| 1 | `test_bcn_decode` | BCN 单框 cx=100,cy=100,w=40,h=20, class0=0.9 | 1 框, class_id=0, x1=80,y1=90,w=40,h=20 |
+| 2 | `test_bnc_decode` | BNC 同输入 | 与 BCN 结果逐字段一致 |
+| 3 | `test_conf_threshold_filter` | 两框 0.9 / 0.3, conf=0.5 | 仅保留 0.9 |
+| 4 | `test_all_below_threshold_empty` | 单框 0.4 < 0.5 | 空结果 |
+| 5 | `test_nms_suppress_overlap` | 两框 IoU≈0.68 > 0.45, 分数 0.9/0.8 | 仅保留高分 0.9 |
+| 6 | `test_nms_keep_distinct` | 两框 IoU=0 | 两个都保留 |
+| 7 | `test_letterbox_inverse` | ratio=0.5, dw=10, dh=20 | 反变换后 x=80,y=90,w=40,h=20 |
+| 8 | `test_clamp_to_image` | 框中心为负, 大幅出界 | clamp 回 [0,640]×[0,480] |
+| 9 | `test_class_argmax` | class1 分数更高 | class_id==1 |
+| 10 | `test_null_data_empty` | data=nullptr | 空结果 |
+
+---
+
+### 4.10 `test_yolo_detector.cpp` — YOLO 检测器端到端冒烟 (5 用例)
+
+**被测模块**: `YoloDetector` (模型加载 / detect 状态码) + `YoloRoiProvider` (YOLO → RoiGroup 外观)
+**输入数据**: `yolo_onnx/yolov8n.onnx` 模型 + `tests/data/fixtures/synthetic_akaze/left_000.png` 图片（仅冒烟，不强断言检测框）。模型或图片缺失时用例 SKIP（不 FAIL）。
+
+| # | 用例 | 输入 | 判断标准 |
+|---|------|------|---------|
+| 1 | `test_model_load_success` | 模型在位 | `isInitialized()==true` |
+| 2 | `test_model_missing_throws` | 不存在的模型路径 | 构造抛 `std::exception` |
+| 3 | `test_detect_empty_image` | 空 cv::Mat | 返回 `Status::EmptyInput`, dets 空 |
+| 4 | `test_detect_fixture_no_crash` | fixture 图片 | 返回 `Status::Success`（空检测也合法） |
+| 5 | `test_roi_provider_e2e` | fixture 图片 (单目+双目) | initialize/isReady 成功, detectMono/detect 不崩溃 |
+
+> ⚠️ **冒烟定位**: fixture 合成图非真实目标，检测结果无确定性保证，故只断言状态码/不崩溃；具体解码/NMS 正确性由 `test_yolo_decode`（4.9）确定性覆盖。
+
+---
+
 ## 5. 构建与运行
 
 > **Docker 工具链 (推荐, 与 CLion 一致)**: 本项目用 CLion Docker 工具链 (镜像 `cpp_cuda_x64_0620:latest`, 项目挂载于容器 `/tmp/NEW_Steretracker-master`)。Claude Code / 命令行经全局脚本 `docker-toolchain.sh <cmd>` (位于 `~/bin/`, 任意项目可用) 把命令转发进容器执行:
@@ -304,10 +347,12 @@ cmake --build . --target check
 # 单个运行
 ./tests/test_config
 ./tests/test_roi_generator
+./tests/test_yolo_decode
 ./tests/test_pose_solvers
 ./tests/test_extractors
 ./tests/test_input_system
 ./tests/test_eskf_fusion
+./tests/test_yolo_detector   # 需 yolo_onnx/yolov8n.onnx 在位, 否则 SKIP
 
 # 集成测试需模板目录 + fixtures
 ./tests/test_integration \
@@ -322,7 +367,8 @@ cmake --build . --target check
 | 依赖 | 方式 | 缺失时行为 |
 |------|------|-----------|
 | OpenCV / Eigen3 | REQUIRED, CMake 自动查找 | 构建失败 |
-| ONNX Runtime | 可选, `-DGPNP_ONNXRUNTIME_ROOT=<path>` | `test_input_system` 跳过编译 |
+| ONNX Runtime | 可选, `-DGPNP_ONNXRUNTIME_ROOT=<path>` | `test_input_system` / `test_yolo_detector` 跳过编译 (`test_yolo_decode` 不受影响, 无 ONNX 依赖) |
+| YOLO 模型 | 可选, 运行目录需含 `yolo_onnx/yolov8n.onnx` | `test_yolo_detector` 相关用例 SKIP |
 | 模板目录 | 可选, `-DTEST_TEMPLATE_DIR=<path>` | `test_extractors` 静默跳过, `test_integration` SKIP |
 | fixtures 图片 | 可选, `-DTEST_FIXTURES_DIR=<path>` 或 `--fixtures-dir` | 相关用例静默跳过 / SKIP |
 
@@ -348,7 +394,9 @@ cmake --build . --target check
 | 2026-08 | `test_eskf_multimodal.cpp` | 雷达跳变单点 `[5.0,5.0]` 浮点累加漏注入 → `radar_rejected==0` | 改为窗口 `[5.0,5.2]` |
 | 2026-08 | `test_eskf_multimodal.cpp` | 相机失效 `[13.0,14.0]`(1s) 致相机间隔 1.2s > `max_cam_gap_s` → reset 清空 stats | 缩短为 `[13.0,13.6]`(0.6s), 走 Degraded 而非 reset |
 | 2026-08 | `plot_eskf_traj.py` | 中文标题缺 CJK 字形 (`Glyph missing from current font`) | 配置 `font.sans-serif`(SimHei/微软雅黑) + `axes.unicode_minus=False` |
+| 2026-08-16 | `test_yolo_decode.cpp` | 新增 — YOLO 原始输出解码 + NMS 纯逻辑测试 | 解码逻辑从 `YoloDetector::postprocess()` 抽为 `YoloDecode.hpp::decodeYoloOutput()`, 用合成张量确定性断言 |
+| 2026-08-16 | `test_yolo_detector.cpp` | 新增 — YOLO 检测器端到端冒烟 | 模型/图片缺失 SKIP; 复用 `test_integration` 的 SKIP 语义 |
 
 ---
 
-*最后更新: 2026-08-15*
+*最后更新: 2026-08-16*

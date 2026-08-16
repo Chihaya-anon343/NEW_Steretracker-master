@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/fixtures/synthetic_akaze/left_000.png",
-    "right": "tests/data/fixtures/synthetic_akaze/right_000.png"
+    "left": "data/big/cj01_image_0032 - 副本.jpg",
+    "right": "data/big/cj01_image_0032.jpg"
   },
 
   "manual_roi": {
@@ -62,7 +62,7 @@
   },
 
   "yolo": {
-    "model_path": "best.onnx",
+    "model_path": "yolo_onnx/yolov8n.onnx",
     "conf_threshold": 0.5,
     "target_class_id": 0,
     "roi_expand_ratio": 0.0,
