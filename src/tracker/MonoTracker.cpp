@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <future>
 #include <iostream>
+#include <sstream>
 #include <unordered_set>
 
 namespace gpnp {
@@ -311,7 +312,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     addLogEntry(result, is_first, false);
 
     // ---- Visualization (simplified, left-only) ----
-    if (visualize && pose.success && !output_dir_.empty()) {
+    // PnP 失败时仍输出：Panel 0/1 不依赖位姿；Panel 2/3 内部各自按 pose.success 降级
+    if (visualize && !output_dir_.empty()) {
         std::string prefix = "_f" + std::to_string(current_frame_);
 
         const cv::Scalar BC_COLOR(0, 0, 255);    // red: BinaryCorner corners
@@ -356,25 +358,39 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
 
         } // end visualize_detailed_ (overview/corners)
 
-        // Panel 2: 3D axes on original image (始终生成)
+        // Panel 2: 3D axes on original image (始终生成; PnP 失败时降级为特征点 + FAIL 标注)
         {
             cv::Mat p2 = left_color_orig.clone();
-            double axis_len = 100.0;
-            auto projPoint = [&](const Eigen::Vector3d& P) -> cv::Point {
-                if (std::abs(P.z()) < 1e-6) return cv::Point(-1, -1);
-                double fx = camera_.K(0, 0), fy = camera_.K(1, 1);
-                double cx = camera_.K(0, 2), cy = camera_.K(1, 2);
-                double u = fx * P.x() / P.z() + cx;
-                double v = fy * P.y() / P.z() + cy;
-                return cv::Point(static_cast<int>(u), static_cast<int>(v));
-            };
-            Eigen::Vector3d o  = pose.R * Eigen::Vector3d(0,            0,             0) + pose.t;
-            Eigen::Vector3d ax = pose.R * Eigen::Vector3d(axis_len,     0,             0) + pose.t;
-            Eigen::Vector3d ay = pose.R * Eigen::Vector3d(0,            axis_len,      0) + pose.t;
-            Eigen::Vector3d az = pose.R * Eigen::Vector3d(0,            0,             axis_len) + pose.t;
-            cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
-            cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
-            cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
+            if (pose.success) {
+                double axis_len = 100.0;
+                auto projPoint = [&](const Eigen::Vector3d& P) -> cv::Point {
+                    if (std::abs(P.z()) < 1e-6) return cv::Point(-1, -1);
+                    double fx = camera_.K(0, 0), fy = camera_.K(1, 1);
+                    double cx = camera_.K(0, 2), cy = camera_.K(1, 2);
+                    double u = fx * P.x() / P.z() + cx;
+                    double v = fy * P.y() / P.z() + cy;
+                    return cv::Point(static_cast<int>(u), static_cast<int>(v));
+                };
+                Eigen::Vector3d o  = pose.R * Eigen::Vector3d(0,            0,             0) + pose.t;
+                Eigen::Vector3d ax = pose.R * Eigen::Vector3d(axis_len,     0,             0) + pose.t;
+                Eigen::Vector3d ay = pose.R * Eigen::Vector3d(0,            axis_len,      0) + pose.t;
+                Eigen::Vector3d az = pose.R * Eigen::Vector3d(0,            0,             axis_len) + pose.t;
+                cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
+                cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
+                cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
+            } else {
+                // 无有效位姿不画轴（单位阵 pose 画轴无意义），叠加合并特征点便于排查
+                for (int i = 0; i < total_use; ++i) {
+                    cv::Point pt(static_cast<int>(merged_pts_2d[i].x),
+                                 static_cast<int>(merged_pts_2d[i].y));
+                    cv::circle(p2, pt, 3, (i < n_bc_use) ? BC_COLOR : AK_COLOR, -1);
+                }
+                std::ostringstream oss;
+                oss << "PnP FAIL | n=" << total_use << " (BC=" << n_bc_use
+                    << ", AK=" << (total_use - n_bc_use) << ")";
+                cv::putText(p2, oss.str(), cv::Point(10, 30),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
+            }
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_axes" + prefix + ".png", p2);
         }
 
@@ -382,24 +398,29 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         if (visualize_detailed_) {
 
         // Panel 3: Reprojection error on class 0 ROI zoomed
+        // (PnP 失败时退化为仅观测点，与主路径 BC/TT reproj 的 obs-only 分支一致)
         if (total_use > 0 && !merged_pts_3d.empty()) {
             cv::Mat p3 = left_color_orig(
                 cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
             float lx = static_cast<float>(left_off.x), ly = static_cast<float>(left_off.y);
             for (int i = 0; i < total_use && i < static_cast<int>(merged_pts_3d.size()); ++i) {
-                Eigen::Vector3d P_cam = pose.R * merged_pts_3d[i] + pose.t;
-                double fx = camera_.K(0, 0), fy = camera_.K(1, 1);
-                double cx = camera_.K(0, 2), cy = camera_.K(1, 2);
-                if (std::abs(P_cam.z()) < 1e-6) continue;
-                double u = fx * P_cam.x() / P_cam.z() + cx;
-                double v = fy * P_cam.y() / P_cam.z() + cy;
-                cv::Point pd(static_cast<int>(u - lx), static_cast<int>(v - ly));
                 cv::Point po(static_cast<int>(merged_pts_2d[i].x - lx),
                              static_cast<int>(merged_pts_2d[i].y - ly));
                 cv::Scalar obs_color = (i < n_bc_use) ? BC_COLOR : AK_COLOR;
-                cv::circle(p3, pd, 2, cv::Scalar(0, 255, 0), -1);
-                cv::circle(p3, po, 4, obs_color, 1);
-                cv::line(p3, pd, po, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+                if (pose.success) {
+                    Eigen::Vector3d P_cam = pose.R * merged_pts_3d[i] + pose.t;
+                    double fx = camera_.K(0, 0), fy = camera_.K(1, 1);
+                    double cx = camera_.K(0, 2), cy = camera_.K(1, 2);
+                    if (std::abs(P_cam.z()) < 1e-6) continue;
+                    double u = fx * P_cam.x() / P_cam.z() + cx;
+                    double v = fy * P_cam.y() / P_cam.z() + cy;
+                    cv::Point pd(static_cast<int>(u - lx), static_cast<int>(v - ly));
+                    cv::circle(p3, pd, 2, cv::Scalar(0, 255, 0), -1);
+                    cv::circle(p3, po, 4, obs_color, 1);
+                    cv::line(p3, pd, po, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+                } else {
+                    cv::circle(p3, po, 4, obs_color, -1);
+                }
             }
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_reproj" + prefix + ".png", p3);
         }
@@ -622,6 +643,9 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                     cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0, 255, 0), 3);
                     cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255, 0, 0), 3);
                 }
+            } else {
+                cv::putText(vis, "PnP FAIL", cv::Point(10, 30),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             }
             utils::AsyncImageSaver::write(output_dir_ + "/mono_f"
                 + std::to_string(current_frame_) + ".png", vis);
