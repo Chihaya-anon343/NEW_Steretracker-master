@@ -223,30 +223,10 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     std::vector<cv::KeyPoint> merged_kp_left;
     std::vector<Eigen::Vector3d> merged_pts_3d;
 
-    // --- BC 3D points: align ordering with BC matched template angle ---
-    // BC extractFromBinary() reorders corners by matchCorners(ref_angle = matched->angle).
-    // dual_bc_tmpl_pts3d_ is ordered by reorderByGeometry(ref_angle = 0°).
-    // If matched angle ≠ 0°, the index-based correspondence is wrong.
-    // Fix: reorder dual_bc_tmpl_pts3d_ to the same reference angle.
+    // --- BC 3D points ---
+    // BC 输出 pts_left_match[k] 已是规范序（matchCorners 用同一参考角 θ+CPSAGL 同步
+    // 重排模板/图像两侧，起点=基准角点，与匹配角无关），直接索引 dual_bc_tmpl_pts3d_ 即可。
     std::vector<Eigen::Vector3d> bc_pts3d = dual_bc_tmpl_pts3d_;  // copy
-    const TemplateData* bc_matched = binary_extractor_->lastMatchedTemplate();
-    if (bc_matched && std::abs(bc_matched->angle) > 0.5
-        && !dual_bc_tmpl_corners_.empty()) {
-        // Build Point2f from dual_bc_tmpl_corners_ for reorderByGeometry
-        std::vector<cv::Point2f> tmpl_corners_2f = dual_bc_tmpl_corners_;
-        cv::Point2f px_ctr(
-            static_cast<float>(akaze_extractor_->templateData().template_width  / 2.0),
-            static_cast<float>(akaze_extractor_->templateData().template_height / 2.0));
-        auto order = BinaryCornerExtractor::reorderByGeometry(
-            tmpl_corners_2f, px_ctr, bc_matched->angle);
-        bc_pts3d.clear();
-        bc_pts3d.reserve(order.size());
-        for (int idx : order)
-            bc_pts3d.push_back(dual_bc_tmpl_pts3d_[idx]);
-        if (verbose_console_)
-            std::cout << "  [DualRoi][Mono] BC pts3d reordered for angle="
-                      << bc_matched->angle << "°" << std::endl;
-    }
 
     // --- BC contribution: corners[i] ↔ bc_pts3d[i] ---
     int n_bc_3d = static_cast<int>(bc_pts3d.size());
@@ -423,6 +403,59 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 }
             }
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_reproj" + prefix + ".png", p3);
+        }
+
+        // Panel 4: Image ↔ Template correspondence (side-by-side, 对齐 StereoTracker 的 dual_roi_correspondence)
+        if (total_use > 0) {
+            // Left: class-0-ROI image
+            cv::Mat p4_left = left_color_orig(
+                cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
+
+            // Right: AKAZE template (grayscale → BGR, resize to match left height)
+            const cv::Mat& tmpl_gray = akaze_extractor_->templateData().gray_image;
+            cv::Mat tmpl_color;
+            if (!tmpl_gray.empty()) {
+                cv::cvtColor(tmpl_gray, tmpl_color, cv::COLOR_GRAY2BGR);
+            } else {
+                tmpl_color = cv::Mat(p4_left.rows, p4_left.rows, CV_8UC3,
+                                     cv::Scalar(128, 128, 128));
+            }
+            double scale_tmpl = static_cast<double>(p4_left.rows) / tmpl_color.rows;
+            cv::Mat tmpl_resized;
+            cv::resize(tmpl_color, tmpl_resized, cv::Size(), scale_tmpl, scale_tmpl,
+                       cv::INTER_NEAREST);
+
+            cv::Mat p4;
+            cv::hconcat(p4_left, tmpl_resized, p4);
+
+            float lx = static_cast<float>(left_off.x), ly = static_cast<float>(left_off.y);
+            int offset_x = p4_left.cols;  // 图像与模板的水平分界
+
+            for (int i = 0; i < total_use; ++i) {
+                // 图像点 (class-0-ROI 局部坐标)
+                cv::Point pt_img(static_cast<int>(merged_pts_2d[i].x - lx),
+                                 static_cast<int>(merged_pts_2d[i].y - ly));
+
+                // 模板点 (按 scale_tmpl 缩放; BC 用与 dual_bc_tmpl_pts3d_ 同序的角点, AK 用模板匹配点)
+                cv::Point2f tmpl_pt;
+                if (i < n_bc_use && i < static_cast<int>(dual_bc_tmpl_corners_.size())) {
+                    tmpl_pt = dual_bc_tmpl_corners_[i] * scale_tmpl;
+                } else {
+                    int ak_idx = i - n_bc_use;
+                    if (ak_idx >= 0 && ak_idx < static_cast<int>(result_ak.pts_template_match.size()))
+                        tmpl_pt = result_ak.pts_template_match[ak_idx] * scale_tmpl;
+                    else
+                        continue;
+                }
+                cv::Point pt_tmpl(static_cast<int>(tmpl_pt.x) + offset_x,
+                                  static_cast<int>(tmpl_pt.y));
+
+                cv::Scalar color = (i < n_bc_use) ? BC_COLOR : AK_COLOR;
+                cv::circle(p4, pt_img,  2, color, -1);
+                cv::circle(p4, pt_tmpl, 2, color, -1);
+                cv::line(p4, pt_img, pt_tmpl, color, 1, cv::LINE_AA);
+            }
+            utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_correspondence" + prefix + ".png", p4);
         }
 
         } // end visualize_detailed_ dual-ROI panels

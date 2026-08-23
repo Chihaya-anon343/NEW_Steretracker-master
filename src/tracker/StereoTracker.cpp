@@ -1241,7 +1241,30 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     // Build valid_mask (all true, identity mapping)
     result.valid_mask.resize(total_use, true);
 
-    // 8. Pose estimation
+    // 8. Restore full-image coordinates BEFORE PnP (PnP uses full-image K cx/cy)
+    cv::Point2d left_off(static_cast<double>(left_pri.x), static_cast<double>(left_pri.y));
+    cv::Point2d right_off(static_cast<double>(right_pri.x), static_cast<double>(right_pri.y));
+    offsetResultToOriginal(result, left_off, right_off, left_color_orig, right_color_orig);
+
+    // Fill disparity for logging (right.x - left.x, match AKAZE convention)
+    {
+        int n = std::min(static_cast<int>(result.pts_left_good.size()),
+                         static_cast<int>(result.pts_right_good.size()));
+        result.disparity.resize(n);
+        result.dx_filtered.resize(n);
+        for (int i = 0; i < n; ++i) {
+            double d = static_cast<double>(result.pts_left_good[i].x -
+                                           result.pts_right_good[i].x);
+            result.dx_filtered[i] = d;
+            result.disparity[i] = -d;  // = right.x - left.x
+        }
+        if (n > 0 && verbose_console_)
+            std::cout << "  [DualRoi] Full-image stereo: " << n
+                      << " pairs, median_disp=" << computeMedian(result.disparity) << " px"
+                      << std::endl;
+    }
+
+    // 9. Pose estimation
     PoseEstimate pose;
     double gpnp_timing = 0.0;
     auto t_pnp_start = std::chrono::high_resolution_clock::now();
@@ -1279,11 +1302,6 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     auto t_pnp_end = std::chrono::high_resolution_clock::now();
     result.timing["gpnp"] = std::chrono::duration<double, std::milli>(t_pnp_end - t_pnp_start).count();
-
-    // 9. Restore full-image coordinates + finalize
-    cv::Point2d left_off(static_cast<double>(left_pri.x), static_cast<double>(left_pri.y));
-    cv::Point2d right_off(static_cast<double>(right_pri.x), static_cast<double>(right_pri.y));
-    offsetResultToOriginal(result, left_off, right_off, left_color_orig, right_color_orig);
 
     if (pose.success) {
         finalizePose(result, pose);

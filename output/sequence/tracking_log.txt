@@ -1,12 +1,12 @@
 ================================================================
  Steretracker 追踪日志
 ================================================================
-运行模式: normal (单目)
-配置路径: config/tracker_config_eskf.json
+运行模式: normal (双目)
+配置路径: config/tracker_config.json
 输入源目录:   type=file
 输出目录: output/sequence
 相机: fx=541.764 fy=541.764 cx=553.682 cy=232.397 baseline_mm=60
-YOLO: model=best.onnx conf=0.5 class=0 expand=0
+YOLO: model=yolo_onnx/yolov8n.onnx conf=0.5 class=0 expand=0
 AKAZE模板: data/big/img_1.png  500x500mm  scale=0.5  min_pts=4
 BC模板: data/NewMuBan(reordered)  corners=10  kernel=3  p2m_c0=0.004  p2m_c1=0.0004
 TT模板: data/NewMuBan(reordered)  scale_factor=4  sq_c0=0.2  sq_c1=0.04
@@ -16,12 +16,12 @@ close_range: enabled=1  class1_min=100  expand_ratio=1
 
 输出目录: output/sequence
 [输入系统] 初始化 InputProvider...
-[FileStereoSource] 已加载: data/big/cj01_image_0032.jpg / data/big/cj01_image_0032.jpg
+[FileStereoSource] 已加载: tests/data/fixtures_rich/synthetic_dual/left_000.png / tests/data/fixtures_rich/synthetic_dual/right_000.png
 [InputProvider] 初始化完成, 总帧数: 1
 [输入系统] 就绪, 最大帧数: 999999
-[YoloRoiProvider] Ready. Model: best.onnx, conf=0.5, class=0, expand=0
-初始化 MonoTracker（单目模式）...
-[AkazeGpnp] Template features: 129 kp, 128.094 ms
+[YoloRoiProvider] Ready. Model: yolo_onnx/yolov8n.onnx, conf=0.5, class=0, expand=0
+初始化 StereoTracker（双目模式）...
+[AkazeGpnp] Template features: 129 kp, 123.593 ms
 [PoseUtils] Loaded 24 templates from data/NewMuBan(reordered)
 [BinaryCorner] Loaded 24 templates from data/NewMuBan(reordered)
 [BinaryCorner] 3D pts (mm): 10 (angle=0, scale=4 mm/px  use_class1=false)
@@ -29,27 +29,34 @@ close_range: enabled=1  class1_min=100  expand_ratio=1
 [TinyTarget] Loaded 24 templates from data/NewMuBan(reordered)
 [TinyTarget] 3D pts (mm): half=100  square_size_m=0.2  use_class1=false
 [TrackerBase] Pre-initialized 3 extractors: AkazeGpnp, BinaryCorner, TinyTarget
-[AkazeGpnp] Template features: 129 kp, 104.727 ms
-单目模式已启用（仅左图）
+[AkazeGpnp] Template features: 129 kp, 99.6074 ms
 
-===== 第 1 帧 (单目) =====
-[RoiGenerator] Dual-ROI mode triggered (class0 area=596744 > 490000)  primary=769x776  secondary=63x62
-[YoloRoiProvider] Mono ROI=(410,422,769,776) + secondary=(755,829,63,62)
+===== 第 1 帧 =====
+[RoiGenerator] Dual-ROI mode triggered (class0 area=714868 > 490000)  primary=844x847  secondary=68x69
+[RoiGenerator] Dual-ROI mode triggered (class0 area=713168 > 490000)  primary=841x848  secondary=68x69
+[YoloRoiProvider] ROI=(332,54,844,847) + secondary=(726,508,68,69)
+  双 ROI 模式: secondary=(68x69)
 [DualRoi] BC template prepared: 10 corners on AKAZE template (798x786)  real_size=500x500mm
-[DualRoi][Mono] pad=50  primary=769x776  secondary(raw)=63x62  secondary(expanded)=163x162  offset=(295,357)
-[DualRoi][Mono] BinaryCorner on class 0: 10 corners
-[DualRoi][Mono] AKAZE on class 1: 20 template matches (kp=20)
-[DualRoi][Mono] Merged: 30 total (BC=10, AK=20)  pts3d=30
-[MonoPnP] EPnP 成功: inliers=30/30, t=(-97.2513, 112.774, 339.451) mm
-  Pose: rvec=[0.00818411, 0.00342125, -0.0033305]  tvec=[-97.2513, 112.774, 339.451] mm  n_pts=30
-[DualRoi][Mono] Frame done: n_pts=30  PnP=OK
-  特征点: 30  匹配: 30  投影: 0  模板: 0  GPNP: 成功  耗时: 0ms  PnP t(mm)=[-97.2513, 112.774, 339.451]
+[DualRoi] pad=50  primary=844x847  secondary(raw)=68x69  secondary(expanded)=168x169  offset=(344,404)
+[BinaryCorner] Left ROI=844x847, white=234432 | Right ROI=844x847, white=235675
+[BinaryCorner] Extracted 10 corners (L), 10 corners (R), stereo=10, angle=345, overlap=0.705971, template_corners=10, 3d_pts=10
+[DualRoi] BinaryCorner on class 0: 10 corners
+[DualRoi] AKAZE on class 1: 18 template matches (kp=21, flow=21)
+[DualRoi] Merged: 28 total (BC=10 [3d=10], AK=18)  pts3d=28
+  [InitialPnP] 28 3D↔2D 对应关系
+  [InitialPnP] Success | n=28 | inliers=25 | t=[-279.902,-145.849,366.734] | r=[   0.98527  -0.162409 -0.0535454
+  0.164427   0.985743   0.035705
+ 0.0469832 -0.0439834   0.997927]
+  [DualRoi] InitialPnP OK, warm-starting GPNP
+  [GPnP Diag] t_warm=[-279.902,-145.849,366.734]  t_opt=[-279.902,-145.849,366.734]  t·t_warm=234111  |ΔR|=3.10317e-17
+  Pose: rvec=[-0.0400517, -0.0505262, 0.164269]  tvec=[-279.902, -145.849, 366.734] mm  n_pts=28
+[DualRoi] Frame done: n_pts=28  GPNP=OK  time=2.52287ms
+  特征点: 28  匹配: 28  投影: 28  模板: 0  GPNP: 成功  耗时: 2.52287ms  PnP t(mm)=[-279.902, -145.849, 366.734]
 ===== 运行汇总 =====
 处理帧数: 1  位姿成功: 1 (100.000000%)
-实际处理 FPS: 9.704989
-ESKF 统计: IMU样本=0  相机更新=0  FDI忽略=0  姿态跳过=0  雷达接受=0  雷达拒绝=0  延迟兜底=0
-+-----+------------+--------+--------+--------+----------+--------+----------+----------+
-|  Fr#|   Timestamp|     1st|      FB|     nKp|    nMatch|   nProj|     nTmpl|  Disp(px)|
-+-----+------------+--------+--------+--------+----------+--------+----------+----------+
-|    0|1786788260.665|       Y|       N|      30|        30|       0|         0|         0|
-+=====+============+========+========+========+==========+========+==========+==========+
+实际处理 FPS: 7.045184
++-----+------------+--------+--------+--------+----------+--------+----------+----------+----------+
+|  Fr#|   Timestamp|     1st|      FB|     nKp|    nMatch|   nProj|     nTmpl|  Disp(px)|       PnP|
++-----+------------+--------+--------+--------+----------+--------+----------+----------+----------+
+|    1|1787472343.559|       Y|       N|      28|        28|       0|         0|         0|        OK|
++=====+============+========+========+========+==========+========+==========+==========+==========+

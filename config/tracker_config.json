@@ -6,9 +6,9 @@
     "_comment": "type: file / directory / sequence",
     "max_frames": 0,
     "image": {
-      "type": "directory",
-      "left_path": "",
-      "right_path": "",
+      "type": "file",
+      "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
+      "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
       "directory_path": "data/stere_frames",
       "left_pattern": "left",
       "right_pattern": "right",
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/fixtures_rich/mono_dual/left_002.png",
-    "right": "tests/data/fixtures_rich/mono_dual/left_002.png"
+    "left": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
+    "right": "tests/data/fixtures_rich/synthetic_dual/left_000.png"
   },
 
   "manual_roi": {
