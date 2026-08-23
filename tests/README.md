@@ -14,7 +14,8 @@
 | `test_eskf_multimodal.cpp` | 1 | ESKF 多模态线程化集成 | 代码合成螺旋上升轨迹 + 反推 IMU/相机/雷达 + 4 类错误注入 | 软验证 (跑通 + smoke 断言 + CSV 输出) |
 | `test_yolo_decode.cpp` | 10 | YOLO 原始输出解码 + NMS | 代码合成原始张量 (BCN/BNC, 无 ONNX 依赖) | 精确框坐标/置信度/类别/抑制 |
 | `test_yolo_detector.cpp` | 5 | YoloDetector / YoloRoiProvider 端到端 | `yolo_onnx/yolov8n.onnx` + `data/fixtures/` 图片 (缺失 SKIP) | 状态码 / 不崩溃 |
-| **合计** | **85** | | | |
+| `test_synthetic_pipeline.cpp` | 8 | YOLO → ROI → 特征 → PnP → 位姿 全流程 (单目/双目 × 四策略) | `tests/data/fixtures_rich` 合成图 + 特征点 txt + 模板 | 与 solvePnP 真值比对平移/旋转误差 |
+| **合计** | **93** | | | |
 
 > 数据依赖层级：纯代码 → 临时文件 (自动) → fixtures 图片 + 模板目录 (可选, 缺失时 SKIP)
 
@@ -322,6 +323,36 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 
 ---
 
+### 4.11 `test_synthetic_pipeline.cpp` — 合成图全流程 (8 用例)
+
+**被测模块**: `YoloRoiProvider` (YOLO → ROI) + `StereoTracker::process()` / `MonoTracker::process()` 完整链路
+**输入数据**: `tests/data/fixtures_rich` 合成图 (由 `scripts/generate_synthetic_dataset.py` 生成, 被 .gitignore 忽略) + 每图 `*_class0.txt`/`*_class1.txt` 特征点 + `scripts/class0_points.txt` 模板点 + `data/big/img_1.png`(AKAZE) / `data/NewMuBan(reordered)`(BC/TT) 模板
+
+**覆盖**: 单目/双目 × 四策略 (TinyTarget / BinaryCorner / AKAZE / Dual-ROI) = 8 项, 每项 frame 0。
+
+| # | 用例 | 输入 | 提取器 |
+|---|------|------|--------|
+| 1 | 单目 TinyTarget | `mono_tiny/left_000.png` | TinyTarget |
+| 2 | 单目 BinaryCorner | `mono_bc/left_000.png` | BinaryCorner |
+| 3 | 单目 AKAZE | `mono_akaze/left_000.png` | AKAZE |
+| 4 | 单目 Dual-ROI | `mono_dual/left_000.png` | BC(class0)+AK(class1) |
+| 5 | 双目 TinyTarget | `synthetic_tiny/` | TinyTarget |
+| 6 | 双目 BinaryCorner | `synthetic_bc/` | BinaryCorner |
+| 7 | 双目 AKAZE | `synthetic_akaze/` | AKAZE |
+| 8 | 双目 Dual-ROI | `synthetic_dual/` | BC+AK |
+
+**机制**:
+- **合成内参**: f=1000, cx=W/2, cy=H/2; 模板物理 500×500mm。双目基线按 `disp·500/size_nominal` 反推 (右图右移 `DISP` px)。
+- **ROI 获取 (YOLO 优先 + 真值回退)**: 先跑真实 ONNX YOLO; 检测框中心/尺寸与特征点包围盒(真值)不一致时回退到特征点包围盒。`--no-yolo` 强制回退 (诊断)。
+- **真值位姿**: `cv::solvePnP(class0_txt 投影点, class0_points.txt→3D mm)` 得 `R_gt, t_gt`。
+- **断言**: `success` + `t.z>0` + 平移相对误差 `< 阈值` (深度跨 625~25000mm 用相对值) + 旋转粗检 (平面目标有姿态歧义)。
+
+**实测结论** (2026-08): Dual-ROI 精确 (平移<1%/旋转<0.5°); 单目 tiny/bc/akaze 平移 2~5% 正确、旋转有平面歧义误差 (6~34°); 双目 tiny/akaze 因立体光流/角点 IoU 匹配退化而失败 (已知限制)。BC/TT 物理尺度已在测试内标定 (pixel_to_meter_scale=0.0072 / square_size_m=0.356) 以对齐 AKAZE 500mm 约定。
+
+> 运行: `./tests/test_synthetic_pipeline [--no-yolo] [--fixtures-rich-dir DIR] ...`。fixtures_rich / 模板 / 特征点 txt 缺失时 SKIP (不 FAIL)。
+
+---
+
 ## 5. 构建与运行
 
 > **Docker 工具链 (推荐, 与 CLion 一致)**: 本项目用 CLion Docker 工具链 (镜像 `cpp_cuda_x64_0620:latest`, 项目挂载于容器 `/tmp/NEW_Steretracker-master`)。Claude Code / 命令行经全局脚本 `docker-toolchain.sh <cmd>` (位于 `~/bin/`, 任意项目可用) 把命令转发进容器执行:
@@ -353,6 +384,7 @@ cmake --build . --target check
 ./tests/test_input_system
 ./tests/test_eskf_fusion
 ./tests/test_yolo_detector   # 需 yolo_onnx/yolov8n.onnx 在位, 否则 SKIP
+./tests/test_synthetic_pipeline  # 需 fixtures_rich + 模板 + 模型在位, 否则 SKIP
 
 # 集成测试需模板目录 + fixtures
 ./tests/test_integration \

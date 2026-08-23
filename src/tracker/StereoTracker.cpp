@@ -970,11 +970,12 @@ void StereoTracker::prepareDualBcTemplate() {
 
     double real_w = config_.template_real_width_mm;
     double real_h = config_.template_real_height_mm;
+    const double cx = real_w / 2.0, cy = real_h / 2.0;
     dual_bc_tmpl_pts3d_.reserve(dual_bc_tmpl_corners_.size());
     for (const auto& c : dual_bc_tmpl_corners_)
         dual_bc_tmpl_pts3d_.emplace_back(
-            c.x / static_cast<double>(tw) * real_w,
-            c.y / static_cast<double>(th) * real_h, 0.0);
+            c.x / static_cast<double>(tw) * real_w - cx,
+            c.y / static_cast<double>(th) * real_h - cy, 0.0);
 
     dual_bc_template_ready_ = true;
     if (verbose_console_)
@@ -1384,16 +1385,14 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_corners" + prefix + ".png", p1);
         }
 
-        // --- Panel 2: 3D axes on original image (origin = template center) ---
+        // --- Panel 2: 3D axes on original image (origin = 目标中心, 3D 点已居中) ---
         {
             cv::Mat p2 = left_color_orig.clone();
             double axis_len = 100.0;
-            double cx = config_.template_real_width_mm  / 2.0;  // template center X (mm)
-            double cy = config_.template_real_height_mm / 2.0;  // template center Y (mm)
-            Eigen::Vector3d o  = pose.R * Eigen::Vector3d(cx,        cy,        0) + pose.t;
-            Eigen::Vector3d ax = pose.R * Eigen::Vector3d(cx + axis_len, cy,     0) + pose.t;
-            Eigen::Vector3d ay = pose.R * Eigen::Vector3d(cx,       cy + axis_len, 0) + pose.t;
-            Eigen::Vector3d az = pose.R * Eigen::Vector3d(cx,       cy,        axis_len) + pose.t;
+            Eigen::Vector3d o  = pose.R * Eigen::Vector3d(0, 0, 0) + pose.t;
+            Eigen::Vector3d ax = pose.R * Eigen::Vector3d(axis_len, 0, 0) + pose.t;
+            Eigen::Vector3d ay = pose.R * Eigen::Vector3d(0, axis_len, 0) + pose.t;
+            Eigen::Vector3d az = pose.R * Eigen::Vector3d(0, 0, axis_len) + pose.t;
             cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);

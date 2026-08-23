@@ -120,11 +120,12 @@ void MonoTracker::prepareDualBcTemplate() {
 
     double real_w = config_.template_real_width_mm;
     double real_h = config_.template_real_height_mm;
+    const double cx = real_w / 2.0, cy = real_h / 2.0;
     dual_bc_tmpl_pts3d_.reserve(dual_bc_tmpl_corners_.size());
     for (const auto& c : dual_bc_tmpl_corners_) {
         dual_bc_tmpl_pts3d_.emplace_back(
-            c.x / static_cast<double>(tw) * real_w,
-            c.y / static_cast<double>(th) * real_h, 0.0);
+            c.x / static_cast<double>(tw) * real_w - cx,
+            c.y / static_cast<double>(th) * real_h - cy, 0.0);
     }
 
     dual_bc_template_ready_ = true;

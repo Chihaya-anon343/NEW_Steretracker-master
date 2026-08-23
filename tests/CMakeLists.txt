@@ -219,6 +219,11 @@ if(GPNP_ONNXRUNTIME_FOUND)
     gpnp_add_test(test_yolo_detector
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_yolo_detector.cpp
     )
+
+    # 合成图全流程 (YOLO → 位姿, 双目/单目 × 四策略 = 8 项)
+    gpnp_add_test(test_synthetic_pipeline
+        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_synthetic_pipeline.cpp
+    )
 else()
     message(WARNING
         "ONNX Runtime 未找到 (设置 GPNP_ONNXRUNTIME_ROOT) — "
@@ -253,7 +258,7 @@ add_custom_target(check
 # ============================================================================
 set(GPNP_TEST_LIST "test_config, test_roi_generator, test_yolo_decode, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
 if(GPNP_ONNXRUNTIME_FOUND)
-    set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system, test_yolo_detector")
+    set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system, test_yolo_detector, test_synthetic_pipeline")
 endif()
 message(STATUS "GPNP 测试配置:")
 message(STATUS "  测试可执行: ${GPNP_TEST_LIST}")

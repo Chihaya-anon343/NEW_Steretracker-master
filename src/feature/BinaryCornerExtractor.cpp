@@ -118,11 +118,16 @@ void BinaryCornerExtractor::initPts3dFromTemplates() {
 
     double s_mm_per_px = scale * 1000.0;  // m/px → mm/px
     const auto& tc = tmpl_0->corners;
+    if (tc.empty()) return;
+    double mx = 0.0, my = 0.0;
+    for (const auto& p : tc) { mx += p.x; my += p.y; }
+    mx = mx / static_cast<double>(tc.size()) * s_mm_per_px;
+    my = my / static_cast<double>(tc.size()) * s_mm_per_px;
     template_data_.pts_3d.clear();
     template_data_.pts_3d.reserve(tc.size());
-    for (const auto& pt : tc) {
-        template_data_.pts_3d.emplace_back(pt.x * s_mm_per_px,
-                                           pt.y * s_mm_per_px, 0.0);
+    for (const auto& p : tc) {
+        template_data_.pts_3d.emplace_back(p.x * s_mm_per_px - mx,
+                                           p.y * s_mm_per_px - my, 0.0);
     }
 
     if (g_verbose_console)
