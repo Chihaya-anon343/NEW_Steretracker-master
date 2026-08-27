@@ -1,0 +1,14 @@
+# Class 1 Feature Points (manual annotation)
+# Image: data/big/img_1.png
+# Format: Corner_Index: X, Y
+# Image Size: 798x786
+Corner_0: 385.00, 427.00
+Corner_1: 385.00, 451.00
+Corner_2: 373.00, 453.00
+Corner_3: 373.00, 464.00
+Corner_4: 408.00, 465.00
+Corner_5: 409.00, 453.00
+Corner_6: 398.00, 452.00
+Corner_7: 397.00, 437.00
+Corner_8: 410.00, 436.00
+Corner_9: 408.00, 427.00

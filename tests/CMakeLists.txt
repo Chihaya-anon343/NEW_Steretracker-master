@@ -188,6 +188,11 @@ gpnp_add_test(test_roi_generator
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_roi_generator.cpp
 )
 
+# YOLO 原始输出解码 + NMS 纯逻辑 (无 ONNX 依赖)
+gpnp_add_test(test_yolo_decode
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_yolo_decode.cpp
+)
+
 # PnP 求解器 (需要 Eigen + OpenCV calib3d)
 gpnp_add_test(test_pose_solvers
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_pose_solvers.cpp
@@ -209,10 +214,20 @@ if(GPNP_ONNXRUNTIME_FOUND)
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_input_system.cpp
     )
     target_link_libraries(test_input_system PRIVATE ${GPNP_ONNXRUNTIME_LIB})
+
+    # YOLO 检测器端到端冒烟 (需要 ONNX + YoloRoiProvider.cpp)
+    gpnp_add_test(test_yolo_detector
+        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_yolo_detector.cpp
+    )
+
+    # 合成图全流程 (YOLO → 位姿, 双目/单目 × 四策略 = 8 项)
+    gpnp_add_test(test_synthetic_pipeline
+        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_synthetic_pipeline.cpp
+    )
 else()
     message(WARNING
         "ONNX Runtime 未找到 (设置 GPNP_ONNXRUNTIME_ROOT) — "
-        "跳过 test_input_system")
+        "跳过 test_input_system / test_yolo_detector")
 endif()
 
 # 方案B: ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化 (纯 Eigen + Threads)
@@ -232,7 +247,7 @@ gpnp_add_test(test_eskf_multimodal
 # 一键运行全部测试 (ctest 封装)
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_config test_roi_generator test_pose_solvers
+    DEPENDS test_config test_roi_generator test_yolo_decode test_pose_solvers
             test_extractors test_integration test_eskf_fusion test_eskf_multimodal
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "运行 Steretracker 单元与集成测试"
@@ -241,9 +256,9 @@ add_custom_target(check
 # ============================================================================
 # 摘要
 # ============================================================================
-set(GPNP_TEST_LIST "test_config, test_roi_generator, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
+set(GPNP_TEST_LIST "test_config, test_roi_generator, test_yolo_decode, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
 if(GPNP_ONNXRUNTIME_FOUND)
-    set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system")
+    set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system, test_yolo_detector, test_synthetic_pipeline")
 endif()
 message(STATUS "GPNP 测试配置:")
 message(STATUS "  测试可执行: ${GPNP_TEST_LIST}")

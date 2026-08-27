@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/fixtures_rich/mono_akaze/left_000.png",
-    "right": "tests/data/fixtures_rich/mono_akaze/left_000.png"
+    "left": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
+    "right": "tests/data/fixtures_rich/synthetic_dual/right_000.png"
   },
 
   "manual_roi": {
@@ -45,7 +45,7 @@
 
   "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
   "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
-  "mono_mode": true,
+  "mono_mode": false,
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
@@ -53,12 +53,13 @@
     "log_file": true
   },
 
+  "_comment_camera": "合成数据生成参数 (generate_synthetic_dataset.py: FOCAL_LEN=1000, cx=640, cy=480, 右图右移20px → baseline≈-13.1mm)",
   "camera": {
-    "fx": 541.764,
-    "fy": 541.764,
-    "cx": 553.682,
-    "cy": 232.397,
-    "baseline_mm": 60.0
+    "fx": 1000.0,
+    "fy": 1000.0,
+    "cx": 640.0,
+    "cy": 480.0,
+    "baseline_mm": -13.1
   },
 
   "yolo": {
@@ -71,9 +72,9 @@
 
   "strategies": {
     "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, >= akaze_min -> AKAZE, else BinaryCorner",
-    "akaze_min_area": 80000,
-    "tiny_max_area": 900,
-    "dual_trigger_area": 200000,
+    "akaze_min_area": 40001,
+    "tiny_max_area": 400,
+    "dual_trigger_area": 490000,
     "stereo_mono_fallback": false,
 
     "close_range": {
@@ -90,7 +91,7 @@
       "template_path": "data/big/img_1.png",
       "template_real_width_mm": 500.0,
       "template_real_height_mm": 500.0,
-      "scale": 1,
+      "scale": 0.5,
       "gpnp_min_pts": 4,
       "use_initial_pnp": true
     },

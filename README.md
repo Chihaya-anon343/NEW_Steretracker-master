@@ -212,7 +212,11 @@ struct SensorPacket {
 
 **模块**: `YoloDetector` + `YoloRoiProvider` + `RoiGenerator`
 
-基于 ONNX Runtime 运行 YOLO 推理（`best.onnx`），输出目标类别 (class 0 → 整体 / class 1 → 中心区域) 与边界框。
+基于 ONNX Runtime 运行 YOLO 推理（模型 `yolo_onnx/yolov8n.onnx`，2 类：class 0 → 整体 / class 1 → 中心区域），输出目标类别与边界框。
+
+**模型输出格式（原始 YOLOv8 导出，未做 NMS）**: 输出张量 `[1, 4+nc, N]`（BCN）或 `[1, N, 4+nc]`（BNC），前 4 通道为 `cx,cy,w,h`（输入尺度），随后 `nc` 个类别分数。`YoloDetector::postprocess()` 负责在推理后解码（cxcywh → xyxy → 反 letterbox → clamp）+ 贪心 NMS（IoU 阈值 0.45）。解码逻辑抽离为无 ONNX 依赖的纯函数 `decodeYoloOutput()`（`include/detection/YoloDecode.hpp`），可直接单测。
+
+> ⚠️ 模型必须为**原始 YOLOv8 导出格式**。若换用带 NMS/已解码输出的 ONNX（旧 `best.onnx` 为 `[1,300,6]` 已解码格式），需同步调整解码逻辑。
 
 检测接口因模式不同：
 
@@ -673,6 +677,37 @@ python scripts/camera_capture.py --preview
 ./build/Steretracker config/tracker_config_eskf.json
 ```
 
+### 12.1 合成数据生成与特征点标注脚本
+
+> 深度学习训练/测试用的合成图像数据集工具链（Windows 主机 Python 3.8 + OpenCV 直接运行，无需 Docker）。
+
+| 脚本 | 用途 |
+|------|------|
+| `scripts/annotate_points.py` | **交互式特征点标注**：展示目标图，鼠标左键依次点 2×N 个点（前 N 个归 class 0 整体、后 N 个归 class 1 中心），输出 `Corner_N: X, Y` 格式 txt（右键/u 撤销，q/ESC 取消） |
+| `scripts/generate_synthetic_dataset.py` | **合成训练数据集生成**：复用 `tests/scripts/generate_assets.py` 的图像参数与五状态分类（tiny/bc/akaze/dual），对目标施加 3 轴姿态（yaw 0–360° 全覆盖、pitch/roll ±10°）+ 随机尺度 + 任意位置（不被截断）的透视投影，**每张图输出 class0/class1 两套特征点 txt** + `manifest.json` |
+
+**特征点文件格式**（与 `scripts/class0_points.txt` 一致，兼容 C++ `PoseUtils::readCorners()`）：
+
+```
+# Class 0 Feature Points (synthetic)
+# Format: Corner_Index: X, Y
+# Image Size: 640x480
+Corner_0: 474.25, 390.89
+...
+```
+
+**用法**：
+
+```bash
+# 1) 标注特征点 (输出 scripts/class0_points.txt + scripts/class1_points.txt)
+python scripts/annotate_points.py --image data/big/img_1.png --out-dir scripts
+
+# 2) 生成合成训练数据集 (每场景 --n 帧, 双目 + mono)
+python scripts/generate_synthetic_dataset.py --out tests/data/fixtures_rich --n 50
+```
+
+合成数据输出：`tests/data/fixtures_rich/synthetic_{tiny,bc,akaze,dual}/`（`left/right_XXX.png` + 各 2 个特征点 txt）、`mono_*/`（左图拷贝）与 `manifest.json`。输出目录已在 `.gitignore` 中。
+
 ---
 
 ## 13. 项目目录结构
@@ -682,7 +717,9 @@ Steretracker/
 ├── README.md
 ├── CMakeLists.txt
 ├── main.cpp                    # 程序入口 (YOLO ROI + InputProvider + 模式分发)
-├── best.onnx                   # YOLO ONNX 模型
+│
+├── yolo_onnx/                  # YOLO ONNX 模型 (yolov8n.onnx, 原始 YOLOv8 导出 2 类)
+│   └── yolov8n.onnx
 │
 ├── config/
 │   ├── tracker_config.json
@@ -692,7 +729,7 @@ Steretracker/
 │
 ├── include/
 │   ├── common/                 # Types.hpp, Config.hpp, GeometryUtils.hpp
-│   ├── detection/              # YoloDetector, YoloRoiProvider, RoiGenerator
+│   ├── detection/              # YoloDetector, YoloDecode, YoloRoiProvider, RoiGenerator
 │   ├── feature/                # FeatureExtractor, AkazeGpnp, BinaryCorner, TinyTarget
 │   ├── fusion/                 # EskfFusionManager (ESKF 多源融合适配层)
 │   ├── input/                  # InputProvider, IStereoImageSource, CameraSource, RingBuffer, SimulatedSensors
@@ -712,10 +749,15 @@ Steretracker/
 │   ├── CMakeLists.txt
 │   ├── framework/TestAssert.hpp # 断言框架 (TEST_ASSERT/REGISTER_TEST)
 │   ├── scripts/                 # generate_assets.py, plot_eskf_traj.py (ESKF 轨迹可视化)
-│   ├── unit/                    # test_config/roi/pose/extractors/input/eskf_fusion/eskf_multimodal/integration
+│   ├── unit/                    # test_config/roi/pose/extractors/input/eskf_fusion/eskf_multimodal/integration/yolo_decode/yolo_detector
 │   └── data/fixtures/           # 合成测试图 (gitignored, generate_assets.py 生成)
 │
-├── scripts/camera_capture.py   # 摄像头预览/抓拍辅助脚本
+├── scripts/
+│   ├── camera_capture.py       # 摄像头预览/抓拍辅助脚本
+│   ├── annotate_points.py      # 交互式特征点标注 (class0/class1 特征点)
+│   ├── class0_points.txt       # class0 特征点 (data/big/img_1.png 上手工标注)
+│   ├── class1_points.txt       # class1 特征点
+│   └── generate_synthetic_dataset.py  # 合成训练数据集生成 (3轴旋转 + 特征点标注)
 ├── sysml/                      # SysML 需求模型
 │   ├── sysrequire.puml         # 系统需求规格 (SYS-REQ)
 │   ├── softwarerequire.puml

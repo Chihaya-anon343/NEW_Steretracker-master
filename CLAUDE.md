@@ -1092,7 +1092,7 @@ struct SensorPacket {
 
     // ========== YOLO 配置 ==========
     "yolo": {
-        "model_path": "best.onnx",
+        "model_path": "yolo_onnx/yolov8n.onnx",  // 原始 YOLOv8 导出 (2 类, 见 §10.8)
         "device_type": "Auto",         // "Auto" | "CPU" | "CUDA"
         "conf_threshold": 0.5,
         "target_class_id": 0,          // class 0 = 整体
@@ -1557,9 +1557,16 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 | 文件 | 关键方法 |
 |------|---------|
-| `include/detection/YoloDetector.hpp` | detect() — ONNX推理 (header-only, ~424行) |
+| `include/detection/YoloDetector.hpp` | detect() — ONNX推理 + postprocess() 原始 YOLOv8 解码 (header-only) |
+| `include/detection/YoloDecode.hpp` | **decodeYoloOutput() — 纯函数解码 + NMS** (无 ONNX 依赖, 可单测) |
 | `include/detection/YoloRoiProvider.hpp` + `.cpp` | detect() (双目), detectMono() (单目) |
 | `include/detection/RoiGenerator.hpp` + `.cpp` | generate(), generateGroup(), generateStereoGroup(), detectionToRoi(), normalizeStereoPair() |
+
+> **YOLO 输出解码格式** (2026-08 更换模型后)：
+> - 当前模型 `yolo_onnx/yolov8n.onnx` 为**原始 YOLOv8 导出**，输出张量 `[1, 4+nc, N]`（BCN）或 `[1, N, 4+nc]`（BNC），**未做 NMS**。`postprocess()` 从 shape 自动判定布局（`dim1 < dim2` → BCN），解码 cxcywh → xyxy → 反 letterbox `(x-dw)/ratio` → clamp → 贪心 NMS（IoU 阈值取 `config_.iou_threshold`，默认 0.45）。
+> - 解码+NMS 逻辑在 `YoloDecode.hpp::decodeYoloOutput()` 中，`postprocess()` 只负责取 tensor → 算 shape/layout → 调用。**NMS 用内联贪心实现**（非 `cv::dnn::NMSBoxes`，避免引入 opencv_dnn 链接依赖——根 CMakeLists 的 `find_package(OpenCV)` 不含 dnn 组件）。
+> - ⚠️ 旧模型 `best.onnx` 为 **NMS-export 已解码格式**（`[1,300,6]` = xyxy+conf+class_id），当前代码**不再兼容**。换回已解码模型需重写 postprocess 解码分支。
+> - 2 类语义与 class0/class1 对齐：class 0 = 整体（primary ROI），class 1 = 中心（secondary ROI / State 5 回退），无需类别重映射。
 
 ### 10.9 可视化
 
@@ -1596,7 +1603,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 文件 | 用途 |
 |------|------|
 | `config/tracker_config.json` | 默认配置文件 |
-| `best.onnx` | YOLO ONNX 模型 |
+| `yolo_onnx/yolov8n.onnx` | YOLO ONNX 模型 (原始 YOLOv8 导出, 2 类; 旧 `best.onnx` 已弃用) |
 | `data/` | 测试图像与模板数据 |
 | `sysml/` | SysML 需求模型 (sysrequire.puml, softwarerequire.puml, flow.puml) |
 
@@ -1611,7 +1618,22 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `tests/README.md` | 测试体系文档 (用例清单/构建运行/修复记录) |
 | `tests/unit/test_eskf_fusion.cpp` | ESKF 单链路测试 (反向传播/兜底/退化监控/线程化, 13 用例) |
 | `tests/unit/test_eskf_multimodal.cpp` | ESKF 多模态线程化集成测试 (螺旋轨迹 + 4 类错误注入 + CSV 输出) |
+| `tests/unit/test_yolo_decode.cpp` | YOLO 原始输出解码 + NMS 纯逻辑测试 (合成张量, 无 ONNX 依赖, 10 用例) |
+| `tests/unit/test_yolo_detector.cpp` | YOLO 检测器端到端冒烟 (模型加载/状态码/YoloRoiProvider; 模型缺失 SKIP, 5 用例) |
 | `tests/scripts/plot_eskf_traj.py` | ESKF 融合轨迹可视化脚本 (真值 vs 融合 + 错误段标注) |
+
+### 10.14 脚本工具 (数据标注 / 合成数据生成)
+
+| 文件 | 关键内容 |
+|------|---------|
+| `scripts/camera_capture.py` | 摄像头预览/抓拍/连拍/流式导出 |
+| `scripts/annotate_points.py` | **交互式特征点标注**: 在目标图上点 2×N 个点 (前 N=class0 整体, 后 N=class1 中心), 输出 `Corner_N: X, Y` txt (与 `readCorners()` 兼容) |
+| `scripts/class0_points.txt` / `scripts/class1_points.txt` | 在 `data/big/img_1.png` (798×786) 上手工标注的 class0(10 点, 目标外轮廓)/class1(10 点, 中心) 特征点 |
+| `scripts/generate_synthetic_dataset.py` | **合成训练数据集生成**: 复用 `generate_assets.py` 图像参数+五状态分类, 平面单应透视投影目标到背景任意位置(不截断), 每图输出 class0/class1 特征点 txt + `manifest.json` |
+
+> **合成数据核心几何**: 目标为平面贴图, 其上所有点共享单应 `H = K·[r1 r2 t]·T_center` (针孔内参 `f=FOCAL_LEN=1000`, `R=Rz(yaw)·Rx(pitch)·Ry(roll)` (yaw 0-360° 全覆盖, pitch/roll 默认 ±10°), `tz=f·short/S` 控制尺度, 右图 `H_right=T_disp·H_left` 产生视差); 特征点 = `project(H, pts)`, 故目标缩放/旋转/平移时特征点**同步变化**。任意位置不截断由"目标 4 角投影 AABB + 右图视差并集落在画布内"的可行中心区间保证。
+> **特征点 txt 格式**: `#` 表头 + `Corner_N: x.xx, y.yy` (画布像素坐标), 与 `PoseUtils::readCorners()` (`src/utils/PoseUtils.cpp:176`) 正则 `Corner_\d+:\s*([-\d.]+),\s*([-\d.]+)` 完全兼容。
+> **运行**: Windows 主机 Python 3.8 + OpenCV 直接运行, 无需 Docker。`python scripts/annotate_points.py` (标注) → `python scripts/generate_synthetic_dataset.py --out tests/data/fixtures_rich --n 50` (生成; 输出目录已被 .gitignore 忽略)。
 
 ---
 
@@ -1667,7 +1689,9 @@ Phase 3 已完成（`CameraSource`）。扩展新视频源（如 USB 双目、RT
 
 ### B.4 调优 YOLO 模型
 
-替换 `best.onnx` 文件，相应调整 `yolo.conf_threshold` 和 `yolo.target_class_id`。模型输入尺寸自动从 ONNX 读取。
+替换 `yolo_onnx/yolov8n.onnx` 文件，相应调整 `yolo.conf_threshold` 和 `yolo.target_class_id`。模型输入尺寸自动从 ONNX 读取。
+
+> ⚠️ **模型导出格式**：当前解码逻辑假设**原始 YOLOv8 导出**（输出 `[1, 4+nc, N]`/`[1, N, 4+nc]`，未做 NMS，NMS 由 `decodeYoloOutput()` 完成）。若替换为带 NMS 的已解码导出（如旧 `best.onnx` 的 `[1,300,6]`），需同步修改 `YoloDetector::postprocess()` 的解析分支。
 
 ### B.5 启用/调优 ESKF 融合
 

@@ -970,11 +970,12 @@ void StereoTracker::prepareDualBcTemplate() {
 
     double real_w = config_.template_real_width_mm;
     double real_h = config_.template_real_height_mm;
+    const double cx = real_w / 2.0, cy = real_h / 2.0;
     dual_bc_tmpl_pts3d_.reserve(dual_bc_tmpl_corners_.size());
     for (const auto& c : dual_bc_tmpl_corners_)
         dual_bc_tmpl_pts3d_.emplace_back(
-            c.x / static_cast<double>(tw) * real_w,
-            c.y / static_cast<double>(th) * real_h, 0.0);
+            c.x / static_cast<double>(tw) * real_w - cx,
+            c.y / static_cast<double>(th) * real_h - cy, 0.0);
 
     dual_bc_template_ready_ = true;
     if (verbose_console_)
@@ -1241,7 +1242,30 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     // Build valid_mask (all true, identity mapping)
     result.valid_mask.resize(total_use, true);
 
-    // 8. Pose estimation
+    // 8. Restore full-image coordinates BEFORE PnP (PnP uses full-image K cx/cy)
+    cv::Point2d left_off(static_cast<double>(left_pri.x), static_cast<double>(left_pri.y));
+    cv::Point2d right_off(static_cast<double>(right_pri.x), static_cast<double>(right_pri.y));
+    offsetResultToOriginal(result, left_off, right_off, left_color_orig, right_color_orig);
+
+    // Fill disparity for logging (right.x - left.x, match AKAZE convention)
+    {
+        int n = std::min(static_cast<int>(result.pts_left_good.size()),
+                         static_cast<int>(result.pts_right_good.size()));
+        result.disparity.resize(n);
+        result.dx_filtered.resize(n);
+        for (int i = 0; i < n; ++i) {
+            double d = static_cast<double>(result.pts_left_good[i].x -
+                                           result.pts_right_good[i].x);
+            result.dx_filtered[i] = d;
+            result.disparity[i] = -d;  // = right.x - left.x
+        }
+        if (n > 0 && verbose_console_)
+            std::cout << "  [DualRoi] Full-image stereo: " << n
+                      << " pairs, median_disp=" << computeMedian(result.disparity) << " px"
+                      << std::endl;
+    }
+
+    // 9. Pose estimation
     PoseEstimate pose;
     double gpnp_timing = 0.0;
     auto t_pnp_start = std::chrono::high_resolution_clock::now();
@@ -1279,11 +1303,6 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     auto t_pnp_end = std::chrono::high_resolution_clock::now();
     result.timing["gpnp"] = std::chrono::duration<double, std::milli>(t_pnp_end - t_pnp_start).count();
-
-    // 9. Restore full-image coordinates + finalize
-    cv::Point2d left_off(static_cast<double>(left_pri.x), static_cast<double>(left_pri.y));
-    cv::Point2d right_off(static_cast<double>(right_pri.x), static_cast<double>(right_pri.y));
-    offsetResultToOriginal(result, left_off, right_off, left_color_orig, right_color_orig);
 
     if (pose.success) {
         finalizePose(result, pose);
@@ -1366,16 +1385,14 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_corners" + prefix + ".png", p1);
         }
 
-        // --- Panel 2: 3D axes on original image (origin = template center) ---
+        // --- Panel 2: 3D axes on original image (origin = 目标中心, 3D 点已居中) ---
         {
             cv::Mat p2 = left_color_orig.clone();
             double axis_len = 100.0;
-            double cx = config_.template_real_width_mm  / 2.0;  // template center X (mm)
-            double cy = config_.template_real_height_mm / 2.0;  // template center Y (mm)
-            Eigen::Vector3d o  = pose.R * Eigen::Vector3d(cx,        cy,        0) + pose.t;
-            Eigen::Vector3d ax = pose.R * Eigen::Vector3d(cx + axis_len, cy,     0) + pose.t;
-            Eigen::Vector3d ay = pose.R * Eigen::Vector3d(cx,       cy + axis_len, 0) + pose.t;
-            Eigen::Vector3d az = pose.R * Eigen::Vector3d(cx,       cy,        axis_len) + pose.t;
+            Eigen::Vector3d o  = pose.R * Eigen::Vector3d(0, 0, 0) + pose.t;
+            Eigen::Vector3d ax = pose.R * Eigen::Vector3d(axis_len, 0, 0) + pose.t;
+            Eigen::Vector3d ay = pose.R * Eigen::Vector3d(0, axis_len, 0) + pose.t;
+            Eigen::Vector3d az = pose.R * Eigen::Vector3d(0, 0, axis_len) + pose.t;
             cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);

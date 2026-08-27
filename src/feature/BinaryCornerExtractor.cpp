@@ -118,11 +118,16 @@ void BinaryCornerExtractor::initPts3dFromTemplates() {
 
     double s_mm_per_px = scale * 1000.0;  // m/px → mm/px
     const auto& tc = tmpl_0->corners;
+    if (tc.empty()) return;
+    double mx = 0.0, my = 0.0;
+    for (const auto& p : tc) { mx += p.x; my += p.y; }
+    mx = mx / static_cast<double>(tc.size()) * s_mm_per_px;
+    my = my / static_cast<double>(tc.size()) * s_mm_per_px;
     template_data_.pts_3d.clear();
     template_data_.pts_3d.reserve(tc.size());
-    for (const auto& pt : tc) {
-        template_data_.pts_3d.emplace_back(pt.x * s_mm_per_px,
-                                           pt.y * s_mm_per_px, 0.0);
+    for (const auto& p : tc) {
+        template_data_.pts_3d.emplace_back(p.x * s_mm_per_px - mx,
+                                           p.y * s_mm_per_px - my, 0.0);
     }
 
     if (g_verbose_console)
@@ -519,10 +524,26 @@ cv::Mat BinaryCornerExtractor::keepLargestRegion(const cv::Mat& binary_img) {
         return binary_img.clone();
     }
 
-    // 查找面积最大的标签（跳过背景标签0）
-    int best_label = 1;
-    int best_area = stats.at<int>(1, cv::CC_STAT_AREA);
-    for (int i = 2; i < num_labels; ++i) {
+    const int img_w = binary_img.cols;
+    const int img_h = binary_img.rows;
+
+    // 判断连通域是否接触图像四条边（ROI 边界处为背景，真实目标位于 ROI 内部）
+    auto touchesBorder = [&](int i) {
+        int left = stats.at<int>(i, cv::CC_STAT_LEFT);
+        int top  = stats.at<int>(i, cv::CC_STAT_TOP);
+        int w    = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h    = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        return left <= 0 || top <= 0 || left + w >= img_w || top + h >= img_h;
+    };
+
+    // 第1步: 遍历所有白色连通域（跳过背景标签0），排除接触四条边的区域
+    // 第2步: 在剩余内部区域中查找面积最大的标签
+    int best_label = -1;
+    int best_area = 0;
+    int n_interior = 0;
+    for (int i = 1; i < num_labels; ++i) {
+        if (touchesBorder(i)) continue;
+        ++n_interior;
         int area = stats.at<int>(i, cv::CC_STAT_AREA);
         if (area > best_area) {
             best_area = area;
@@ -530,12 +551,28 @@ cv::Mat BinaryCornerExtractor::keepLargestRegion(const cv::Mat& binary_img) {
         }
     }
 
+    // 回退：所有白色区域都接触边界时，退回原逻辑取全局最大面积
+    if (best_label < 0) {
+        best_label = 1;
+        best_area = stats.at<int>(1, cv::CC_STAT_AREA);
+        for (int i = 2; i < num_labels; ++i) {
+            int area = stats.at<int>(i, cv::CC_STAT_AREA);
+            if (area > best_area) {
+                best_area = area;
+                best_label = i;
+            }
+        }
+        logStep("LargestRegion",
+                "All regions touch border, fallback to global largest");
+    }
+
     cv::Mat result = cv::Mat::zeros(binary_img.size(), CV_8UC1);
     result.setTo(255, labels == best_label);
 
     logStep("LargestRegion",
             "Kept 1 region / " + std::to_string(num_labels - 1) +
-            ", area=" + std::to_string(best_area));
+            " (interior=" + std::to_string(n_interior) +
+            "), area=" + std::to_string(best_area));
     return result;
 }
 

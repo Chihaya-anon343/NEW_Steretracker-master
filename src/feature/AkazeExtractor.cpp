@@ -90,10 +90,12 @@ TemplateData AkazeExtractor::extractTemplate(const std::string& template_path,
     const double th = static_cast<double>(tmpl.template_height);
     tmpl.pts_3d.reserve(tmpl.keypoints.size());
 
+    const double cx = real_width_mm  / 2.0;
+    const double cy = real_height_mm / 2.0;
     for (const auto& kp : tmpl.keypoints) {
         Eigen::Vector3d pt;
-        pt.x() = kp.pt.x / tw * real_width_mm;
-        pt.y() = kp.pt.y / th * real_height_mm;
+        pt.x() = kp.pt.x / tw * real_width_mm  - cx;
+        pt.y() = kp.pt.y / th * real_height_mm - cy;
         pt.z() = 0.0;
         tmpl.pts_3d.push_back(pt);
     }
