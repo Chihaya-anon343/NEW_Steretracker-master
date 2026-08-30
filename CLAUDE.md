@@ -370,10 +370,10 @@ void configureStrategyChain(int roi_area, bool is_class1 = false) {
 
 | State | 名称 | 条件 | 主提取器 | 双目Pose | 单目Pose | Warm-start | 退化链 |
 |-------|------|------|----------|----------|----------|-----------|--------|
-| 1 | 远 | ≤800 px² | TinyTarget | solvePnP ITERATIVE | MonoPnP EPnP | ❌ | 无→终止 |
-| 2 | 中 | 801~40000 | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP | ✅ 双目 | TT |
-| 3 | 中近 | 40001~489999 | AKAZE | InitialPnP→GPnP | MonoPnP EPnP | ✅ 双目 | BC→TT |
-| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP | MonoPnP EPnP | ✅ 双目 | 独立路径 |
+| 1 | 远 | ≤800 px² | TinyTarget | solvePnP ITERATIVE | MonoPnP EPnP/IPPE | ❌ | 无→终止 |
+| 2 | 中 | 801~40000 | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | TT |
+| 3 | 中近 | 40001~489999 | AKAZE | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | BC→TT |
+| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | 独立路径 |
 | 5 | 极近 | 无class0+有class1 | 按面积重分类 | 按重分类 | 按重分类 | 按重分类 | 按重分类 |
 
 ### 4.5 退化后备链
@@ -791,7 +791,7 @@ filter(disparity, inlier_mask):
 | 特性 | GPnPSolver | InitialPnPSolver | MonoPnPSolver |
 |------|-----------|-----------------|---------------|
 | 文件 | src/pose/GPnPSolver.cpp | src/pose/InitialPnPSolver.cpp | src/pose/MonoPnPSolver.cpp |
-| 算法 | Eigen LM 非线性优化 | OpenCV RANSAC+ITERATIVE | OpenCV EPnP+ITERATIVE |
+| 算法 | Eigen LM 非线性优化 | OpenCV RANSAC+ITERATIVE | EPnP RANSAC + IPPE 多候选择优 |
 | 优化变量 | [qx,qy,qz,qw,tx,ty,tz] (7维) | 无初值 | 无初值 |
 | 约束 | 重投影 + 立体交叉射线 | 仅重投影 | 仅重投影 |
 | 帧间缓存 | ✅ 上帧位姿 warm-start | ❌ | ❌ |
@@ -839,30 +839,29 @@ solve(pts_2d, pts_3d, K):
 
 ### 6.4 MonoPnPSolver
 
-**流程**:
+**流程** (2026-08 重构: 多候选择优):
 ```
 solve(pts_2d, pts_3d, K):
   1. 校验: size >= 4 && 2d.size() == 3d.size()
+     verbose 时打印输入诊断 (n / 2D bbox / 3D span / K)
 
-  2. 转换: Eigen → cv (Point3f, Mat)
+  2. n == 4: 直接 solvePnP(ITERATIVE) (RANSAC 无意义, EPnP 有共面二义性)
 
-  3. cv::solvePnPRansac(EPNP, 300 iter, 8.0px, 0.99, no extrinsic guess)
-     → inliers < 4 → 返回 PoseEstimate{fail}
+  3. n > 4: 多候选收集, 每个候选计算全点平均重投影误差并校验
+     (有限 + t.z>0 + 10<|t|<100000 + 重投影<8px):
+     候选A1: solvePnPRansac(EPNP, 300 iter, 8.0px, 0.99) → 校验通过才收集
+     候选A2: 仅当 A1 有效时, 以其为初值对 inliers 做 solvePnP(ITERATIVE) 精化
+     候选B:  solvePnPGeneric(IPPE) — 共面闭式解, 返回 ≤2 解逐一校验
+     (单目全部策略的 3D 点均在 z=0 平面, IPPE 适用; 非共面输入抛异常则跳过)
 
-  4. 保存 RANSAC 结果 rvec_ransac / tvec_ransac
+  4. 有效候选中取平均重投影误差最小者; 无有效候选 → 失败
+     (最终 inliers = 重投影 <8px 的点数)
 
-  5. cv::solvePnP(ITERATIVE, useExtrinsicGuess=true) on inliers
-     抛出异常 → 非致命, 继续用RANSAC结果
-
-  6. ITERATIVE 发散检测：若精化后 |t| > 100000 或 < 10，
-     自动回退到 RANSAC EPnP 初值
-     → 输出 "[MonoPnP] ITERATIVE 发散，回退到 RANSAC EPnP 结果"
-
-  7. 有效性检查 (见 §6.5)
+  5. 有效性检查 (见 §6.5, 防御性, 择优阶段已过滤)
      → PoseEstimate{R, t, success, num_points}
 ```
 
-> **ITERATIVE 发散回退**（新增）：极小 ROI（~30px²）下 2D 点高度聚集而 3D 点跨度大，深度估计病态化，ITERATIVE 精化可能发散到 `|t| → ∞`。此机制在发散时自动回退到 RANSAC 的有效结果，避免整帧被标记为 FAILED。
+> **多候选择优**（2026-08 重构动机）：旧版 "EPnP RANSAC + ITERATIVE 精化 + 发散回退 RANSAC" 在极小 ROI（2D 跨度 ~20px）平面目标下 EPnP 本身数值崩溃（实测 |t|→2.8e19、重投影 16px），垃圾 RANSAC 结果经"发散回退"继续传播导致整帧失败。同一输入下 IPPE 重投影 0.46px 完美收敛（证明对应关系与内参均无问题，纯 EPnP 对微小平面目标的数值病态）。现所有候选必须通过重投影校验，垃圾解在收集阶段即被拦截；"ITERATIVE 发散回退到无效 RANSAC 结果"的路径已不存在（无效 RANSAC 不再作为初值/回退值）。
 
 ### 6.5 位姿有效性校验 (所有求解器共用)
 
@@ -1422,9 +1421,9 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | GPnPSolver | warm-start 失效 | 首帧或 `has_cache == false` | 用 InitialPnP 初值 |
 | GPnPSolver | LM 不收敛 | Eigen LM 未收敛 | 可能仍输出位姿（取决于监控信息） |
 | GPnPSolver/MonoPnPSolver | 位姿校验失败 | `t.z ≤ 0` / `|t| ∉ [10, 20000]` / NaN/Inf | `success = false` |
-| MonoPnPSolver | EPnP RANSAC 失败 | `inliers < 4` | 返回 `PoseEstimate{success=false}` |
-| MonoPnPSolver | ITERATIVE 精化异常 | `solvePnP` 抛出异常 | **非致命**，继续用 RANSAC 结果 |
-| MonoPnPSolver | ITERATIVE 发散 | `\|t\| > 100000` mm | 自动回退到 RANSAC EPnP 结果（不标记 FAILED） |
+| MonoPnPSolver | EPnP RANSAC 失败/无效 | `inliers < 4` 或候选校验不过（重投影≥8px/\|t\|越界/t.z≤0） | 该候选被拦截，转由 IPPE 候选兜底 (2026-08 多候选择优) |
+| MonoPnPSolver | ITERATIVE 精化异常 | `solvePnP` 抛出异常 | **非致命**，保留 RANSAC 候选 |
+| MonoPnPSolver | 全部候选无效 | 无候选通过校验 | 返回 `PoseEstimate{success=false}`（打印各候选诊断） |
 | TinyTarget solvePnP | 无 RANSAC，无 warm-start | ITERATIVE 失败 | 直接 `gpnp_success = false` |
 
 #### 十二、ROI 输入层退化
@@ -1539,7 +1538,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 |------|---------|
 | `include/pose/GPnPSolver.hpp` + `.cpp` | solve() — Eigen LM 7维优化，交叉射线残差 |
 | `include/pose/InitialPnPSolver.hpp` + `.cpp` | solve() — RANSAC PnP + ITERATIVE精化 |
-| `include/pose/MonoPnPSolver.hpp` + `.cpp` | solve() — EPnP RANSAC + ITERATIVE精化 + 有效性校验 |
+| `include/pose/MonoPnPSolver.hpp` + `.cpp` | solve() — EPnP RANSAC + IPPE 多候选择优 + 重投影校验 (2026-08) |
 
 ### 10.6 立体视觉
 
@@ -1656,7 +1655,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | RANSAC 置信度 | 0.99 | PnP Solvers | — |
 | RANSAC 重投影阈值 | 8.0 px | PnP Solvers | — |
 | 深度有效范围 | [10, 100000] mm (MonoPnP), [10, 20000] mm (GPnP) | 位姿校验 | — |
-| ITERATIVE 发散阈值 | \|t\| > 100000 mm | MonoPnPSolver | 检测到发散时回退到 RANSAC |
+| MonoPnP 候选校验 | 重投影<8px 且 t.z>0 且 10<\|t\|<100000 mm | MonoPnPSolver | 多候选择优的候选收集门槛 (2026-08) |
 | approxPolyDP 二分搜索 | 0.001~0.05×perimeter, 8次 | BC | — |
 | max_imu_gap_s | 0.1 s | eskf 配置 | IMU 间隙超限丢弃样本 |
 | max_cam_gap_s | 1.0 s | eskf 配置 | 相机间隔超限重置滤波器 |

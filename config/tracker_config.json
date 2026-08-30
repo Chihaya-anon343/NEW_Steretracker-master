@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/fixtures_rich/mono_akaze/left_000.png",
-    "right": "tests/data/fixtures_rich/mono_akaze/left_000.png"
+    "left": "data/mid/cj06_image_0181.jpg",
+    "right": "data/mid/cj06_image_0181.jpg"
   },
 
   "manual_roi": {
@@ -45,7 +45,7 @@
 
   "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
   "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
-  "mono_mode": true,
+  "mono_mode": false,
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",

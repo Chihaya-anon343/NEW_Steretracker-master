@@ -254,10 +254,10 @@ TinyT.  BC      AKAZE     Dual-ROI
 
 | State | 名称 | 条件 | 策略 | 双目 Pose | 单目 Pose |
 |-------|------|------|------|-----------|-----------|
-| **1 远** | Distant | 有 class0, 面积 ≤ tiny_max | TinyTarget | `cv::solvePnP(ITERATIVE)` | `MonoPnP(EPnP)` |
-| **2 中** | Medium | 有 class0, 801~40000 | BinaryCorner | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP)` |
-| **3 中近** | Medium-Close | 有 class0, 40001~489999 或 ≥490000 无 class1 | AKAZE 单ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP)` |
-| **4 近** | Close | 有 class0 + class1, ≥490000 | Dual-ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP)` |
+| **1 远** | Distant | 有 class0, 面积 ≤ tiny_max | TinyTarget | `cv::solvePnP(ITERATIVE)` | `MonoPnP(EPnP+IPPE)` |
+| **2 中** | Medium | 有 class0, 801~40000 | BinaryCorner | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
+| **3 中近** | Medium-Close | 有 class0, 40001~489999 或 ≥490000 无 class1 | AKAZE 单ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
+| **4 近** | Close | 有 class0 + class1, ≥490000 | Dual-ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
 | **5 极近** | Very-Close | 无 class0 + 有 class1, ≥class1_min_area | 按面积重分类 | 按重分类 | 按重分类 |
 
 > ⚠️ **阈值说明**: `tiny_max_area` / `akaze_min_area` / `dual_trigger_area` 为早期测试遗留值，需在实际场景中重新标定。当前仅起占位作用，不影响系统架构。
@@ -312,7 +312,7 @@ TinyT.  BC      AKAZE     Dual-ROI
 | **流程** | Otsu→模板匹配(IoU)→超分(×4)→连通域评分→minAreaRect→角度对齐 | 同双目但仅左图 |
 | **左右匹配** | 模板匹配 L↔R | — |
 | **视差滤波** | — | — |
-| **Pose** | `cv::solvePnP(ITERATIVE)` | `MonoPnPSolver(EPnP)` |
+| **Pose** | `cv::solvePnP(ITERATIVE)` | `MonoPnPSolver(EPnP+IPPE)` |
 | **Warm-start** | ❌ | ❌ |
 | **退化** | 终止(无后备) | 终止(无后备) |
 
@@ -333,7 +333,7 @@ Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Ots
 | **提取方法** | `extract()` | `extractMono()` |
 | **流程** | Otsu→最大连通域→模板匹配(IoU)→旋转回正→approxPolyDP→重排序 | 同双目仅左图 |
 | **左右匹配** | 模板匹配 L↔R | — |
-| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP)` |
+| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP+IPPE)` |
 | **Warm-start** | ✅ 帧间缓存 | ❌ |
 | **退化** | → TinyTarget | → TinyTarget |
 
@@ -353,7 +353,7 @@ Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Ots
 | **立体投影** | ✅ 视差→深度→右图重投影 | ❌ |
 | **MAD滤波** | ✅ (±3σ) | ❌ |
 | **模板匹配** | Ratio Test(0.75)→Cross-Check→Homography RANSAC(5.0px) | 同双目 |
-| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP)` |
+| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP+IPPE)` |
 | **Warm-start** | ✅ 帧间缓存 | ❌ |
 | **退化** | → BinaryCorner → TinyTarget | → BinaryCorner → TinyTarget |
 
@@ -369,7 +369,7 @@ Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Ots
 | **左右匹配** | BC: 模板匹配 L↔R / AK: LK光流 L→R | — |
 | **MAD滤波** | AK 侧 | — |
 | **合并** | BC角点 + AK关键点 → 统一 2D/3D 对应 | BC角点 + AK关键点 → 统一 2D/3D |
-| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP)` |
+| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP+IPPE)` |
 | **Warm-start** | ✅ 帧间缓存 | ❌ |
 | **退化** | 独立路径，不参与退化链 | 独立路径，不参与退化链 |
 | **可视化** | 5 面板 | 3 面板 |
@@ -419,9 +419,14 @@ RANSAC PnP (300 iter, 8.0px → 0.99 confidence) → ITERATIVE 精化。为 GPnP
 
 ### 6.3 MonoPnPSolver (单目通用)
 
-OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无缓存。
+多候选求解 + 重投影误差择优，仅重投影约束，每帧独立无缓存（2026-08 重构）：
 
-**ITERATIVE 发散回退**：精化前保存 RANSAC EPnP 结果；若精化后 `|t|` 超出 `[10, 100000]` mm，自动回退到 RANSAC 初值并输出 `[MonoPnP] ITERATIVE 发散，回退到 RANSAC EPnP 结果`。此机制解决极小 ROI（~30px²）下深度估计病态导致的精化发散问题。
+- **候选A**: `solvePnPRansac(EPnP, 300 iter, 8.0px, 0.99)` → 校验通过后才作为初值，对内点子集做 ITERATIVE 精化
+- **候选B**: `solvePnPGeneric(IPPE)` — 共面闭式解（单目各策略的 3D 点均在 z=0 平面），返回 ≤2 个解逐一校验
+- 每个候选须通过校验（有限 + `t.z>0` + `|t|∈(10,100000)mm` + 全点平均重投影 <8px），有效候选取重投影误差最小者
+- n=4 时直接 `solvePnP(ITERATIVE)`（RANSAC 无意义，EPnP 有共面二义性）
+
+> **重构动机**：旧版 "EPnP RANSAC + ITERATIVE 精化 + 发散回退 RANSAC" 在极小 ROI（2D 跨度 ~20px）平面目标下 EPnP 本身数值崩溃（实测 `|t|→2.8e19`、重投影 16px），回退机制把垃圾 RANSAC 结果继续传播导致整帧失败；同一输入下 IPPE 以 0.46px 重投影完美收敛（证明对应关系与内参均无问题，属 EPnP 对微小平面目标的数值病态）。现垃圾解在候选收集阶段即被拦截。
 
 ### 6.4 位姿有效性校验
 
@@ -435,7 +440,7 @@ OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无�
 
 | 特性 | GPnPSolver | InitialPnPSolver | MonoPnPSolver |
 |------|-----------|-----------------|---------------|
-| 算法 | Eigen LM | OpenCV RANSAC+ITERATIVE | OpenCV EPnP+ITERATIVE |
+| 算法 | Eigen LM | OpenCV RANSAC+ITERATIVE | EPnP RANSAC + IPPE 多候选择优 |
 | 约束 | 重投影+立体射线 | 重投影 | 重投影 |
 | 参数空间 | 7维 [q,t]，warm-start | 无初值 | 无初值 |
 | 帧间缓存 | ✅ 上帧位姿 | ❌ | ❌ |
@@ -517,6 +522,8 @@ OpenCV EPnP RANSAC → ITERATIVE 精化，仅重投影约束，每帧独立无�
 | TinyTarget (单目) | 3 | 轴系/重投影 + overview |
 | AKAZE (单目) | 3 | 轴系/匹配点 + overview |
 
+> 单目 BinaryCorner 模板面板（`mono_bc_template`）中，左图特征点与模板角点**按索引同色渲染**（第 i 个点在两侧同色），便于人工核对匹配对应关系；其余角点类面板（`mono_bc_binary`/`mono_bc_axes`/`mono_bc_reproj`）同样按索引着色。
+
 ---
 
 ## 8. 核心数据结构
@@ -562,7 +569,7 @@ TrackerBase
 | 光流追踪 | ✅ LK L→R + FB | ❌ |
 | 立体投影 | ✅ 视差→深度 | ❌ |
 | MAD 滤波 | ✅ | ❌ |
-| Pose 求解器 | GPnP + InitialPnP | MonoPnP (EPnP) |
+| Pose 求解器 | GPnP + InitialPnP | MonoPnP (EPnP+IPPE) |
 | Warm-start | ✅ | ❌ |
 | 五状态判定 | 相同 | 相同（共享 RoiGenerator） |
 

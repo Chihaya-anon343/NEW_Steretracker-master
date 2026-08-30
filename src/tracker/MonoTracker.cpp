@@ -708,12 +708,13 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
             cv::line(p_axes, o_p, ax_p, cv::Scalar(0,0,255), 2, cv::LINE_AA);
             cv::line(p_axes, o_p, ay_p, cv::Scalar(0,255,0), 2, cv::LINE_AA);
             cv::line(p_axes, o_p, az_p, cv::Scalar(255,0,0), 2, cv::LINE_AA);
-            // Draw matched points on axes panel
+            // Draw matched points on axes panel (BC/TT 用小半径避免遮挡角点)
+            const int pt_radius = (is_bc || is_tiny) ? 1 : 4;
             for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
                 cv::Point2f pv = toView_L(result.pts_left_match[i]);
                 cv::circle(p_axes,
                     cv::Point(static_cast<int>(pv.x), static_cast<int>(pv.y)),
-                    4, CORNER_COLORS[i % 10], -1);
+                    pt_radius, CORNER_COLORS[i % 10], -1);
             }
             std::string axes_name = is_bc   ? "/mono_bc_axes" + prefix + ".png" :
                                     is_tiny ? "/mono_tt_axes" + prefix + ".png"
@@ -771,11 +772,12 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                                / std::max(1, matched_tmpl->image.cols);
                     double dsy = static_cast<double>(p_tmpl_r.rows)
                                / std::max(1, matched_tmpl->image.rows);
-                    for (const auto& c : matched_tmpl->corners) {
+                    for (size_t i = 0; i < matched_tmpl->corners.size(); ++i) {
+                        const auto& c = matched_tmpl->corners[i];
                         cv::circle(p_tmpl_r,
                             cv::Point(static_cast<int>(c.x * dsx),
                                       static_cast<int>(c.y * dsy)),
-                            4, CORNER_COLORS[0], 1);
+                            4, CORNER_COLORS[i % 10], 1);
                     }
                 }
                 cv::Mat p_tmpl;
