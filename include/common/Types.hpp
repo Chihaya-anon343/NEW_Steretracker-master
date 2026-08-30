@@ -98,7 +98,7 @@ struct TrackResult {
     std::vector<cv::Point2f> pts_left_good;      ///< 有效的左图特征点
     std::vector<cv::Point2f> pts_right_good;     ///< 有效的右图特征点
     std::vector<int> idx_from_filtered;          ///< 映射回原始 kp_left 的索引
-    std::vector<double> disparity;               ///< = -dx_filtered（以负 dx 存储）
+    std::vector<double> disparity;               ///< 标准校正双目视差：left.x - right.x
     std::vector<double> dx_filtered;             ///< MAD 滤波后的 x 视差
     int num_matched{0};
 
@@ -332,7 +332,7 @@ struct RoiGroup {
 struct MadFilterResult {
     std::vector<cv::Point2f> pts_left_filtered;
     std::vector<cv::Point2f> pts_right_filtered;
-    std::vector<double> disparity;        ///< = -dx_filtered
+    std::vector<double> disparity;        ///< 标准校正双目视差：left.x - right.x
     std::vector<double> dx_filtered;
     std::vector<double> dy_filtered;
     std::vector<int> idx_from_filtered;

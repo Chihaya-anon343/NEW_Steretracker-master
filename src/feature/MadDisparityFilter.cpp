@@ -127,10 +127,10 @@ MadFilterResult MadDisparityFilter::filter(
     result.dx_filtered = std::move(dx_filt);
     result.dy_filtered = std::move(dy_filt);
 
-    // 视差 = -dx_filtered
+    // 标准校正双目视差：left.x - right.x
     result.disparity.reserve(result.dx_filtered.size());
     for (double d : result.dx_filtered) {
-        result.disparity.push_back(-d);
+        result.disparity.push_back(d);
     }
 
     // idx_from_filtered（与 Python 逻辑一致）

@@ -120,7 +120,7 @@ TrackResult OpticalFlowTracker::track(const cv::Mat& left_gray,
     for (int i = 0; i < n_fb; ++i) {
         double d = static_cast<double>(pts_left_fb[i].x - pts_right_fb[i].x);
         dx_filtered[i] = d;
-        disparity[i] = -d;
+        disparity[i] = d;  // standard rectified-stereo convention: left.x - right.x
     }
 
     // ---- 构建输出（0626：全部 FB 验证点，不含 MAD）----
