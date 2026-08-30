@@ -102,7 +102,7 @@ main() main.cpp:22-272
 ├─ 阶段3: 相机参数 + 配置构造 (lines 145-155)
 │   K = [[fx,0,cx],[0,fy,cy],[0,0,1]]
 │   R_rl = I (默认) 或自定义 rotation_matrix
-│   t_rl = [-baseline_mm, 0, 0]  (baseline_mm 需转换为米→毫米取决于配置)
+│   t_rl = [+baseline_mm, 0, 0]  (右相机中心在左相机坐标系的 +X 方向)
 │   TrackerConfig 通过 makeTrackerConfig() 构造 (include/common/Config.hpp)
 │
 ├─ 阶段4: 输入源初始化 (lines 157-176)
@@ -444,7 +444,7 @@ public:
   输入: pts_left_good, pts_right_good, disparity, K, baseline
   ├─ 深度 = focal_length * baseline / disparity
   ├─ 3D点反投影: X = (u-cx)*Z/fx, Y = (v-cy)*Z/fy, Z = depth
-  ├─ 3D点变换到右相机: P_right = R_rl * P_left + t_rl
+  ├─ 3D点变换到右相机: P_right = R_rl^T * (P_left - t_rl)
   └─ 右图投影: (u', v') = project(P_right, K)
   → ProjectionResult{pts_right_projected, valid_mask}
 

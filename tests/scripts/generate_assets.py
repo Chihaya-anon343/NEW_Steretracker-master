@@ -154,7 +154,7 @@ def rect_or_none(bbox):
 # ----------------------------------------------------------------------------
 def gen_class0_scene(out_dir, target, background, scene, frame_index):
     """State 1/2/3: class0 (目标图) 按 STATE_SIZES 缩放到背景中心,
-    右图水平右移 disp。返回 (左 bbox, 右 bbox)。"""
+    右图水平左移 disp，使标准视差 uL-uR > 0。返回 (左 bbox, 右 bbox)。"""
     size, disp = STATE_SIZES[scene], DISP[scene]
     bg = resize_bg(background, IMG_W, IMG_H)
     left0 = right0 = None
@@ -162,7 +162,7 @@ def gen_class0_scene(out_dir, target, background, scene, frame_index):
         img = bg.copy()
         cx = CENTER_X + (frame_index % 3) * 2
         if tag == "right":
-            cx += disp
+            cx -= disp
         bbox = scale_paste(img, target, (cx, CENTER_Y), size)
         cv2.imwrite(os.path.join(out_dir, f"{tag}_{frame_index:03d}.png"), img)
         if tag == "left":
@@ -191,7 +191,7 @@ def gen_class1_scene(out_dir, target, background, class1_rect, scene, frame_inde
         img = bg.copy()
         cx = CENTER_X + (frame_index % 3) * 2
         if tag == "right":
-            cx += disp
+            cx -= disp
         bbox = scale_paste(img, patch, (cx, CENTER_Y), size)
         cv2.imwrite(os.path.join(out_dir, f"{tag}_{frame_index:03d}.png"), img)
         if tag == "left":
@@ -207,7 +207,7 @@ def gen_dual_scene(out_dir, target, background, class1_rect, frame_index):
     返回 ((class0_left, class0_right), (class1_left, class1_right))。"""
     outer, inner, disp = 720, 120, DISP["dual"]
     bg = resize_bg(background, DUAL_W, DUAL_H)
-    # 最左 x 保证左右图均不越界: ox + disp + outer <= DUAL_W
+    # 位置保证左右图均不越界；右图目标相对左图向左移动 disp。
     ox = max(8, DUAL_W - outer - disp - 8)
     oy = max(8, DUAL_H - outer - 8)
 
@@ -215,7 +215,7 @@ def gen_dual_scene(out_dir, target, background, class1_rect, frame_index):
     c1_left = c1_right = None
     for tag in ("left", "right"):
         img = bg.copy()
-        cx = ox + (disp if tag == "right" else 0) + outer // 2
+        cx = ox - (disp if tag == "right" else 0) + outer // 2
         cy = oy + outer // 2
         # class0: 缩放至 720 框 (画白框圈定 bbox)
         c0_bbox = scale_paste(img, target, (cx, cy), outer)

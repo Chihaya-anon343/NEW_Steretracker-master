@@ -223,7 +223,7 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 | # | 用例 | 输入 | 判断标准 |
 |---|------|------|---------|
 | 1 | `MonoTracker 冒烟` | `fixtures/mono_akaze/left_000.png` (640×480) + class0 ROI (214,135,213×210) | time≥0, frameCount≥1, logs≥1 |
-| 2 | `StereoTracker 冒烟: warm-start 两帧` | `fixtures/synthetic_akaze/` 双目对 (640×480, 右图偏移16px) × 2 帧, 左右 ROI 各自从 rois.json 取 | 两帧 time≥0, frameCount≥2 |
+| 2 | `StereoTracker 冒烟: warm-start 两帧` | `fixtures/synthetic_akaze/` 双目对 (640×480, 右图向左偏移16px) × 2 帧, 左右 ROI 各自从 rois.json 取 | 两帧 time≥0, frameCount≥2 |
 | 3 | `Dual-ROI 冒烟: is_dual=true 独立路径` | `fixtures/synthetic_dual/` 双目对 (1280×960): class0 外框 731×720 + class1 中心 120×120 | 两帧 time≥0, frameCount≥2, 不崩溃 |
 
 > ⚠️ **冒烟定位**: fixtures 目标图为 AKAZE 模板 (data/big/img_1.png) 的缩放产物, AKAZE 描述子匹配应能成功; 断言仍保持宽松 (仅验证不崩溃、计时合法)。相机内参主点取图像中心 (640×480 → cx=320, cy=240; 1280×960 → cx=640, cy=480)。模板或 fixtures 缺失时 SKIP。

@@ -155,7 +155,7 @@ bool StereoTracker::runExtraction(FeatureExtractor& ext,
             double d = static_cast<double>(result.pts_left_good[i].x -
                                             result.pts_right_good[i].x);
             result.dx_filtered[i] = d;
-            result.disparity[i] = -d;  // = right.x - left.x (match AKAZE convention)
+            result.disparity[i] = d;  // standard rectified-stereo convention: left.x - right.x
         }
         if (n > 0) {
             if (verbose_console_)

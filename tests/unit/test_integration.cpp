@@ -223,10 +223,10 @@ int main(int argc, char** argv) {
     runTest("StereoTracker 冒烟: synthetic_akaze fixture + warm-start 两帧", [&] {
         if (!templatesAvailable()) { skipNotice("S1:templates"); }
 
-        Eigen::Vector3d t_rl(-120.0, 0.0, 0.0);   // 基线 120mm
+        Eigen::Vector3d t_rl(120.0, 0.0, 0.0);   // 右相机中心位于左坐标系 +X 方向 120mm
 
-        // 输入: synthetic_akaze 双目对 (640×480, 右图水平偏移 16px)
-        // 左右 ROI 不同 (右图 x = 左图 x + 视差)
+        // 输入: synthetic_akaze 双目对 (640×480, 右图向左偏移 16px)
+        // 左右 ROI 不同 (右图 x = 左图 x - 视差)
         cv::Mat l0, r0, l1, r1;
         if (!loadFixture("synthetic_akaze", 0, l0, r0) ||
             !loadFixture("synthetic_akaze", 1, l1, r1)) {
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
     runTest("StereoTracker Dual-ROI 冒烟: is_dual=true 独立路径", [&] {
         if (!templatesAvailable()) { skipNotice("D1:templates"); }
 
-        Eigen::Vector3d t_rl(-120.0, 0.0, 0.0);
+        Eigen::Vector3d t_rl(120.0, 0.0, 0.0);
 
         // 输入: synthetic_dual 双目对 (1280×960)
         //   primary(class0) = 外框 731×720; secondary(class1) = 中心 120×120

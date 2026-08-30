@@ -204,7 +204,8 @@ StereoCameraParams makeStereoParams() {
     p.K = makeK();
     p.K_inv = p.K.inverse();
     p.R_rl = Eigen::Matrix3d::Identity();
-    p.t_rl = Eigen::Vector3d(-120.0, 0, 0); // baseline 120mm
+    // t_rl is the right-camera center expressed in the left-camera frame.
+    p.t_rl = Eigen::Vector3d(120.0, 0, 0); // baseline 120mm
     p.focal_length = 1000.0;
     p.baseline = 120.0;
     return p;
@@ -225,8 +226,11 @@ void test_gpnp_recovers_pose_stereo() {
     for (size_t i = 0; i < pts_3d.size(); ++i) {
         const Eigen::Vector3d Pw = pts_3d[i];
         const cv::Point2f pL = project(Pw, R_gt, t_gt, K);
-        // 右相机: P_r = R_rl * (R*t + t) + t_rl  (本实现约定 t_rl 为左→右)
-        const Eigen::Vector3d Pc_r = params.R_rl * (R_gt * Pw + t_gt) + params.t_rl;
+        // R_rl maps right-camera vectors to the left frame, while t_rl is
+        // the right-camera center in the left frame. Therefore left -> right:
+        // P_r = R_rl^T * (P_l - t_rl).
+        const Eigen::Vector3d Pc_l = R_gt * Pw + t_gt;
+        const Eigen::Vector3d Pc_r = params.R_rl.transpose() * (Pc_l - params.t_rl);
         cv::Point2f pR(512, 512);
         if (Pc_r.z() > 0) {
             const Eigen::Vector3d uv = K * (Pc_r / Pc_r.z());
