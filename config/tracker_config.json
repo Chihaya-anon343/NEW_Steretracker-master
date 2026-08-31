@@ -62,7 +62,7 @@
   },
 
   "yolo": {
-    "model_path": "yolo_onnx/yolov8n.onnx",
+    "model_path": "best.onnx",
     "conf_threshold": 0.5,
     "target_class_id": 0,
     "roi_expand_ratio": 0.0,

@@ -212,11 +212,11 @@ struct SensorPacket {
 
 **模块**: `YoloDetector` + `YoloRoiProvider` + `RoiGenerator`
 
-基于 ONNX Runtime 运行 YOLO 推理（模型 `yolo_onnx/yolov8n.onnx`，2 类：class 0 → 整体 / class 1 → 中心区域），输出目标类别与边界框。
+基于 ONNX Runtime 运行 YOLO 推理（模型 `best.onnx`，2 类：class 0 → 整体 / class 1 → 中心区域），输出目标类别与边界框。
 
-**模型输出格式（原始 YOLOv8 导出，未做 NMS）**: 输出张量 `[1, 4+nc, N]`（BCN）或 `[1, N, 4+nc]`（BNC），前 4 通道为 `cx,cy,w,h`（输入尺度），随后 `nc` 个类别分数。`YoloDetector::postprocess()` 负责在推理后解码（cxcywh → xyxy → 反 letterbox → clamp）+ 贪心 NMS（IoU 阈值 0.45）。解码逻辑抽离为无 ONNX 依赖的纯函数 `decodeYoloOutput()`（`include/detection/YoloDecode.hpp`），可直接单测。
+**模型输出格式（NMS-export 已解码）**: 输出张量 `[1, 300, 6]` = `x1,y1,x2,y2,conf,class_id`（letterbox 输入尺度），**NMS 已在模型内完成**。`YoloDetector::postprocess()` 逐行解析：conf 过滤 → 反 letterbox → clamp，无额外 NMS 步骤。
 
-> ⚠️ 模型必须为**原始 YOLOv8 导出格式**。若换用带 NMS/已解码输出的 ONNX（旧 `best.onnx` 为 `[1,300,6]` 已解码格式），需同步调整解码逻辑。
+> ⚠️ 模型必须为 **NMS-export 已解码格式**（如 `best.onnx`）。若换用未解码的原始 YOLOv8 导出（`[1,4+nc,N]`），需重新引入解码 + NMS 逻辑（历史实现见提交 `06e1aa7` 的 `YoloDecode.hpp`）。
 
 检测接口因模式不同：
 
@@ -724,9 +724,7 @@ Steretracker/
 ├── README.md
 ├── CMakeLists.txt
 ├── main.cpp                    # 程序入口 (YOLO ROI + InputProvider + 模式分发)
-│
-├── yolo_onnx/                  # YOLO ONNX 模型 (yolov8n.onnx, 原始 YOLOv8 导出 2 类)
-│   └── yolov8n.onnx
+├── best.onnx                   # YOLO ONNX 模型 (NMS-export 已解码格式 [1,300,6], 2 类)
 │
 ├── config/
 │   ├── tracker_config.json
@@ -736,7 +734,7 @@ Steretracker/
 │
 ├── include/
 │   ├── common/                 # Types.hpp, Config.hpp, GeometryUtils.hpp
-│   ├── detection/              # YoloDetector, YoloDecode, YoloRoiProvider, RoiGenerator
+│   ├── detection/              # YoloDetector, YoloRoiProvider, RoiGenerator
 │   ├── feature/                # FeatureExtractor, AkazeGpnp, BinaryCorner, TinyTarget
 │   ├── fusion/                 # EskfFusionManager (ESKF 多源融合适配层)
 │   ├── input/                  # InputProvider, IStereoImageSource, CameraSource, RingBuffer, SimulatedSensors

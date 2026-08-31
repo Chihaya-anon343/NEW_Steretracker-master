@@ -188,11 +188,6 @@ gpnp_add_test(test_roi_generator
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_roi_generator.cpp
 )
 
-# YOLO 原始输出解码 + NMS 纯逻辑 (无 ONNX 依赖)
-gpnp_add_test(test_yolo_decode
-    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_yolo_decode.cpp
-)
-
 # PnP 求解器 (需要 Eigen + OpenCV calib3d)
 gpnp_add_test(test_pose_solvers
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_pose_solvers.cpp
@@ -247,7 +242,7 @@ gpnp_add_test(test_eskf_multimodal
 # 一键运行全部测试 (ctest 封装)
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_config test_roi_generator test_yolo_decode test_pose_solvers
+    DEPENDS test_config test_roi_generator test_pose_solvers
             test_extractors test_integration test_eskf_fusion test_eskf_multimodal
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "运行 Steretracker 单元与集成测试"
@@ -256,7 +251,7 @@ add_custom_target(check
 # ============================================================================
 # 摘要
 # ============================================================================
-set(GPNP_TEST_LIST "test_config, test_roi_generator, test_yolo_decode, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
+set(GPNP_TEST_LIST "test_config, test_roi_generator, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
 if(GPNP_ONNXRUNTIME_FOUND)
     set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system, test_yolo_detector, test_synthetic_pipeline")
 endif()

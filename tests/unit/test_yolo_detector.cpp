@@ -5,7 +5,7 @@
 //       YoloRoiProvider (YOLO → RoiGroup 外观)。
 //
 // 数据依赖 (缺失即跳过, 不 FAIL, 便于无模型 CI):
-//   - 模型: yolo_onnx/yolov8n.onnx (原始 YOLOv8 导出, 2 类)
+//   - 模型: best.onnx (NMS-export 已解码格式 [1,300,6], 2 类)
 //   - 图片: tests/data/fixtures/synthetic_akaze/left_000.png (仅冒烟, 不强断言检测结果)
 //
 // 定位: 冒烟测试 —— 断言模型可加载、detect() 返回合理状态码、外观层不崩溃;
@@ -29,7 +29,7 @@ using namespace gpnp;
 
 namespace {
 
-const char* kModelPath = "yolo_onnx/yolov8n.onnx";
+const char* kModelPath = "best.onnx";
 const char* kImagePath = "tests/data/fixtures/synthetic_akaze/left_000.png";
 
 bool fileExists(const char* p) {
@@ -54,7 +54,7 @@ void skip(const char* why) {
 // ============================================================================
 
 static void test_model_load_success() {
-    if (!modelExists()) { skip("模型缺失 (yolo_onnx/yolov8n.onnx)"); return; }
+    if (!modelExists()) { skip("模型缺失 (best.onnx)"); return; }
     YoloDetector det(makeCfg(kModelPath));
     TEST_ASSERT(det.isInitialized());
 }

@@ -13,7 +13,6 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 #include "common/Types.hpp"
-#include "detection/YoloDecode.hpp"
 
 #include <algorithm>
 #include <array>
@@ -65,6 +64,7 @@ private:
                        const cv::Mat& img0,
                        float ratio, float dw, float dh,
                        std::vector<Detection>& detections) const;
+    static bool isValidNumber(double v);
 
     // --- 成员变量 ---
 
@@ -321,7 +321,7 @@ inline std::vector<float> YoloDetector::blobFromImage(
     return input_tensor_values;
 }
 
-// --- 后处理：解码原始 YOLOv8 输出 + NMS ---
+// --- 后处理：解码边界框 ---
 
 inline Status YoloDetector::postprocess(const std::vector<Ort::Value>& preds,
                                           const cv::Mat& img0,
@@ -342,41 +342,83 @@ inline Status YoloDetector::postprocess(const std::vector<Ort::Value>& preds,
         return Status::InferenceFailed;
     }
 
-    // 原始 YOLOv8 输出：[1, 4+nc, N] (BCN) 或 [1, N, 4+nc] (BNC)，
-    // 也可能是去掉 batch 维的 rank-2。区分"属性维"(4+nc) 与"预测框维"(N)。
-    size_t dim1 = 0, dim2 = 0;
+    size_t rows = 0, cols = 0;
     if (shape.size() == 3) {
-        dim1 = static_cast<size_t>(shape[1]);
-        dim2 = static_cast<size_t>(shape[2]);
+        rows = static_cast<size_t>(shape[1]);
+        cols = static_cast<size_t>(shape[2]);
     } else {
-        dim1 = static_cast<size_t>(shape[0]);
-        dim2 = static_cast<size_t>(shape[1]);
+        rows = static_cast<size_t>(shape[0]);
+        cols = static_cast<size_t>(shape[1]);
     }
 
-    const bool shape_is_bcn = (dim1 < dim2);
-    const size_t num_attrs  = shape_is_bcn ? dim1 : dim2;   // 4 + 类别数
-    const size_t num_preds  = shape_is_bcn ? dim2 : dim1;   // 预测框数
-    const size_t num_classes = num_attrs - 4;
-
-    if (num_attrs < 5 || num_preds == 0) {
+    if (cols < 6 || rows == 0) {
         return Status::InferenceFailed;
     }
 
     const float* data = output.GetTensorData<float>();
     const size_t total = tensor_info.GetElementCount();
-    if (!data || total < dim1 * dim2) {
+    if (!data || total < rows * cols) {
         return Status::InferenceFailed;
     }
 
     const int img_h = img0.rows;
     const int img_w = img0.cols;
 
-    detections = decodeYoloOutput(data, shape_is_bcn, num_preds, num_classes,
-                                  ratio, dw, dh, img_w, img_h,
-                                  config_.conf_threshold, config_.iou_threshold);
+    for (size_t i = 0; i < rows; ++i) {
+        const float* p = data + i * cols;
+
+        if (!std::isfinite(p[0]) || !std::isfinite(p[1]) ||
+            !std::isfinite(p[2]) || !std::isfinite(p[3]) ||
+            !std::isfinite(p[4]) || !std::isfinite(p[5])) {
+            continue;
+        }
+
+        float x1 = p[0];
+        float y1 = p[1];
+        float x2 = p[2];
+        float y2 = p[3];
+        float conf = p[4];
+        int cls = static_cast<int>(std::round(p[5]));
+
+        if (!std::isfinite(conf) || conf < config_.conf_threshold) {
+            continue;
+        }
+
+        // 反向 letterbox 变换
+        x1 = (x1 - dw) / ratio;
+        x2 = (x2 - dw) / ratio;
+        y1 = (y1 - dh) / ratio;
+        y2 = (y2 - dh) / ratio;
+
+        if (!isValidNumber(x1) || !isValidNumber(y1) ||
+            !isValidNumber(x2) || !isValidNumber(y2)) {
+            continue;
+        }
+        if (x2 <= x1 || y2 <= y1) {
+            continue;
+        }
+
+        x1 = std::clamp(x1, 0.0f, static_cast<float>(img_w));
+        x2 = std::clamp(x2, 0.0f, static_cast<float>(img_w));
+        y1 = std::clamp(y1, 0.0f, static_cast<float>(img_h));
+        y2 = std::clamp(y2, 0.0f, static_cast<float>(img_h));
+
+        Detection det;
+        det.class_id = cls;
+        det.confidence = conf;
+        det.bbox = cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
+
+        detections.push_back(std::move(det));
+    }
 
     // 空结果并非错误
     return Status::Success;
+}
+
+// --- 数值有效性检查 ---
+
+inline bool YoloDetector::isValidNumber(double v) {
+    return std::isfinite(v);
 }
 
 } // namespace gpnp

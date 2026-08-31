@@ -63,7 +63,7 @@ std::string g_template_dir      = "data/big/img_1.png";
 std::string g_binary_dir        = "data/NewMuBan(reordered)";
 std::string g_tiny_dir          = "data/NewMuBan(reordered)";
 std::string g_points_dir        = "scripts";               // class0/class1_points.txt
-std::string g_model_path        = "yolo_onnx/yolov8n.onnx";
+std::string g_model_path        = "best.onnx";
 bool g_no_yolo                  = false;                   // 强制回退特征点 ROI (诊断用)
 
 // ---------------------------------------------------------------------------
