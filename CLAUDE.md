@@ -1626,6 +1626,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 文件 | 关键内容 |
 |------|---------|
 | `scripts/camera_capture.py` | 摄像头预览/抓拍/连拍/流式导出 |
+| `scripts/calibrate_camera.py` | **相机内参标定 (棋盘格)**: 读 `data/calib/` 多张图 → `calibrateCamera` → 打印 K/dist + 各图 RMS, 输出 `scripts/camera_intrinsics.json` (含 board_corners/square_size_mm 规格校验字段)。硬编码 7格x10格 → 内角点 9x6, 单格 18mm; **objp 点序必须 `np.mgrid[0:cols, 0:rows].T`** (cols 在前, 与 findChessboardCorners 行优先展开对应) |
+| `scripts/solve_chessboard_pose.py` | **棋盘格位姿解算 (PnP, 批量)**: 遍历 `IMAGE_DIR` 下所有图片 (自动跳过 `*_pose.png`), 每张 `findChessboardCorners` → `solvePnP(IPPE)`, 平移向量 T (mm) 双描边写在 `*_pose.png` 左上角 (角点 + 坐标轴叠加), 终端输出各图 RMS/T/|T| + 汇总。内参优先读 `camera_intrinsics.json`, 缺失时用硬编码兜底值。⚠️ T 原点 = **第一个检测到的内角点** (非棋盘外角, 内缩一格); 坐标系 Z 前/X 右/Y 下, 单位 mm |
 | `scripts/annotate_points.py` | **交互式特征点标注**: 在目标图上点 2×N 个点 (前 N=class0 整体, 后 N=class1 中心), 输出 `Corner_N: X, Y` txt (与 `readCorners()` 兼容) |
 | `scripts/class0_points.txt` / `scripts/class1_points.txt` | 在 `data/big/img_1.png` (798×786) 上手工标注的 class0(10 点, 目标外轮廓)/class1(10 点, 中心) 特征点 |
 | `scripts/generate_synthetic_dataset.py` | **合成训练数据集生成**: 复用 `generate_assets.py` 图像参数+五状态分类, 平面单应透视投影目标到背景任意位置(不截断), 每图输出 class0/class1 特征点 txt + `manifest.json` |

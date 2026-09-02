@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/mid/cj06_image_0181.jpg",
-    "right": "data/mid/cj06_image_0181.jpg"
+    "left": "data/calib/frame_000001.jpg",
+    "right": "data/calib/frame_000001.jpg"
   },
 
   "manual_roi": {
@@ -45,7 +45,7 @@
 
   "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
   "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
-  "mono_mode": false,
+  "mono_mode": true,
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
@@ -63,7 +63,7 @@
 
   "yolo": {
     "model_path": "yolo_onnx/yolov8n.onnx",
-    "conf_threshold": 0.5,
+    "conf_threshold": 0.3,
     "target_class_id": 0,
     "roi_expand_ratio": 0.0,
     "roi_min_size": 0
