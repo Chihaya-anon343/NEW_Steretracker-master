@@ -373,7 +373,7 @@ void configureStrategyChain(int roi_area, bool is_class1 = false) {
 | 1 | 远 | ≤800 px² | TinyTarget | solvePnP ITERATIVE | MonoPnP EPnP/IPPE | ❌ | 无→终止 |
 | 2 | 中 | 801~40000 | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | TT |
 | 3 | 中近 | 40001~489999 | AKAZE | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | BC→TT |
-| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | 独立路径 |
+| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP + BC-only 回退 | MonoPnP + BC-only 回退 | ✅ 双目 | BC-only 回退 |
 | 5 | 极近 | 无class0+有class1 | 按面积重分类 | 按重分类 | 按重分类 | 按重分类 | 按重分类 |
 
 ### 4.5 退化后备链
@@ -388,7 +388,7 @@ AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarg
 | YOLO 无检测 | 直接 skip 帧，不触发退化链 |
 | State 5 回退 | class 1 重分类后重新走 State 1~4 策略链 |
 | 退化链由 `configureStrategyChain()` 一次性配置 | 调用方只需遍历 `fallback_extractors_` 列表 |
-| 特征提取 "失败" 的定义 | `PipelineResult::success == false` 或 `n_kp_left < 3` |
+| 特征提取 "失败" 的定义 | `PipelineResult::success == false` 或 `n_kp_left < 3`；单目路径提取成功但单目 PnP 失败同样触发退化（2026-09 修复，PnP 判定移入链循环） |
 
 ---
 
@@ -737,6 +737,10 @@ struct Config {
 
 [Step 5] PnP:
   GPnP (双目) 或 MonoPnP (单目)
+  失败 → BC-only 回退: 合并数组前缀 bc_total(≥4) 个 BC 角点
+        + dual_bc_tmpl_pts3d_ 重解 (双目走 solveBcPnpChain,
+        单目走 mono_pnp_.solve); 仍失败 → 整帧失败
+        成功 → strategy_name="DualRoi_BC", LogEntry.fallback=true
 ```
 
 ### 5.6 光流追踪器 OpticalFlowTracker
@@ -1192,9 +1196,9 @@ if (left_group && left_group->is_dual) {
 
 **影响**:
 - Dual-ROI 不调用 `configureStrategyChain()`
-- 不进入退化后备链
+- 不进入退化后备链 (AKAZE→BC→TT)
 - 独立使用 `binary_extractor_` + `dual_akaze_extractor_` (不是 `akaze_extractor_`)
-- BC 提取失败直接返回失败，不降级
+- 合并 (BC+AK) 解算失败时有 **BC-only 回退**（2026-09 新增）：切合并数组前缀 `bc_total`（≥4）个外层 BC 角点 + `dual_bc_tmpl_pts3d_`，走 BC 策略的 PnP 链重解；成功后 `strategy_name = "DualRoi_BC"`、日志 `fallback=true`。BC-only 仍失败才整帧失败
 
 ### 9.2 ⚠️ 陷阱2: 单目模式无 warm-start
 
@@ -1318,26 +1322,30 @@ AKAZE_GPNP (State 3) ──失败──→ BinaryCorner (State 2) ──失败�
 
 | 退化步骤 | 触发条件 | 降级目标 |
 |---------|---------|---------|
-| AKAZE → BC | `success == false` 或 `n_kp_left < 3` | BinaryCorner |
+| AKAZE → BC | `success == false` 或 `n_kp_left < 3`（单目：提取成功但单目 PnP 失败同上，2026-09 起） | BinaryCorner |
 | BC → TT | 同上 | TinyTarget |
 | TT → 终止 | 同上 | 帧输出失败，无位姿 |
 
 > 退化不跨面积区间折返（如 TT 失败不会回到 BC）。
+> 单目 PnP 在链循环内逐策略执行（`MonoTracker::process` / `StereoTracker::processMono`，与双目 `dispatchPnP` 同语义）；2D/3D 按 `good_matches[i] ↔ pts_left_match[i]` 平行序配对——BC approxPolyDP 近似命中时角点数可多于模板角点（如 11 vs 10），尾部无匹配角点被自然剔除，不再因 2D/3D 数量不等被 MonoPnP 拒解。
 
-#### 二、Dual-ROI (State 4) — 独立路径，不参与退化链
+#### 二、Dual-ROI (State 4) — 独立路径 + BC-only 回退（2026-09 新增）
 
 ```
-Dual-ROI (BC + AK 并行提取) ──任一失败──→ 直接返回失败（不降级）
+Dual-ROI (BC + AK 并行提取) ──合并解算失败──→ BC-only 重解（BC 策略 PnP 链）──仍失败──→ 终止
 ```
 
 | 退化情况 | 触发条件 | 行为 |
 |---------|---------|------|
-| BC 提取失败 | `result_bc.success == false` | 整体失败，不 fallback |
-| AK 提取失败 | `result_ak.success == false` | 整体失败，不 fallback |
-| 合并点数不足 | `total_use < 4` | 整体失败，不 fallback |
+| 合并点数不足 | `total_use < 4` | 直接失败（BC 前缀是 total 的子集，此时 BC 可用点必 <4，无点可退） |
+| 合并 PnP 失败 | 双目: InitialPnP+GPnP(默认深度) 全失败; 单目: MonoPnP 全候选失败 | **BC-only 回退**: 合并数组前缀 `[0, bc_total)` 即 BC 贡献（与 `dual_bc_tmpl_pts3d_` 一一对应），切片后重解；双目走 `solveBcPnpChain()`（InitialPnP→GPnP→回退），单目走 `mono_pnp_.solve()` |
+| BC 回退仍失败 | BC-only PnP 链失败 | 整帧失败，终止 |
+| BC/AK 单边提取失败 | 一侧 `pts_left_match` 为空 | 不必然失败：另一侧点数 ≥4 时合并点集即为其子集，正常解算 |
 | BC 模板角度偏差 | `|matched_angle| > 0.5°` | 用 `reorderByGeometry` 重排 3D 点（修正，不算退化） |
 
-> 代码证据：`processMono()` 中对 Dual-ROI 走 **EARLY RETURN**，不调用 `configureStrategyChain()`，也不进入 fallback 循环。
+> BC-only 回退的额外收益：AK 点无立体匹配时右图点用左图坐标占位（视差=0），毒化 GPnP 交叉射线残差——BC-only 子集的右点来自 BC 真实右图角点，天然剔除该毒化源。
+> 成功后标记：`strategy_name = "DualRoi_BC"`、`LogEntry.fallback=true`、verbose 输出 `[BC-fallback]`。
+> 代码证据：Dual-ROI 走 **EARLY RETURN**（不调用 `configureStrategyChain()`，不进入 AKAZE→BC→TT fallback 循环）；BC-only 回退实现在 `processDualRoi` 第 9b 步 / `MonoTracker::processDualRoi` 第 8b 步。
 
 #### 三、State 5 极近 — class1 回退重分类
 
@@ -1459,8 +1467,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
    │  │  │  │    │
   St1 St2 St3  St4 (BC∥AK 独立路径)
    │  │  │  │    │
-   TT BC AKAZE  BC∥AK ──任一失败→终止
-   │  │  │  (不参与退化链)
+   TT BC AKAZE  BC∥AK ──合并解算失败→BC-only重解──仍失败→终止
+   │  │  │  │    (不参与退化链)
    │  │  │
    │  │  ├─RatioTest<4→失败
    │  │  ├─CrossCheck<4→失败
@@ -1484,7 +1492,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 特征 | 说明 |
 |------|------|
 | **退化方向** | 始终单向：AKAZE → BC → TT，不可逆 |
-| **Dual-ROI 隔离** | State 4 完全独立，不参与退化链，失败直接终止 |
+| **Dual-ROI 隔离** | State 4 不参与 AKAZE→BC→TT 链；合并解算失败回退 BC-only 重解（`DualRoi_BC`），仍失败才终止 |
 | **YOLO vs 特征退化分离** | YOLO 无检测 = skip 帧（不触发策略链）；特征提取失败 = 策略退化；两者互不触发 |
 | **单目退化面窄** | 单目无光流、无立体投影、无 MAD、无 warm-start — 比双目退化面缩窄约 5 类 |
 | **子退化不跨模块** | BC 内部旋转回退不影响策略链选择；AKAZE 匹配阶段回退不改变策略 |

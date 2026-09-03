@@ -84,6 +84,9 @@ private:
                                                PipelineResult& result);
     std::pair<bool, PoseEstimate> runAkazePnP(PipelineResult& result);
     std::pair<bool, PoseEstimate> runBinaryCornerPnP(PipelineResult& result);
+    std::pair<bool, PoseEstimate> solveBcPnpChain(
+        PipelineResult& result,
+        const std::vector<Eigen::Vector3d>& pnp_pts_3d);
     std::pair<bool, PoseEstimate> runTinyTargetPnP(PipelineResult& result);
 
     // ---- Stereo-specific members ----

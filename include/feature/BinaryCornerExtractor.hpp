@@ -96,6 +96,14 @@ public:
     /// 返回旋转回正后的二值图像（用于可视化调试）
     const cv::Mat& lastUprightBinary() const { return last_upright_binary_; }
 
+    /// 返回第1步 keepLargestRegion 筛选后的掩码（用于可视化调试）
+    const cv::Mat& lastLargestRegion() const { return last_largest_region_; }
+
+    /// 返回第5步轮廓提取时的二值图（角点提取的直接输入）
+    const cv::Mat& lastContourBinary() const { return last_contour_binary_; }
+    /// 返回第5步提取的最大轮廓（approxPolyDP 的直接输入，cleaned 坐标系）
+    const std::vector<cv::Point>& lastContour() const { return last_contour_; }
+
     // ---- 诊断信息 ----
 
     const std::vector<std::pair<std::string, std::string>>& processLog() const {
@@ -187,6 +195,9 @@ private:
     cv::Mat last_left_binary_;
     cv::Mat last_right_binary_;
     cv::Mat last_upright_binary_;    // 旋转回正后的二值图
+    cv::Mat last_largest_region_;    // 第1步最大连通域筛选结果
+    cv::Mat last_contour_binary_;    // 第5步轮廓提取时的二值图（角点输入）
+    std::vector<cv::Point> last_contour_;  // approxPolyDP 的输入轮廓
 };
 
 } // namespace gpnp

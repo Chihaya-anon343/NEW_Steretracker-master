@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/calib/frame_000001.jpg",
-    "right": "data/calib/frame_000001.jpg"
+    "left": "data/新建文件夹/pura70_white_v2_1p80_static/frame_000006.jpg",
+    "right": "data/新建文件夹/pura70_white_v2_1p80_static/frame_000006.jpg"
   },
 
   "manual_roi": {
@@ -98,7 +98,7 @@
     "binary_corner": {
       "template_dir": "data/NewMuBan(reordered)",
       "corners": 10,
-      "kernel_size": 3,
+      "kernel_size": 5,
       "corner_scale": 3.0,
       "target_width": 100,
       "target_height": 100,

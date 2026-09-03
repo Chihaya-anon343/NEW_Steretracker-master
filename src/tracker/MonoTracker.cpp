@@ -274,6 +274,28 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     // 8. Pose estimation (mono EPnP)
     PoseEstimate pose = mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K);
 
+    // 8b. 回退：合并解算失败 → 仅用外层 BC 角点重解（与单目 BC 策略同为
+    // MonoPnP 多候选择优）。BC 点位于合并数组前缀 [0, n_bc_use)，
+    // 与 dual_bc_tmpl_pts3d_ 一一对应，切片即得 BC-only 子集。
+    bool bc_fallback_used = false;
+    if (!pose.success && n_bc_use >= 4) {
+        if (verbose_console_)
+            std::cout << "  [DualRoi][Mono] Merged solve failed, falling back to BC-only ("
+                      << n_bc_use << " corners)" << std::endl;
+        std::vector<cv::Point2f> bc_2d(merged_pts_2d.begin(),
+                                       merged_pts_2d.begin() + n_bc_use);
+        std::vector<Eigen::Vector3d> bc_3d(dual_bc_tmpl_pts3d_.begin(),
+                                           dual_bc_tmpl_pts3d_.begin() + n_bc_use);
+        pose = mono_pnp_.solve(bc_2d, bc_3d, camera_.K);
+        if (pose.success) {
+            bc_fallback_used = true;
+            total_use = n_bc_use;
+            merged_pts_2d.resize(n_bc_use);
+            merged_kp_left.resize(n_bc_use);
+            merged_pts_3d.resize(n_bc_use);   // 前缀即 BC 3D，保持可视化面板索引一致
+        }
+    }
+
     // 9. Build PipelineResult
     PipelineResult result;
     result.kp_left         = std::move(merged_kp_left);
@@ -286,11 +308,11 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     if (pose.success) {
         finalizePose(result, pose);
     }
-    result.strategy_name = "DualRoi";
+    result.strategy_name = bc_fallback_used ? "DualRoi_BC" : "DualRoi";
 
     result.n_matched   = total_use;
     result.n_projected = 0;
-    addLogEntry(result, is_first, false);
+    addLogEntry(result, is_first, bc_fallback_used);
 
     // ---- Visualization (simplified, left-only) ----
     // PnP 失败时仍输出：Panel 0/1 不依赖位姿；Panel 2/3 内部各自按 pose.success 降级
@@ -469,6 +491,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     if (verbose_console_)
         std::cout << "[DualRoi][Mono] Frame done: n_pts=" << total_use
                   << "  PnP=" << (pose.success ? "OK" : "FAIL")
+                  << (bc_fallback_used ? "  [BC-fallback]" : "")
                   << std::endl;
 
     return result;
@@ -531,15 +554,16 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     configureStrategyChain(roi_area, use_c1);
 
     bool is_first = (state_.frame_count == 0);
-    bool extracted = false;
 
-    // 尝试主策略 + 退化链
+    // 尝试主策略 + 退化链：提取成功且单目 PnP 成功才算胜出，
+    // PnP 失败（如 BC 近似角点数与模板不一致被 MonoPnP 拒解）同样触发退化
     std::vector<FeatureExtractor*> chain;
     chain.push_back(extractor_);
     for (auto* fb : fallback_extractors_)
         chain.push_back(fb);
 
     FeatureExtractor* winning_ext = nullptr;
+    PoseEstimate pose;
 
     for (auto* ext : chain) {
         if (!ext) continue;
@@ -567,47 +591,60 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
             kp.pt.y += static_cast<float>(left_offset.y);
         }
 
-        if (local.success && local.n_kp_left >= 3) {
-            result = std::move(local);
-            result.left_color = left_color;
-            result.left_roi_offset_x = static_cast<int>(left_offset.x);
-            result.left_roi_offset_y = static_cast<int>(left_offset.y);
-            winning_ext = ext;
-            extracted = true;
+        if (!(local.success && local.n_kp_left >= 3)) {
+            if (verbose_console_) std::cout << "[Mono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
+            continue;
+        }
+
+        // 单目 PnP（循环内：提取成功但解算失败继续退化链）。
+        // good_matches[i] ↔ pts_left_match[i] 平行序（AKAZE/TT 等长平行；BC 近似
+        // 命中时角点数可多于模板角点，尾部无匹配角点自然被跳过）
+        const auto& pnp_pts_3d = ext->templateData().pts_3d;
+        std::vector<cv::Point2f> pnp_2d;
+        std::vector<Eigen::Vector3d> pnp_3d;
+        pnp_2d.reserve(std::min(local.good_matches.size(), local.pts_left_match.size()));
+        for (size_t i = 0; i < local.good_matches.size() &&
+                           i < local.pts_left_match.size(); ++i) {
+            int idx = local.good_matches[i].trainIdx;
+            if (idx >= 0 && idx < static_cast<int>(pnp_pts_3d.size())) {
+                pnp_2d.push_back(local.pts_left_match[i]);
+                pnp_3d.push_back(pnp_pts_3d[idx]);
+            }
+        }
+        PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+
+        result = std::move(local);
+        result.left_color = left_color;
+        result.left_roi_offset_x = static_cast<int>(left_offset.x);
+        result.left_roi_offset_y = static_cast<int>(left_offset.y);
+        winning_ext = ext;
+
+        if (p.success) {
+            pose = p;
             if (verbose_console_)
                 std::cout << "[Mono] Extractor " << ext->name()
                           << " succeeded, n_kp=" << result.n_kp_left << std::endl;
             break;
         }
 
-        if (verbose_console_) std::cout << "[Mono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
+        if (verbose_console_)
+            std::cout << "[Mono] Extractor " << ext->name()
+                      << " PnP failed, degrading..." << std::endl;
     }
 
-    if (!extracted) {
+    if (!winning_ext) {
         std::cerr << "[Mono] All extractors failed" << std::endl;
         result.is_class1 = use_c1;
         addLogEntry(result, is_first, true);
         return result;
     }
 
-    // 单目 PnP 解算（EPnP，无 GPNP / warm-start）
-    // winners_ext 有效的 extractor 一定有自己的 pts_3d（构造时已初始化）
-    const auto& pnp_pts_3d = winning_ext->templateData().pts_3d;
-    std::vector<Eigen::Vector3d> matched_pts_3d;
-    matched_pts_3d.reserve(result.good_matches.size());
-    for (const auto& m : result.good_matches) {
-        int idx = m.trainIdx;
-        if (idx >= 0 && idx < static_cast<int>(pnp_pts_3d.size())) {
-            matched_pts_3d.push_back(pnp_pts_3d[idx]);
-        }
-    }
-    PoseEstimate pose = mono_pnp_.solve(result.pts_left_match, matched_pts_3d, camera_.K);
     finalizePose(result, pose);
 
-    result.strategy_name = winning_ext ? winning_ext->name() : "Unknown";
+    result.strategy_name = winning_ext->name();
     result.success = pose.success;
     result.is_class1 = use_c1;
-    addLogEntry(result, is_first, false);
+    addLogEntry(result, is_first, winning_ext != chain.front());
 
     // ---- Visualization ----
     if (visualize && !output_dir_.empty()) {
@@ -748,6 +785,25 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                 cv::Mat up;
                 cv::cvtColor(bce->lastUprightBinary(), up, cv::COLOR_GRAY2BGR);
                 utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_upright" + prefix + ".png", up);
+            }
+
+            // -- Panel: Largest region (第1步连通域筛选结果) --
+            if (bce && !bce->lastLargestRegion().empty()) {
+                cv::Mat lr;
+                cv::cvtColor(bce->lastLargestRegion(), lr, cv::COLOR_GRAY2BGR);
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_largest_region" + prefix + ".png", lr);
+            }
+
+            // -- Panel: Contour input (第5步角点提取的输入：二值图 + 最大轮廓) --
+            if (bce && !bce->lastContourBinary().empty()) {
+                cv::Mat ci;
+                cv::cvtColor(bce->lastContourBinary(), ci, cv::COLOR_GRAY2BGR);
+                const auto& ctr = bce->lastContour();
+                if (!ctr.empty()) {
+                    std::vector<std::vector<cv::Point>> polys = {ctr};
+                    cv::polylines(ci, polys, true, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+                }
+                utils::AsyncImageSaver::write(output_dir_ + "/mono_bc_contour_input" + prefix + ".png", ci);
             }
 
             // -- Panel: Template correspondence (left-view | matched-template) --

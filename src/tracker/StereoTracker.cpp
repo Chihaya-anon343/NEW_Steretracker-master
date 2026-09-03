@@ -274,12 +274,20 @@ std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(PipelineResult& result)
 // ============================================================================
 
 std::pair<bool, PoseEstimate> StereoTracker::runBinaryCornerPnP(PipelineResult& result) {
-    PoseEstimate pose;
-    double gpnp_timing = 0.0;
-
     const auto& pnp_pts_3d = !extractor_->templateData().pts_3d.empty()
         ? extractor_->templateData().pts_3d
         : template_.pts_3d;
+    return solveBcPnpChain(result, pnp_pts_3d);
+}
+
+// BC 策略的 PnP 链：InitialPnP → GPnP warm-start → GPnP 失败回退 InitialPnP
+// → InitialPnP 失败用视差中值估深度做初值。Dual-ROI 合并解算失败的 BC-only
+// 回退（DualRoi_BC）复用此链。
+std::pair<bool, PoseEstimate> StereoTracker::solveBcPnpChain(
+        PipelineResult& result,
+        const std::vector<Eigen::Vector3d>& pnp_pts_3d) {
+    PoseEstimate pose;
+    double gpnp_timing = 0.0;
 
     if (config_.use_initial_pnp) {
         // 每帧始终运行 InitialPnP（几何一致初值），避免 GPnP HYBRID 路径复用上帧缓存旋转
@@ -1304,10 +1312,50 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     auto t_pnp_end = std::chrono::high_resolution_clock::now();
     result.timing["gpnp"] = std::chrono::duration<double, std::milli>(t_pnp_end - t_pnp_start).count();
 
+    // 9b. 回退：合并解算失败 → 仅用外层 BC 角点重解（复用 BC 策略的 PnP 链）。
+    // BC 点位于合并数组前缀 [0, bc_total)，与 dual_bc_tmpl_pts3d_ 一一对应，
+    // 切片即得 BC-only 子集；AK 占位右点（视差=0 毒化 GPnP）随之被剔除。
+    bool bc_fallback_used = false;
+    if (!pose.success && bc_total >= 4 &&
+        static_cast<int>(dual_bc_tmpl_pts3d_.size()) >= bc_total) {
+        if (verbose_console_)
+            std::cout << "  [DualRoi] Merged solve failed, falling back to BC-only ("
+                      << bc_total << " corners)" << std::endl;
+
+        PipelineResult bc_try = result;  // 已恢复全图坐标
+        bc_try.kp_left.resize(bc_total);
+        bc_try.pts_left_match.resize(bc_total);
+        bc_try.pts_left_good.resize(bc_total);
+        bc_try.pts_right_good.resize(bc_total);
+        bc_try.pts_left_used.resize(bc_total);
+        bc_try.pts_right_used.resize(bc_total);
+        if (static_cast<int>(bc_try.pts_template_match.size()) > bc_total)
+            bc_try.pts_template_match.resize(bc_total);
+        if (static_cast<int>(bc_try.disparity.size()) > bc_total)
+            bc_try.disparity.resize(bc_total);
+        if (static_cast<int>(bc_try.dx_filtered.size()) > bc_total)
+            bc_try.dx_filtered.resize(bc_total);
+        bc_try.valid_mask.assign(bc_total, true);
+        bc_try.idx_from_filtered.resize(bc_total);   // 前缀本就是 0..bc_total-1
+        bc_try.good_matches.resize(bc_total);
+        for (int i = 0; i < bc_total; ++i)
+            bc_try.good_matches[i] = cv::DMatch(i, i, 0.0f);
+        bc_try.is_first_frame = is_first;
+
+        auto [ok, bc_pose] = solveBcPnpChain(bc_try, dual_bc_tmpl_pts3d_);
+        if (ok) {
+            pose = bc_pose;
+            bc_fallback_used = true;
+            total_use = bc_total;
+            merged_pts3d.resize(bc_total);   // 前缀即 BC 3D，保持可视化面板索引一致
+            result = std::move(bc_try);
+        }
+    }
+
     if (pose.success) {
         finalizePose(result, pose);
     }
-    result.strategy_name = "DualRoi";
+    result.strategy_name = bc_fallback_used ? "DualRoi_BC" : "DualRoi";
 
     // ---- Visualization (dual-ROI) ----
     if (visualize && pose.success) {
@@ -1495,11 +1543,12 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     result.n_matched = total_use;
     result.n_projected = total_use;
-    addLogEntry(result, is_first, false);
+    addLogEntry(result, is_first, bc_fallback_used);
 
     if (verbose_console_)
         std::cout << "[DualRoi] Frame done: n_pts=" << total_use
                   << "  GPNP=" << (pose.success ? "OK" : "FAIL")
+                  << (bc_fallback_used ? "  [BC-fallback]" : "")
                   << "  time=" << result.total_time_ms() << "ms"
                   << std::endl;
 
@@ -1607,14 +1656,15 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
     configureStrategyChain(roi_area, use_c1);
 
     bool is_first = (state_.frame_count == 0);
-    bool extracted = false;
 
+    // 提取成功且单目 PnP 成功才算胜出，PnP 失败同样触发退化
     std::vector<FeatureExtractor*> chain;
     chain.push_back(extractor_);
     for (auto* fb : fallback_extractors_)
         chain.push_back(fb);
 
     FeatureExtractor* winning_ext = nullptr;
+    PoseEstimate pose;
 
     for (auto* ext : chain) {
         if (!ext) continue;
@@ -1641,13 +1691,37 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
             kp.pt.y += static_cast<float>(offset.y);
         }
 
-        if (local.success && local.n_kp_left >= 3) {
-            result = std::move(local);
-            result.left_color = color;
-            result.left_roi_offset_x = static_cast<int>(offset.x);
-            result.left_roi_offset_y = static_cast<int>(offset.y);
-            winning_ext = ext;
-            extracted = true;
+        if (!(local.success && local.n_kp_left >= 3)) {
+            if (verbose_console_)
+                std::cout << "[StereoMono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
+            continue;
+        }
+
+        // 单目 PnP（循环内：提取成功但解算失败继续退化链）。
+        // good_matches[i] ↔ pts_left_match[i] 平行序（AKAZE/TT 等长平行；BC 近似
+        // 命中时角点数可多于模板角点，尾部无匹配角点自然被跳过）
+        const auto& pnp_pts_3d = ext->templateData().pts_3d;
+        std::vector<cv::Point2f> pnp_2d;
+        std::vector<Eigen::Vector3d> pnp_3d;
+        pnp_2d.reserve(std::min(local.good_matches.size(), local.pts_left_match.size()));
+        for (size_t i = 0; i < local.good_matches.size() &&
+                           i < local.pts_left_match.size(); ++i) {
+            int idx = local.good_matches[i].trainIdx;
+            if (idx >= 0 && idx < static_cast<int>(pnp_pts_3d.size())) {
+                pnp_2d.push_back(local.pts_left_match[i]);
+                pnp_3d.push_back(pnp_pts_3d[idx]);
+            }
+        }
+        PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+
+        result = std::move(local);
+        result.left_color = color;
+        result.left_roi_offset_x = static_cast<int>(offset.x);
+        result.left_roi_offset_y = static_cast<int>(offset.y);
+        winning_ext = ext;
+
+        if (p.success) {
+            pose = p;
             if (verbose_console_)
                 std::cout << "[StereoMono] Extractor " << ext->name()
                           << " succeeded, n_kp=" << result.n_kp_left << std::endl;
@@ -1655,33 +1729,23 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
         }
 
         if (verbose_console_)
-            std::cout << "[StereoMono] Extractor " << ext->name() << " failed, degrading..." << std::endl;
+            std::cout << "[StereoMono] Extractor " << ext->name()
+                      << " PnP failed, degrading..." << std::endl;
     }
 
-    if (!extracted) {
+    if (!winning_ext) {
         std::cerr << "[StereoMono] All extractors failed" << std::endl;
         result.is_class1 = use_c1;
         addLogEntry(result, is_first, true);
         return result;
     }
 
-    // 单目 PnP（EPnP，无 warm-start）
-    const auto& pnp_pts_3d = winning_ext->templateData().pts_3d;
-    std::vector<Eigen::Vector3d> matched_pts_3d;
-    matched_pts_3d.reserve(result.good_matches.size());
-    for (const auto& m : result.good_matches) {
-        int idx = m.trainIdx;
-        if (idx >= 0 && idx < static_cast<int>(pnp_pts_3d.size())) {
-            matched_pts_3d.push_back(pnp_pts_3d[idx]);
-        }
-    }
-    PoseEstimate pose = mono_pnp_.solve(result.pts_left_match, matched_pts_3d, camera_.K);
     finalizePose(result, pose);
 
-    result.strategy_name = winning_ext ? winning_ext->name() : "Unknown";
+    result.strategy_name = winning_ext->name();
     result.success = pose.success;
     result.is_class1 = use_c1;
-    addLogEntry(result, is_first, false);
+    addLogEntry(result, is_first, winning_ext != chain.front());
 
     // ---- Visualization (仅三维轴叠加图，Normal/Debug 一致) ----
     if (visualize && !output_dir_.empty()) {

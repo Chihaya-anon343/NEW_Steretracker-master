@@ -332,6 +332,8 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
     process_log_.clear();
     last_matched_template_ = nullptr;
     last_match_overlap_ = 0.0;
+    last_contour_binary_.release();
+    last_contour_.clear();
 
     if (binary_img.empty()) {
         logStep("Input", "Empty image");
@@ -363,6 +365,7 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
 
     // ---- 第1步: 保留最大连通域 ----
     cv::Mat largest_region = keepLargestRegion(work_img);
+    last_largest_region_ = largest_region.clone();
 
     // ---- 第2步: 填充孔洞 ----
     cv::Mat filled = fillHoles(largest_region);
@@ -442,6 +445,7 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
         cleaned = smoothed;
         last_upright_binary_ = cleaned.clone();
     }
+    last_contour_binary_ = cleaned.clone();
 
     // ---- 第5步: 提取最大轮廓 ----
     std::vector<cv::Point> contour = extractLargestContour(cleaned);
@@ -449,6 +453,7 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
         logStep("Result", "Contour extraction failed");
         return Status::InsufficientFeatures;
     }
+    last_contour_ = contour;
 
     // ---- 第6步: approxPolyDP 二分搜索 → 角点 ----
     std::vector<cv::Point2f> corners;
@@ -720,7 +725,7 @@ std::vector<cv::Point2f> BinaryCornerExtractor::extractCornersFromContour(
     int best_diff = std::numeric_limits<int>::max();
     bool exact_hit = false;
 
-    for (int iter = 0; iter < 8; ++iter) {
+    for (int iter = 0; iter < 16; ++iter) {
         double mid = (lo + hi) / 2.0;
         cv::approxPolyDP(work_contour, approx, mid * perimeter, true);
         int n = static_cast<int>(approx.size());
@@ -749,6 +754,86 @@ std::vector<cv::Point2f> BinaryCornerExtractor::extractCornersFromContour(
                       << "best=" << best_approx.size() << " corners (target="
                       << config_.corners << ", diff=" << best_diff << ")" << std::endl;
         approx = std::move(best_approx);
+    }
+
+    // ---- 精确 N 角点修复：n > N 删最平顶点；n < N 分裂最大偏差弦 ----
+    // 伪角点（圆弧中段/台阶残留）相邻边近共线、转向角最小；被圆化合并的
+    // 真角点所在弦对轮廓有最大偏差，垂距最远的轮廓点即角点顶点。
+    if (static_cast<int>(approx.size()) != config_.corners && approx.size() >= 3 &&
+        !work_contour.empty()) {
+        int removed = 0, inserted = 0;
+        for (int guard = 0;
+             guard < 2 * config_.corners &&
+             static_cast<int>(approx.size()) != config_.corners; ++guard) {
+            int n = static_cast<int>(approx.size());
+            if (n > config_.corners) {
+                int worst = -1;
+                double worst_turn = std::numeric_limits<double>::max();
+                for (int i = 0; i < n; ++i) {
+                    const auto& prev = approx[(i - 1 + n) % n];
+                    const auto& cur  = approx[i];
+                    const auto& next = approx[(i + 1) % n];
+                    double e1x = cur.x - prev.x, e1y = cur.y - prev.y;
+                    double e2x = next.x - cur.x, e2y = next.y - cur.y;
+                    double l1 = std::hypot(e1x, e1y), l2 = std::hypot(e2x, e2y);
+                    if (l1 < 1e-9 || l2 < 1e-9) continue;
+                    double cos_t = (e1x * e2x + e1y * e2y) / (l1 * l2);
+                    double turn = std::acos(std::clamp(cos_t, -1.0, 1.0));
+                    if (turn < worst_turn) { worst_turn = turn; worst = i; }
+                }
+                if (worst < 0 || n <= 3) break;
+                approx.erase(approx.begin() + worst);
+                ++removed;
+            } else {
+                // approx 顶点映射回 work_contour 索引（最近点），逐边扫开区间内
+                // 轮廓点到弦的垂距，全局最大者插入为新顶点
+                int m = static_cast<int>(work_contour.size());
+                std::vector<int> vidx(n);
+                for (int i = 0; i < n; ++i) {
+                    int best_j = -1;
+                    double best_d2 = std::numeric_limits<double>::max();
+                    for (int j = 0; j < m; ++j) {
+                        double dx = work_contour[j].x - approx[i].x;
+                        double dy = work_contour[j].y - approx[i].y;
+                        double d2 = dx * dx + dy * dy;
+                        if (d2 < best_d2) { best_d2 = d2; best_j = j; }
+                    }
+                    vidx[i] = best_j;
+                }
+                int split_v = -1, split_j = -1;
+                double max_dev = -1.0;
+                for (int i = 0; i < n; ++i) {
+                    int j0 = vidx[i], j1 = vidx[(i + 1) % n];
+                    const auto& a = approx[i];
+                    const auto& b = approx[(i + 1) % n];
+                    double ex = b.x - a.x, ey = b.y - a.y;
+                    double elen = std::hypot(ex, ey);
+                    if (elen < 1e-9) continue;
+                    int span = (j1 - j0 + m) % m;
+                    for (int s = 1; s < span; ++s) {
+                        int j = (j0 + s) % m;
+                        double px = work_contour[j].x - a.x;
+                        double py = work_contour[j].y - a.y;
+                        double dev = std::abs(px * ey - py * ex) / elen;
+                        if (dev > max_dev) { max_dev = dev; split_v = i; split_j = j; }
+                    }
+                }
+                if (split_v < 0) break;
+                approx.insert(approx.begin() + split_v + 1, work_contour[split_j]);
+                ++inserted;
+            }
+        }
+        if (removed || inserted) {
+            logStep("CornerRepair",
+                    std::to_string(removed) + " flattest removed, " +
+                    std::to_string(inserted) + " edges split -> " +
+                    std::to_string(approx.size()) + " corners");
+            if (g_verbose_console)
+                std::cout << "[BinaryCorner] corner repair: removed " << removed
+                          << " flattest, split " << inserted << " edges -> "
+                          << approx.size() << " corners (target "
+                          << config_.corners << ")" << std::endl;
+        }
     }
 
     if (approx.empty()) {
