@@ -499,7 +499,8 @@ public:
 ```
 AkazeExtractor(scale=1.0)  // 全分辨率
 → detectAndCompute(template_gray)
-→ 每个关键点: 3D = (kp.x/tw * real_w_mm, kp.y/th * real_h_mm, 0)
+→ 每个关键点: 3D = (kp.x/tw * real_w_mm - real_w_mm/2, kp.y/th * real_h_mm - real_h_mm/2, 0)
+  (中心化: 以模板物理中心为原点)
 → TemplateData.keypoints[i] ↔ TemplateData.pts_3d[i]
 ```
 
@@ -696,9 +697,11 @@ struct Config {
   从 AKAZE 模板灰度图提取 BinaryCorner 角点
   ├─ Otsu 二值化模板灰度图
   ├─ findContours → 最大面积
-  ├─ approxPolyDP 二分搜索 → N角点
+  ├─ approxPolyDP 二分搜索 → N角点 (N = binary_extractor_ 上次角点数, 默认10)
   ├─ reorderByGeometry → dual_bc_tmpl_corners_
-  └─ 3D点: (x/tw)*real_w_mm, (y/th)*real_h_mm, Z=0
+  └─ 3D点: (x/tw)*real_w_mm - real_w_mm/2, (y/th)*real_h_mm - real_h_mm/2, Z=0
+     (real_w/real_h = strategies.akaze_gpnp.template_real_width_mm/height_mm,
+      与 AKAZE 模板 3D 点同源同尺度且同样中心化, 故可与 template_.pts_3d 混合进同一次 PnP)
   → dual_bc_tmpl_corners_ + dual_bc_tmpl_pts3d_
 
 [Step 1] 裁剪4个子图:
@@ -1110,15 +1113,14 @@ struct SensorPacket {
         "akaze_min_area": 40001,       // State 2/3 分界
         "tiny_max_area": 800,          // State 1/2 分界
 
-        // AKAZE 策略
+        // AKAZE 策略 (template_real_* 同时是 Dual-ROI BC 模板 3D 点的尺寸来源)
         "akaze_gpnp": {
-            "template_path": "data/NewMuBan(reordered)/",
-            "real_w": 200.0,           // 模板物理宽度 mm
-            "real_h": 150.0,           // 模板物理高度 mm
-            "scale": 0.5,              // 检测前降采样
-            "min_pts": 3,              // GPnP最低点数
-            "use_initial_pnp": true,   // 首帧使用InitialPnP
-            "mad_sigma": 3.0           // MAD滤波σ系数
+            "template_path": "data/big/img_1.png",   // 模板图像路径
+            "template_real_width_mm": 500.0,         // 模板物理宽度 mm (棋盘格靶标)
+            "template_real_height_mm": 500.0,        // 模板物理高度 mm
+            "scale": 1,                // 检测前降采样
+            "gpnp_min_pts": 4,         // GPnP最低点数
+            "use_initial_pnp": true    // 首帧使用InitialPnP
         },
 
         // BinaryCorner 策略

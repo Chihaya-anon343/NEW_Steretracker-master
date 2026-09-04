@@ -1,15 +1,15 @@
 {
-  "mode": "debug",
+  "mode": "normal",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
     "_comment": "type: file / directory / sequence",
     "max_frames": 0,
     "image": {
-      "type": "file",
+      "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/stere_frames",
+      "directory_path": "data/新建文件夹/pura70_white_v2_0p30_static",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/calib/frame_000006.jpg",
-    "right": "data/calib/frame_000006.jpg"
+    "left": "data/新建文件夹/pura70_white_v2_0p30_static/frame_000001.jpg",
+    "right": "data/新建文件夹/pura70_white_v2_0p30_static/frame_000001.jpg"
   },
 
   "manual_roi": {
@@ -63,7 +63,7 @@
 
   "yolo": {
     "model_path": "yolo_onnx/yolov8n.onnx",
-    "conf_threshold": 0.3,
+    "conf_threshold": 0.2,
     "target_class_id": 0,
     "roi_expand_ratio": 0.0,
     "roi_min_size": 0
@@ -88,8 +88,8 @@
 
     "akaze_gpnp": {
       "template_path": "data/big/img_1.png",
-      "template_real_width_mm": 500.0,
-      "template_real_height_mm": 500.0,
+      "template_real_width_mm": 133,
+      "template_real_height_mm": 130,
       "scale": 1,
       "gpnp_min_pts": 4,
       "use_initial_pnp": true
