@@ -109,6 +109,7 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
     int best_angle = -1;
     double best_overlap = 0.0;
     Status s_left = extract4Corners(left_gray, left_corners, best_angle, best_overlap);
+    last_left_debug_ = last_call_debug_;
 
     if (s_left != Status::Success || left_corners.size() != 4) {
         std::cerr << "[TinyTarget] Left extraction failed (status="
@@ -125,6 +126,7 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
     if (has_right) {
         int ra = -1; double ro = 0.0;
         Status s_right = extract4Corners(right_gray, right_corners, ra, ro);
+        last_right_debug_ = last_call_debug_;
         if (s_right != Status::Success || right_corners.size() != 4) {
             std::cerr << "[TinyTarget] Right extraction failed, stereo disabled." << std::endl;
             right_corners.clear();
@@ -198,12 +200,16 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     out_corners.clear();
     best_angle = -1;
     best_overlap = 0.0;
+    last_call_debug_ = DebugImages{};
 
     if (roi_gray.empty()) return Status::EmptyInput;
+
+    last_call_debug_.roi_gray = roi_gray.clone();
 
     // ---- 1. Otsu + 模板匹配 → 最佳角度 ----
     cv::Mat roi_binary;
     cv::threshold(roi_gray, roi_binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
+    last_call_debug_.otsu_binary = roi_binary.clone();
 
     if (!templates_.empty()) {
         auto match_res = matchTemplate(roi_binary);
@@ -228,6 +234,7 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     cv::Mat k_close = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
     cv::morphologyEx(binary, binary, cv::MORPH_OPEN, k_open);
     cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, k_close);
+    last_call_debug_.super_binary = binary.clone();
 
     // ---- 3. 连通分量分析 + 评分 ----
     cv::Mat labels, stats, centroids;
@@ -448,6 +455,7 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
     int best_angle = -1;
     double best_overlap = 0.0;
     Status s = extract4Corners(gray, corners, best_angle, best_overlap);
+    last_left_debug_ = last_call_debug_;
 
     if (s != Status::Success || corners.size() != 4) {
         std::cerr << "[TinyTarget::extractMono] extraction failed (status="

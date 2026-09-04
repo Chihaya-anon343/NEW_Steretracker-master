@@ -81,6 +81,15 @@ public:
         return nullptr;
     }
 
+    /// 最近一次 extract4Corners 的中间图快照（用于可视化）。
+    struct DebugImages {
+        cv::Mat roi_gray;      ///< 输入 ROI 灰度图
+        cv::Mat otsu_binary;   ///< 原尺度 Otsu 二值图（模板 IoU 匹配的输入）
+        cv::Mat super_binary;  ///< ×scale_factor 超分 + 形态学后的二值图（角点提取输入，尺寸 = ROI × sf）
+    };
+    const DebugImages& lastLeftDebug() const { return last_left_debug_; }
+    const DebugImages& lastRightDebug() const { return last_right_debug_; }
+
 private:
     /// 从单张灰度 ROI 中提取4个角点。
     /// 返回 ROI 局部坐标中的角点（TL→TR→BR→BL）。
@@ -118,6 +127,10 @@ private:
     // 提取后状态
     int last_best_angle_ = -1;
     double last_best_overlap_ = 0.0;
+
+    DebugImages last_call_debug_;   ///< extract4Corners 单次调用写入
+    DebugImages last_left_debug_;   ///< 最近一次左图提取快照
+    DebugImages last_right_debug_;  ///< 最近一次右图提取快照
 };
 
 } // namespace gpnp

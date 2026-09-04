@@ -698,6 +698,63 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 }
             }
 
+            // --- Panel 0c: TinyTarget ROI 与二值化图 (各: 灰度 ROI | 原尺度 Otsu | 超分二值) ---
+            if (is_tiny) {
+                auto* tte = tiny_extractor_.get();
+                float lx_roi = static_cast<float>(left_offset.x);
+                float ly_roi = static_cast<float>(left_offset.y);
+                float rx_roi = static_cast<float>(right_offset.x);
+                float ry_roi = static_cast<float>(right_offset.y);
+                auto buildTiles = [&](const TinyTargetExtractor::DebugImages& dbg,
+                                      const std::vector<cv::Point2f>& pts_full,
+                                      float ox, float oy) -> cv::Mat {
+                    cv::Mat panel;
+                    if (dbg.roi_gray.empty()) return panel;
+                    float sf = static_cast<float>(dbg.super_binary.cols)
+                             / std::max(1, dbg.roi_gray.cols);
+                    auto drawPts = [&](cv::Mat& img, float k) {
+                        for (size_t i = 0; i < pts_full.size(); ++i) {
+                            cv::Point p(
+                                static_cast<int>((pts_full[i].x - ox) * k),
+                                static_cast<int>((pts_full[i].y - oy) * k));
+                            cv::circle(img, p, 2, CORNER_COLORS[i % 10], -1);
+                        }
+                    };
+                    std::vector<cv::Mat> tiles;
+                    cv::Mat g;
+                    cv::cvtColor(dbg.roi_gray, g, cv::COLOR_GRAY2BGR);
+                    drawPts(g, 1.0f);
+                    tiles.push_back(g);
+                    if (!dbg.otsu_binary.empty()) {
+                        cv::Mat o;
+                        cv::cvtColor(dbg.otsu_binary, o, cv::COLOR_GRAY2BGR);
+                        drawPts(o, 1.0f);
+                        tiles.push_back(o);
+                    }
+                    if (!dbg.super_binary.empty()) {
+                        cv::Mat s;
+                        cv::cvtColor(dbg.super_binary, s, cv::COLOR_GRAY2BGR);
+                        drawPts(s, sf);
+                        cv::resize(s, s, g.size(), 0, 0, cv::INTER_NEAREST);
+                        tiles.push_back(s);
+                    }
+                    panel = tiles[0];
+                    for (size_t i = 1; i < tiles.size(); ++i)
+                        cv::hconcat(panel, tiles[i], panel);
+                    return panel;
+                };
+                cv::Mat p_tl = buildTiles(tte->lastLeftDebug(),
+                                          result.pts_left_match, lx_roi, ly_roi);
+                cv::Mat p_tr = buildTiles(tte->lastRightDebug(),
+                                          result.pts_right_good, rx_roi, ry_roi);
+                if (!p_tl.empty())
+                    utils::AsyncImageSaver::write(
+                        output_dir_ + "/tiny_target_roi_binary_l" + prefix + ".png", p_tl);
+                if (!p_tr.empty())
+                    utils::AsyncImageSaver::write(
+                        output_dir_ + "/tiny_target_roi_binary_r" + prefix + ".png", p_tr);
+            }
+
             // --- Panel 1: 3D axes on expanded left view ---
             {
                 cv::Mat p1 = view_L.clone();
