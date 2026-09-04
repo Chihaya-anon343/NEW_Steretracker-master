@@ -9,7 +9,7 @@
       "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/calib",
+      "directory_path": "tests/data/approach_seq",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/新建文件夹/pura70_white_v2_5p40_static/frame_000001.jpg",
-    "right": "data/新建文件夹/pura70_white_v2_5p40_static/frame_000001.jpg"
+    "left": "tests/data/approach_seq/frame_000074.png",
+    "right": "tests/data/approach_seq/frame_000074.png"
   },
 
   "manual_roi": {
@@ -118,7 +118,7 @@
     "akaze_gpnp": {
       "template_path": "data/big/img_1.png",
       "template_real_width_mm": 133,
-      "template_real_height_mm": 130,
+      "template_real_height_mm": 130.9975,
       "scale": 1,
       "gpnp_min_pts": 4,
       "use_initial_pnp": true

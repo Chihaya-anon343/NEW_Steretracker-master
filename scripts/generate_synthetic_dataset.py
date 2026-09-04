@@ -129,28 +129,35 @@ def rotation_matrix(yaw_deg, pitch_deg, roll_deg):
 
 
 def make_homography(canvas_size, target_size, size, yaw_deg, pitch_deg, roll_deg,
-                    center, f, disp=0.0):
+                    center, f, disp=0.0, intrinsics=None):
     """构造目标像素坐标 → 画布像素坐标的 3x3 单应矩阵。
 
     模型: 目标平面 Z=0, 世界坐标 X=px-Wt/2, Y=py-Ht/2 (绕目标中心旋转)。
       H = K · [r1 r2 t] · T_center
-    其中 r1,r2 为 R 的前两列, t 使目标中心投影到 center, 尺度由 tz=f*short/S 控制。
+    其中 r1,r2 为 R 的前两列, t 使目标中心投影到 center, 尺度由 tz=fx*short/S 控制。
     disp>0 时右图再整体右移 disp px (双目视差, 与 generate_assets.py 语义一致)。
+
+    intrinsics: 可选 (fx, fy, cx, cy) 完整内参 — 应与 tracker_config.json camera 节
+    一致, 否则 PnP 用真实 K 解算渲染时用别的 K 的合成图会几何不自洽 (重投影必挂)。
+    缺省时 fx=fy=f, cx=cy=画布中心 (旧行为)。
     """
     Wc, Hc = canvas_size
     Wt, Ht = target_size
-    cx_img, cy_img = Wc / 2.0, Hc / 2.0
-    f = float(f)
+    if intrinsics is None:
+        fx = fy = float(f)
+        cx_img, cy_img = Wc / 2.0, Hc / 2.0
+    else:
+        fx, fy, cx_img, cy_img = (float(v) for v in intrinsics)
     short = min(Wt, Ht)
-    tz = f * short / float(size)          # 深度: 使目标短边视尺寸 ≈ size
+    tz = fx * short / float(size)          # 深度: 使目标短边视尺寸 ≈ size
 
     R = rotation_matrix(yaw_deg, pitch_deg, roll_deg)
-    K = np.array([[f, 0.0, cx_img],
-                  [0.0, f, cy_img],
+    K = np.array([[fx, 0.0, cx_img],
+                  [0.0, fy, cy_img],
                   [0.0, 0.0, 1.0]])
     cx0, cy0 = center
-    tx = (cx0 - cx_img) * tz / f           # 目标中心 → (cx0, cy0)
-    ty = (cy0 - cy_img) * tz / f
+    tx = (cx0 - cx_img) * tz / fx           # 目标中心 → (cx0, cy0)
+    ty = (cy0 - cy_img) * tz / fy
 
     H = np.column_stack([R[:, 0], R[:, 1], np.array([tx, ty, tz])])
     H = K @ H
