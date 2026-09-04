@@ -44,6 +44,26 @@ struct LKParams {
     double minEigThreshold{1e-4};
 };
 
+/// 时序连贯性配置（序列模式：位姿链 + 策略粘滞 + 运动门控）。
+/// 所有阈值以"帧"为单位 —— 离线序列时间戳为墙钟，不可用 dt。
+struct TemporalConfig {
+    bool enabled{true};                  ///< 总开关（false = 全部回到无时序行为）
+    // --- 位姿链 (机制A) ---
+    int max_cache_age_frames{30};        ///< seed 最大帧龄，超龄冷启动（<=0 = 不限制）
+    double tie_epsilon_px{0.3};          ///< ε-平票窗口：重投影差在此内视为平票，平票内取离上帧位姿最近者
+    // --- 运动门控 (机制C) ---
+    double max_trans_ratio{0.35};        ///< |Δt| 上限 = 该值 × |t_prev|（相对门控，<=0 关闭平移检查）
+    double max_rot_deg{15.0};            ///< Δθ 上限（度/帧，<=0 关闭旋转检查）
+    double switch_margin{2.0};           ///< 策略切换帧 / 冷重解第二道门控的阈值放宽倍数
+    // --- 策略粘滞 (机制B) ---
+    int hold_frames{3};                  ///< 去抖：相邻档提名连续确认帧数
+    double hysteresis_up{1.25};          ///< 升档迟滞余量：EMA面积需 > 边界阈值 × 该值
+    double hysteresis_down{0.8};         ///< 降档迟滞余量：EMA面积需 < 边界阈值 × 该值
+    int locked_fail_limit{3};            ///< 锁定策略连续被 fallback 顶掉 N 帧后跟随胜者
+    // --- 提名平滑 ---
+    double area_ema_alpha{0.5};          ///< 面积 EMA 系数（仅用于策略提名/迟滞，不影响裁剪；<=0 = 不平滑）
+};
+
 /// 跟踪器级别配置（构造时一次性设置）。
 struct TrackerConfig {
     double scale{0.5};                   ///< AKAZE 图像缩放因子 (0~1)
@@ -58,6 +78,7 @@ struct TrackerConfig {
     int tiny_max_area_class1{0};         ///< class1-only 时的 TinyTarget 阈值 (0=回退到 tiny_max_area)
     int dual_roi_secondary_expand{10};   ///< 双 ROI 模式下次级（class 1）ROI 的拓展像素数
     double dual_roi_akaze_scale{0.5};    ///< 双 ROI class 1 提取时的 AKAZE 缩放
+    TemporalConfig temporal;             ///< 时序连贯性（序列模式）
 };
 
 // ============================================================================
@@ -154,6 +175,20 @@ struct PoseEstimate {
     bool valid() const { return success && num_points > 0; }
 };
 
+/// 位姿链式热启动的种子（上一成功帧位姿，模板坐标系与 PnP 输出同系）。
+struct PoseSeed {
+    Eigen::Matrix3d R{Eigen::Matrix3d::Identity()};
+    Eigen::Vector3d t{Eigen::Vector3d::Zero()};
+};
+
+/// 运动门控结果状态码。
+enum class GateStatus {
+    NotApplicable = 0,   ///< 无 seed，未启用门控
+    Pass = 1,            ///< 热启动解通过门控
+    Recovered = 2,       ///< 热启动解被拒，冷启动重解通过（放宽门控）
+    Rejected = 3         ///< 冷热两解均被拒，该策略判失败继续退化链
+};
+
 // ============================================================================
 // GPNP 监控 / 诊断
 // ============================================================================
@@ -223,6 +258,14 @@ struct LogEntry {
     bool is_class1{false};                ///< 是否 class1 回退帧
     double t_x{0.0}, t_y{0.0}, t_z{0.0};        ///< 平移 (mm)
     double rvec_x{0.0}, rvec_y{0.0}, rvec_z{0.0};///< 旋转向量 (angle*axis)
+
+    // --- 时序连贯性观测 (temporal) ---
+    bool warm_start_used{false};          ///< 本帧位姿解算是否使用了上帧 seed
+    int gate_status{0};                   ///< GateStatus 枚举值 (0=N/A, 1=Pass, 2=Recovered, 3=Rejected)
+    int seed_age{0};                      ///< seed 帧龄（成功帧清零）
+    bool sticky_hold{false};              ///< 本帧粘滞抑制了提名切换 (locked != nominated)
+    std::string nominated_strategy;       ///< 面积提名的策略名
+    std::string switch_reason;            ///< 最近一次锁定切换原因 (init/hard_override/debounce/realign/reset)
 };
 
 // ============================================================================
@@ -280,6 +323,14 @@ struct PipelineResult {
     int left_roi_offset_y{0};
     int right_roi_offset_x{0};
     int right_roi_offset_y{0};
+
+    // --- 时序连贯性观测 (temporal, 由 TrackerBase::fillTemporalMeta 填充) ---
+    bool warm_start_used{false};
+    GateStatus gate_status{GateStatus::NotApplicable};
+    int seed_age{0};
+    bool sticky_hold{false};
+    std::string nominated_strategy;
+    std::string switch_reason;
 
     // --- MAD 同步所需的中间数据（0626） ---
     std::vector<bool> valid_mask;  ///< 投影步骤的 valid_mask

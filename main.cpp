@@ -364,6 +364,49 @@ int main(int argc, char** argv) {
         }
     }
 
+    // 时序连贯性配置 (temporal, 可选; 缺省值见 TemporalConfig 定义)
+    TemporalConfig temporal_cfg;
+    {
+        cv::FileNode tn = fs["temporal"];
+        if (!tn.empty()) {
+            cv::FileNode en = tn["enabled"];
+            if (!en.empty()) temporal_cfg.enabled = static_cast<int>(en) != 0;
+
+            cv::FileNode pcn = tn["pose_chain"];
+            if (!pcn.empty()) {
+                cv::FileNode v = pcn["max_cache_age_frames"];
+                if (!v.empty()) temporal_cfg.max_cache_age_frames = static_cast<int>(v);
+                v = pcn["tie_epsilon_px"];
+                if (!v.empty()) temporal_cfg.tie_epsilon_px = static_cast<double>(v);
+            }
+
+            cv::FileNode mg = tn["motion_gate"];
+            if (!mg.empty()) {
+                cv::FileNode v = mg["max_trans_ratio"];
+                if (!v.empty()) temporal_cfg.max_trans_ratio = static_cast<double>(v);
+                v = mg["max_rot_deg"];
+                if (!v.empty()) temporal_cfg.max_rot_deg = static_cast<double>(v);
+                v = mg["switch_margin"];
+                if (!v.empty()) temporal_cfg.switch_margin = static_cast<double>(v);
+            }
+
+            cv::FileNode stn = tn["stickiness"];
+            if (!stn.empty()) {
+                cv::FileNode v = stn["hold_frames"];
+                if (!v.empty()) temporal_cfg.hold_frames = static_cast<int>(v);
+                v = stn["hysteresis_up"];
+                if (!v.empty()) temporal_cfg.hysteresis_up = static_cast<double>(v);
+                v = stn["hysteresis_down"];
+                if (!v.empty()) temporal_cfg.hysteresis_down = static_cast<double>(v);
+                v = stn["locked_fail_limit"];
+                if (!v.empty()) temporal_cfg.locked_fail_limit = static_cast<int>(v);
+            }
+
+            cv::FileNode v = tn["area_ema_alpha"];
+            if (!v.empty()) temporal_cfg.area_ema_alpha = static_cast<double>(v);
+        }
+    }
+
     fs.release();
 
     // ========================================================================
@@ -417,6 +460,7 @@ int main(int argc, char** argv) {
                                                   akaze_min_area, tiny_max_area,
                                                   akaze_min_area_class1, tiny_max_area_class1,
                                                   dual_expand, dual_akaze_scale);
+    tracker_cfg.temporal = temporal_cfg;
 
     try {
         // ====================================================================
@@ -528,6 +572,7 @@ int main(int argc, char** argv) {
                 } else if (yolo_ok) {
                     left_group = yolo.detectMono(L);
                     if (!left_group.valid()) {
+                        tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
                         return result;
                     }
@@ -549,6 +594,7 @@ int main(int argc, char** argv) {
                 } else if (yolo_ok) {
                     std::tie(lg, rg) = yolo.detect(L, R);
                     if (!lg.valid() && !rg.valid()) {
+                        tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
                         return result;
                     }
@@ -566,6 +612,7 @@ int main(int argc, char** argv) {
                     result = st->processMono(lg.valid() ? L : R, visualize,
                                               lg.valid() ? &lg : &rg);
                 } else {
+                    tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
                     termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
                     return result;
                 }

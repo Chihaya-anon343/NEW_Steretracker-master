@@ -8,10 +8,12 @@
 
 #include <opencv2/calib3d.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gpnp {
@@ -52,13 +54,46 @@ bool isValidSolution(const cv::Mat& rvec, const cv::Mat& tvec, double reproj) {
 struct PnpCandidate {
     cv::Mat rvec, tvec;
     double reproj;
+    Eigen::Matrix3d R{Eigen::Matrix3d::Identity()};  // seed 平票择优用
+    Eigen::Vector3d t{Eigen::Vector3d::Zero()};
 };
+
+// 候选解与 seed 的几何距离: 旋转角 + 归一化平移差（归一化使深度无关可比）
+double seedDistance(const PnpCandidate& c, const PoseSeed& seed) {
+    Eigen::Matrix3d dR = c.R * seed.R.transpose();
+    double ang = Eigen::AngleAxisd(dR).angle();
+    double t_ref = std::max(seed.t.norm(), 1e-9);
+    return ang + (c.t - seed.t).norm() / t_ref;
+}
+
+cv::Mat seedRvec(const PoseSeed& seed) {
+    cv::Mat R_cv = (cv::Mat_<double>(3, 3)
+        << seed.R(0, 0), seed.R(0, 1), seed.R(0, 2),
+           seed.R(1, 0), seed.R(1, 1), seed.R(1, 2),
+           seed.R(2, 0), seed.R(2, 1), seed.R(2, 2));
+    cv::Mat rv;
+    cv::Rodrigues(R_cv, rv);
+    return rv;
+}
+
+cv::Mat seedTvec(const PoseSeed& seed) {
+    return (cv::Mat_<double>(3, 1)
+        << seed.t(0), seed.t(1), seed.t(2));
+}
 
 } // namespace
 
 PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                                    const std::vector<Eigen::Vector3d>& pts_3d,
                                    const Eigen::Matrix3d& K) {
+    return solve(pts_2d, pts_3d, K, nullptr, 0.0);
+}
+
+PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
+                                   const std::vector<Eigen::Vector3d>& pts_3d,
+                                   const Eigen::Matrix3d& K,
+                                   const PoseSeed* seed,
+                                   double tie_epsilon_px) {
     PoseEstimate pose;
 
     const int n = static_cast<int>(pts_2d.size());
@@ -117,14 +152,33 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
     bool pnp_ok = false;
 
     if (n == 4) {
-        // 4 点直接 ITERATIVE：RANSAC 无意义（最小集=全集），EPnP 有共面二义性
+        // 4 点直接 ITERATIVE：RANSAC 无意义（最小集=全集），EPnP 有共面二义性。
+        // 有 seed 时以 seed 为初值（useExtrinsicGuess）并补重投影校验——
+        // ITERATIVE 会收敛到初值附近，无校验会把垃圾 seed 解直接放行。
         try {
+            cv::Mat rv, tv;
+            if (seed) { rv = seedRvec(*seed); tv = seedTvec(*seed); }
             cv::solvePnP(object_points, pts_2d, K_cv, cv::Mat(),
-                         rvec, tvec,
-                         false,
+                         rv, tv,
+                         seed != nullptr,
                          cv::SOLVEPNP_ITERATIVE);
-            pnp_ok = !rvec.empty() && !tvec.empty();
-            if (pnp_ok) inliers = {0, 1, 2, 3};
+            pnp_ok = !rv.empty() && !tv.empty();
+            if (pnp_ok && seed) {
+                double re = meanReprojError(object_points, pts_2d, rv, tv, K_cv);
+                if (!isValidSolution(rv, tv, re)) {
+                    std::cout << "[MonoPnP] 4点seed解无效: 重投影=" << re
+                              << "px（回退无seed路径）" << std::endl;
+                    pnp_ok = false;
+                }
+            }
+            if (!pnp_ok && seed) {
+                // seeded 校验失败 → 无 seed 冷解兜底（保持原行为可达）
+                rv.release(); tv.release();
+                cv::solvePnP(object_points, pts_2d, K_cv, cv::Mat(),
+                             rv, tv, false, cv::SOLVEPNP_ITERATIVE);
+                pnp_ok = !rv.empty() && !tv.empty();
+            }
+            if (pnp_ok) { rvec = rv; tvec = tv; inliers = {0, 1, 2, 3}; }
         } catch (const cv::Exception& e) {
             std::cout << "[MonoPnP] ITERATIVE (4pts) 异常: " << e.what() << std::endl;
             return pose;
@@ -143,9 +197,36 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                           << ", t.z=" << tv.at<double>(2)
                           << ", 重投影=" << re << "px"
                           << (ok ? " [有效]" : " [无效]") << std::endl;
-            if (ok) candidates.push_back({rv.clone(), tv.clone(), re});
+            if (ok) {
+                PnpCandidate c;
+                c.rvec = rv.clone();
+                c.tvec = tv.clone();
+                c.reproj = re;
+                cv::Mat R_cv;
+                cv::Rodrigues(rv, R_cv);
+                for (int i = 0; i < 3; ++i) {
+                    c.t(i) = tv.at<double>(i);
+                    for (int j = 0; j < 3; ++j)
+                        c.R(i, j) = R_cv.at<double>(i, j);
+                }
+                candidates.push_back(std::move(c));
+            }
             return ok;
         };
+
+        // ---- 候选W: 上帧位姿 seed 的 ITERATIVE 解（时序连贯性候选）----
+        if (seed) {
+            try {
+                cv::Mat rv = seedRvec(*seed), tv = seedTvec(*seed);
+                cv::solvePnP(object_points, pts_2d, K_cv, cv::Mat(),
+                             rv, tv,
+                             true,                          // useExtrinsicGuess
+                             cv::SOLVEPNP_ITERATIVE);
+                collect("SeedITER", rv, tv);
+            } catch (const cv::Exception& e) {
+                std::cout << "[MonoPnP] Seed ITERATIVE 异常（忽略该候选）: " << e.what() << std::endl;
+            }
+        }
 
         // ---- 候选A: EPnP RANSAC + inlier ITERATIVE 精化 ----
         std::vector<int> ransac_inliers;
@@ -208,21 +289,36 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                 std::cout << "[MonoPnP] IPPE 跳过: " << e.what() << std::endl;
         }
 
-        // ---- 择优: 平均重投影误差最小的有效候选 ----
+        // ---- 择优: 两阶段（ε-平票 → seed 时序偏好 / 纯重投影最小）----
+        // 平面 IPPE 二义性会产生两个重投影都低的解，逐帧纯 reproj 择优会随机跳分支；
+        // ε-平票集内偏向离 seed 最近的解，坏解必须先通过 reproj ≤ min+ε 才可能因
+        // "靠近上帧"胜出 —— 时序连续性只在"两个解同样好"时起作用。
         if (candidates.empty()) {
             std::cout << "[MonoPnP] 无有效候选（|t|越界/t.z≤0/重投影≥"
                       << kMaxReprojErrorPx << "px），输入对应关系或内参可疑" << std::endl;
             return pose;
         }
-        const PnpCandidate* best = &candidates[0];
+        double reproj_min = candidates[0].reproj;
         for (const auto& c : candidates)
-            if (c.reproj < best->reproj) best = &c;
+            reproj_min = std::min(reproj_min, c.reproj);
+        const double eps = (seed && tie_epsilon_px > 0.0) ? tie_epsilon_px : 0.0;
+        const PnpCandidate* best = nullptr;
+        for (const auto& c : candidates) {
+            if (c.reproj > reproj_min + eps) continue;   // 不在平票集
+            if (!best) { best = &c; continue; }
+            if (seed) {
+                if (seedDistance(c, *seed) < seedDistance(*best, *seed)) best = &c;
+            } else if (c.reproj < best->reproj) {
+                best = &c;
+            }
+        }
         rvec = best->rvec;
         tvec = best->tvec;
         pnp_ok = true;
         if (g_verbose_console)
             std::cout << "[MonoPnP] 择优: 重投影=" << best->reproj
-                      << "px, |t|=" << cv::norm(tvec) << "mm" << std::endl;
+                      << "px, |t|=" << cv::norm(tvec) << "mm"
+                      << (seed ? " (seed平票偏好)" : "") << std::endl;
 
         // 最终内点计数（重投影 < 阈值的点数）
         std::vector<cv::Point2f> proj;

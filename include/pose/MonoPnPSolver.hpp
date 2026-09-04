@@ -49,6 +49,22 @@ public:
     PoseEstimate solve(const std::vector<cv::Point2f>& pts_2d,
                        const std::vector<Eigen::Vector3d>& pts_3d,
                        const Eigen::Matrix3d& K);
+
+    /// 带时序 seed 的位姿估计（序列模式位姿链）。
+    ///
+    /// seed 非空时新增候选 W: solvePnP(ITERATIVE, useExtrinsicGuess=true)，
+    /// 初值取 seed，与 EPnP-RANSAC/IPPE 候选同池竞争、同一有效性校验。
+    /// 择优两阶段: 先取重投影最小值 reproj_min，重投影 ≤ reproj_min + tie_epsilon_px
+    /// 的候选构成平票集；seed 存在时平票集内取与 seed 几何距离最小者
+    /// （平面 IPPE 二义性下稳定在同一分支），否则取重投影最小者（原行为）。
+    ///
+    /// @param seed            上帧位姿种子（nullptr = 与无 seed 版本等价）
+    /// @param tie_epsilon_px  平票窗口 (px)，<=0 时退化为纯重投影最小
+    PoseEstimate solve(const std::vector<cv::Point2f>& pts_2d,
+                       const std::vector<Eigen::Vector3d>& pts_3d,
+                       const Eigen::Matrix3d& K,
+                       const PoseSeed* seed,
+                       double tie_epsilon_px);
 };
 
 } // namespace gpnp

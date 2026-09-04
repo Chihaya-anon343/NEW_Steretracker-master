@@ -15,6 +15,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -58,44 +60,252 @@ void TrackerBase::initExtractors(const std::string& template_path,
 }
 
 // ============================================================
-// configureStrategyChain
+// configureStrategyChain — 面积提名 + 粘滞状态机 (temporal)
 // ============================================================
 
 void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
-    // 选择阈值：class1 专用阈值 > 0 时使用，否则回退到通用阈值
-    int akaze_thresh = akaze_min_area_;
-    int tiny_thresh  = tiny_max_area_;
-    if (is_class1) {
-        if (akaze_min_area_class1_ > 0) akaze_thresh = akaze_min_area_class1_;
-        if (tiny_max_area_class1_ > 0)  tiny_thresh  = tiny_max_area_class1_;
+    const TemporalConfig& tc = config_.temporal;
+
+    // 缓存年龄：每处理帧自增（成功帧由 finalizePose 清零）
+    cache_age_ = state_.has_cache ? cache_age_ + 1 : 0;
+
+    // class1 regime 翻转 → 阈值集合切换，粘滞复位
+    if (tc.enabled && has_prev_c1_ && prev_use_c1_ != is_class1) {
+        resetStickiness();
+        if (verbose_console_)
+            std::cout << "[Temporal] class1 regime flipped, stickiness reset" << std::endl;
     }
+    prev_use_c1_ = is_class1;
+    has_prev_c1_ = true;
+
+    // 面积 EMA：仅用于提名/迟滞（抗 YOLO bbox 抖动）；越级硬切用 raw 面积不吃平滑延迟
+    if (!has_ema_ || tc.area_ema_alpha <= 0.0) {
+        ema_area_ = roi_area;
+        has_ema_ = true;
+    } else {
+        ema_area_ = tc.area_ema_alpha * roi_area + (1.0 - tc.area_ema_alpha) * ema_area_;
+    }
+
+    nominated_band_ = nominateBand(roi_area, is_class1);
+    int band_used = nominated_band_;
+    if (tc.enabled)
+        band_used = resolveLockedStrategy(nominated_band_, is_class1);
+    sticky_hold_ = tc.enabled && (band_used != nominated_band_);
+
+    applyBandChain(band_used, is_class1);
+
+    if (verbose_console_ && tc.enabled)
+        std::cout << "[Temporal] locked=" << strategyNameFromBand(band_used)
+                  << " nominated=" << strategyNameFromBand(nominated_band_)
+                  << " pending=" << pending_count_ << "/" << tc.hold_frames
+                  << " ema_area=" << static_cast<int>(ema_area_)
+                  << " raw_area=" << roi_area
+                  << " reason=" << sticky_switch_reason_
+                  << (sticky_hold_ ? " [HOLD]" : "") << std::endl;
+}
+
+void TrackerBase::effectiveThresholds(bool is_class1, int& akaze_t, int& tiny_t) const {
+    akaze_t = akaze_min_area_;
+    tiny_t  = tiny_max_area_;
+    if (is_class1) {
+        if (akaze_min_area_class1_ > 0) akaze_t = akaze_min_area_class1_;
+        if (tiny_max_area_class1_ > 0)  tiny_t  = tiny_max_area_class1_;
+    }
+}
+
+int TrackerBase::bandFromStrategyName(const std::string& name) {
+    if (name == "TinyTarget")   return 1;
+    if (name == "BinaryCorner") return 2;
+    if (name == "AkazeGpnp")    return 3;
+    return 0;   // DualRoi 等非三策略
+}
+
+const char* TrackerBase::strategyNameFromBand(int band) {
+    switch (band) {
+        case 3:  return "AkazeGpnp";
+        case 2:  return "BinaryCorner";
+        case 1:  return "TinyTarget";
+        default: return "Unknown";
+    }
+}
+
+int TrackerBase::nominateBand(int roi_area, bool is_class1) const {
+    int akaze_t, tiny_t;
+    effectiveThresholds(is_class1, akaze_t, tiny_t);
+    if (roi_area >= akaze_t || roi_area == 0) return 3;
+    if (roi_area > tiny_t) return 2;
+    return 1;
+}
+
+void TrackerBase::applyBandChain(int band, bool is_class1) {
+    int akaze_t, tiny_t;
+    effectiveThresholds(is_class1, akaze_t, tiny_t);
 
     fallback_extractors_.clear();
 
-    if (roi_area >= akaze_thresh || roi_area == 0) {
+    if (band == 3) {
         extractor_ = akaze_extractor_.get();
         fallback_extractors_.push_back(binary_extractor_.get());
         fallback_extractors_.push_back(tiny_extractor_.get());
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: AkazeGpnp → BinaryCorner → TinyTarget"
-                      << " (roi_area=" << roi_area
-                      << " akaze_thresh=" << akaze_thresh
+                      << " (akaze_thresh=" << akaze_t
                       << " is_class1=" << is_class1 << ")" << std::endl;
-    } else if (roi_area > tiny_thresh) {
+    } else if (band == 2) {
         extractor_ = binary_extractor_.get();
         fallback_extractors_.push_back(tiny_extractor_.get());
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: BinaryCorner → TinyTarget"
-                      << " (roi_area=" << roi_area
-                      << " tiny_thresh=" << tiny_thresh
+                      << " (tiny_thresh=" << tiny_t
                       << " is_class1=" << is_class1 << ")" << std::endl;
     } else {
         extractor_ = tiny_extractor_.get();
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: TinyTarget only"
-                      << " (roi_area=" << roi_area
-                      << " is_class1=" << is_class1 << ")" << std::endl;
+                      << " (is_class1=" << is_class1 << ")" << std::endl;
     }
+}
+
+int TrackerBase::resolveLockedStrategy(int band_raw, bool is_class1) {
+    const TemporalConfig& tc = config_.temporal;
+
+    if (!has_sticky_state_) {
+        sticky_locked_ = band_raw;
+        sticky_pending_ = 0;
+        pending_count_ = 0;
+        locked_fail_count_ = 0;
+        has_sticky_state_ = true;
+        sticky_switch_reason_ = "init";
+        return sticky_locked_;
+    }
+
+    // 越级硬切：raw 面积跨越两档（如 TT↔AKAZE，快速接近/远离），立即切换
+    if (std::abs(band_raw - sticky_locked_) >= 2) {
+        sticky_locked_ = band_raw;
+        sticky_pending_ = 0;
+        pending_count_ = 0;
+        locked_fail_count_ = 0;
+        sticky_switch_reason_ = "hard_override";
+        return sticky_locked_;
+    }
+
+    // 相邻档提名：用 EMA 面积重新分类（抗 bbox 抖动）
+    int band_ema = nominateBand(static_cast<int>(ema_area_ + 0.5), is_class1);
+    if (band_ema == sticky_locked_) {
+        pending_count_ = 0;
+        return sticky_locked_;
+    }
+
+    // 迟滞余量：必须决定性地进入另一档
+    int akaze_t, tiny_t;
+    effectiveThresholds(is_class1, akaze_t, tiny_t);
+    bool margin_ok = false;
+    if (band_ema > sticky_locked_) {
+        double th = (band_ema == 3) ? akaze_t : tiny_t;
+        margin_ok = ema_area_ > th * tc.hysteresis_up;
+    } else {
+        double th = (sticky_locked_ == 3) ? akaze_t : tiny_t;
+        margin_ok = ema_area_ < th * tc.hysteresis_down;
+    }
+
+    if (band_ema == sticky_pending_) ++pending_count_;
+    else { sticky_pending_ = band_ema; pending_count_ = 1; }
+
+    if (margin_ok && pending_count_ >= tc.hold_frames) {
+        sticky_locked_ = band_ema;
+        pending_count_ = 0;
+        sticky_switch_reason_ = "debounce";
+    }
+    return sticky_locked_;
+}
+
+void TrackerBase::resetStickiness() {
+    has_sticky_state_ = false;
+    sticky_locked_ = 0;
+    sticky_pending_ = 0;
+    pending_count_ = 0;
+    locked_fail_count_ = 0;
+    sticky_switch_reason_ = "reset";
+}
+
+void TrackerBase::updateStickinessFromWinner(const std::string& winner_name) {
+    const TemporalConfig& tc = config_.temporal;
+    if (!tc.enabled || !has_sticky_state_) return;
+    int wb = bandFromStrategyName(winner_name);
+    if (wb == 0) return;   // DualRoi 等非三策略胜者不参与
+
+    if (wb == sticky_locked_) {
+        locked_fail_count_ = 0;
+        return;
+    }
+    if (wb == nominated_band_) {
+        // 面积说该切、退化链实际切成了且成功 → 立即对齐（下帧不再浪费首提取尝试）
+        sticky_locked_ = wb;
+        pending_count_ = 0;
+        locked_fail_count_ = 0;
+        sticky_switch_reason_ = "realign";
+        return;
+    }
+    if (++locked_fail_count_ >= tc.locked_fail_limit) {
+        sticky_locked_ = wb;
+        pending_count_ = 0;
+        locked_fail_count_ = 0;
+        sticky_switch_reason_ = "realign";
+    }
+}
+
+bool TrackerBase::seedActive() const {
+    const TemporalConfig& tc = config_.temporal;
+    if (!tc.enabled || !state_.has_cache) return false;
+    if (tc.max_cache_age_frames > 0 && cache_age_ > tc.max_cache_age_frames) return false;
+    return true;
+}
+
+bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
+                                 const FeatureExtractor* ext, bool widened) const {
+    const TemporalConfig& tc = config_.temporal;
+
+    double margin = 1.0;
+    if (widened) margin *= tc.switch_margin;
+    if (ext) {
+        int band = bandFromStrategyName(ext->name());
+        if (band != 0 && band != sticky_locked_)   // 策略切换帧：放宽吸收策略间系统偏差
+            margin *= tc.switch_margin;
+    }
+
+    if (tc.max_trans_ratio > 0.0) {
+        double t_ref = seed.t.norm();
+        if (t_ref > 1e-9) {
+            double dt = (pose.t - seed.t).norm();
+            double limit = tc.max_trans_ratio * t_ref * margin;
+            if (dt > limit) {
+                if (verbose_console_)
+                    std::cout << "[Gate] |Δt|=" << dt << "mm > " << limit
+                              << " (|t_seed|=" << t_ref << "mm, margin=" << margin
+                              << ", " << (ext ? ext->name() : "?") << ")" << std::endl;
+                return false;
+            }
+        }
+    }
+    if (tc.max_rot_deg > 0.0) {
+        double ang = Eigen::AngleAxisd(pose.R * seed.R.transpose()).angle();
+        double limit = tc.max_rot_deg * CV_PI / 180.0 * margin;
+        if (ang > limit) {
+            if (verbose_console_)
+                std::cout << "[Gate] Δθ=" << ang * 180.0 / CV_PI << "° > "
+                          << tc.max_rot_deg * margin << "° (margin=" << margin
+                          << ", " << (ext ? ext->name() : "?") << ")" << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+void TrackerBase::fillTemporalMeta(PipelineResult& result) const {
+    result.seed_age = cache_age_;
+    result.sticky_hold = sticky_hold_;
+    result.nominated_strategy = strategyNameFromBand(nominated_band_);
+    result.switch_reason = sticky_switch_reason_;
 }
 
 // ============================================================
@@ -155,6 +365,7 @@ void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose)
         state_.R_prev = pose.R;
         state_.t_prev = pose.t;
         state_.has_cache = true;
+        cache_age_ = 0;
     }
 }
 
@@ -188,6 +399,12 @@ void TrackerBase::addLogEntry(const PipelineResult& result, bool is_first, bool 
     entry.timing = result.timing;
     entry.strategy_name = result.strategy_name;
     entry.is_class1 = result.is_class1;
+    entry.warm_start_used = result.warm_start_used;
+    entry.gate_status = static_cast<int>(result.gate_status);
+    entry.seed_age = result.seed_age;
+    entry.sticky_hold = result.sticky_hold;
+    entry.nominated_strategy = result.nominated_strategy;
+    entry.switch_reason = result.switch_reason;
     if (result.gpnp_success || result.success) {
         entry.t_x = result.t.x(); entry.t_y = result.t.y(); entry.t_z = result.t.z();
         Eigen::AngleAxisd aa(result.R);

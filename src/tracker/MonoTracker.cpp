@@ -271,8 +271,14 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         kp.pt.y += static_cast<float>(left_off.y);
     }
 
-    // 8. Pose estimation (mono EPnP)
-    PoseEstimate pose = mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K);
+    // 8. Pose estimation (mono EPnP; 序列模式带上帧位姿 seed)
+    PoseSeed seed;
+    const bool use_seed = seedActive();
+    if (use_seed) { seed.R = state_.R_prev; seed.t = state_.t_prev; }
+    PoseEstimate pose = use_seed
+        ? mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K, &seed,
+                          config_.temporal.tie_epsilon_px)
+        : mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K);
 
     // 8b. 回退：合并解算失败 → 仅用外层 BC 角点重解（与单目 BC 策略同为
     // MonoPnP 多候选择优）。BC 点位于合并数组前缀 [0, n_bc_use)，
@@ -286,7 +292,10 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                                        merged_pts_2d.begin() + n_bc_use);
         std::vector<Eigen::Vector3d> bc_3d(dual_bc_tmpl_pts3d_.begin(),
                                            dual_bc_tmpl_pts3d_.begin() + n_bc_use);
-        pose = mono_pnp_.solve(bc_2d, bc_3d, camera_.K);
+        pose = use_seed
+            ? mono_pnp_.solve(bc_2d, bc_3d, camera_.K, &seed,
+                              config_.temporal.tie_epsilon_px)
+            : mono_pnp_.solve(bc_2d, bc_3d, camera_.K);
         if (pose.success) {
             bc_fallback_used = true;
             total_use = n_bc_use;
@@ -308,6 +317,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     if (pose.success) {
         finalizePose(result, pose);
     }
+    result.warm_start_used = use_seed && pose.success;
     result.strategy_name = bc_fallback_used ? "DualRoi_BC" : "DualRoi";
 
     result.n_matched   = total_use;
@@ -553,6 +563,11 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     // 策略链选择（class1 时使用 class1 专用面积阈值）
     configureStrategyChain(roi_area, use_c1);
 
+    // 时序 seed（机制A: 位姿链）—— 上帧成功位姿作为本帧 PnP 初值候选
+    PoseSeed seed;
+    const bool use_seed = seedActive();
+    if (use_seed) { seed.R = state_.R_prev; seed.t = state_.t_prev; }
+
     bool is_first = (state_.frame_count == 0);
 
     // 尝试主策略 + 退化链：提取成功且单目 PnP 成功才算胜出，
@@ -611,12 +626,44 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                 pnp_3d.push_back(pnp_pts_3d[idx]);
             }
         }
-        PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        // 单目 PnP: 有 seed 走位姿链候选 + 运动门控；门控拒绝 → 冷启动重解一次
+        // （纯重投影择优，二道门用放宽阈值），仍拒绝则本策略判失败继续退化链
+        PoseEstimate p;
+        GateStatus gate_st = GateStatus::NotApplicable;
+        if (use_seed) {
+            p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, &seed,
+                                config_.temporal.tie_epsilon_px);
+            if (p.success) {
+                if (motionGatePass(p, seed, ext, false)) {
+                    gate_st = GateStatus::Pass;
+                } else {
+                    PoseEstimate pc = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, nullptr, 0.0);
+                    if (pc.success && motionGatePass(pc, seed, ext, true)) {
+                        p = pc;
+                        gate_st = GateStatus::Recovered;
+                        if (verbose_console_)
+                            std::cout << "[Gate] warm pose rejected, cold re-solve recovered"
+                                      << std::endl;
+                    } else {
+                        p = PoseEstimate{};
+                        gate_st = GateStatus::Rejected;
+                        if (verbose_console_)
+                            std::cout << "[Gate] pose rejected by motion gate ("
+                                      << ext->name() << "), degrading..." << std::endl;
+                    }
+                }
+            }
+        } else {
+            p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        }
 
         result = std::move(local);
         result.left_color = left_color;
         result.left_roi_offset_x = static_cast<int>(left_offset.x);
         result.left_roi_offset_y = static_cast<int>(left_offset.y);
+        result.warm_start_used = use_seed;
+        result.gate_status = gate_st;
+        fillTemporalMeta(result);
         winning_ext = ext;
 
         if (p.success) {
@@ -644,6 +691,8 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     result.strategy_name = winning_ext->name();
     result.success = pose.success;
     result.is_class1 = use_c1;
+    updateStickinessFromWinner(winning_ext->name());
+    fillTemporalMeta(result);   // 胜者反馈后重取，switch_reason 反映本帧 realign
     addLogEntry(result, is_first, winning_ext != chain.front());
 
     // ---- Visualization ----

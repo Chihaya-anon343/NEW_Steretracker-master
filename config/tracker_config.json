@@ -1,5 +1,5 @@
 {
-  "mode": "debug",
+  "mode": "normal",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
@@ -9,7 +9,7 @@
       "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/新建文件夹/pura70_white_v2_5p40_static",
+      "directory_path": "data/新建文件夹/pura70_white_v2_1p80_static",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -46,6 +46,34 @@
   "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
   "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
   "mono_mode": true,
+
+  "temporal": {
+    "_comment": "序列时序连贯性: 位姿链热启动 + 策略粘滞 + 运动门控 (所有阈值以帧为单位, 不依赖时间戳)",
+    "enabled": true,
+
+    "pose_chain": {
+      "_comment": "位姿链: 上帧成功位姿作为本帧 PnP 候选初值",
+      "max_cache_age_frames": 30,
+      "tie_epsilon_px": 0.3
+    },
+
+    "motion_gate": {
+      "_comment": "运动一致性门控: 跳变时冷启动重解→退化链→帧失败; 参数<=0关闭对应检查",
+      "max_trans_ratio": 0.35,
+      "max_rot_deg": 15.0,
+      "switch_margin": 2.0
+    },
+
+    "stickiness": {
+      "_comment": "策略粘滞: 迟滞+去抖+越级硬切; 相邻档切换需 EMA 面积越过阈值×余量且连续确认",
+      "hold_frames": 3,
+      "hysteresis_up": 1.25,
+      "hysteresis_down": 0.8,
+      "locked_fail_limit": 3
+    },
+
+    "area_ema_alpha": 0.5
+  },
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",

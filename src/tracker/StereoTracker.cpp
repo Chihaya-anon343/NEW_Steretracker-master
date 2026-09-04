@@ -559,6 +559,10 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
 
     if (!pose_ok) {
         std::cerr << "[Degradation] All strategies failed for frame " << state_.frame_count << std::endl;
+    } else {
+        // 帧末反馈: 锁定档位跟随实际胜者 (temporal 策略粘滞)
+        updateStickinessFromWinner(winning_strategy);
+        fillTemporalMeta(result);
     }
 
     // ---- Finalize pose (if successful) ----
@@ -1710,6 +1714,11 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
     }
     configureStrategyChain(roi_area, use_c1);
 
+    // 时序 seed（机制A: 位姿链）—— 上帧成功位姿作为本帧 PnP 初值候选
+    PoseSeed seed;
+    const bool use_seed = seedActive();
+    if (use_seed) { seed.R = state_.R_prev; seed.t = state_.t_prev; }
+
     bool is_first = (state_.frame_count == 0);
 
     // 提取成功且单目 PnP 成功才算胜出，PnP 失败同样触发退化
@@ -1767,12 +1776,43 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
                 pnp_3d.push_back(pnp_pts_3d[idx]);
             }
         }
-        PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        // 单目 PnP: 有 seed 走位姿链候选 + 运动门控；门控拒绝 → 冷启动重解一次
+        PoseEstimate p;
+        GateStatus gate_st = GateStatus::NotApplicable;
+        if (use_seed) {
+            p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, &seed,
+                                config_.temporal.tie_epsilon_px);
+            if (p.success) {
+                if (motionGatePass(p, seed, ext, false)) {
+                    gate_st = GateStatus::Pass;
+                } else {
+                    PoseEstimate pc = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, nullptr, 0.0);
+                    if (pc.success && motionGatePass(pc, seed, ext, true)) {
+                        p = pc;
+                        gate_st = GateStatus::Recovered;
+                        if (verbose_console_)
+                            std::cout << "[Gate] warm pose rejected, cold re-solve recovered"
+                                      << std::endl;
+                    } else {
+                        p = PoseEstimate{};
+                        gate_st = GateStatus::Rejected;
+                        if (verbose_console_)
+                            std::cout << "[Gate] pose rejected by motion gate ("
+                                      << ext->name() << "), degrading..." << std::endl;
+                    }
+                }
+            }
+        } else {
+            p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        }
 
         result = std::move(local);
         result.left_color = color;
         result.left_roi_offset_x = static_cast<int>(offset.x);
         result.left_roi_offset_y = static_cast<int>(offset.y);
+        result.warm_start_used = use_seed;
+        result.gate_status = gate_st;
+        fillTemporalMeta(result);
         winning_ext = ext;
 
         if (p.success) {
@@ -1800,6 +1840,8 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
     result.strategy_name = winning_ext->name();
     result.success = pose.success;
     result.is_class1 = use_c1;
+    updateStickinessFromWinner(winning_ext->name());
+    fillTemporalMeta(result);   // 胜者反馈后重取，switch_reason 反映本帧 realign
     addLogEntry(result, is_first, winning_ext != chain.front());
 
     // ---- Visualization (仅三维轴叠加图，Normal/Debug 一致) ----
