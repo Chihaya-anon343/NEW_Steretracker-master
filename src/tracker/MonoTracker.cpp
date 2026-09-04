@@ -305,24 +305,57 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         }
     }
 
+    // 8c. 第 3 级退化: 合并与 BC-only 均失败 → 在 secondary ROI (class1) 上跑 BC→TT 链
+    //     (class1 3D 尺寸, State 5 同机制; MonoPnP 冷启动 — 板系 seed 对 class1 系可能失锚)
+    bool c1_fallback_used = false;
+    std::string c1_strategy;
+    PipelineResult c1_result;
+    std::vector<Eigen::Vector3d> c1_pts3d;
+    if (!pose.success && config_.dual_roi_class1_fallback) {
+        if (verbose_console_)
+            std::cout << "  [DualRoi][Mono] BC-only fallback failed, trying class1 chain (BC→TT)"
+                      << std::endl;
+        auto [ok, c1_pose] = runDualRoiClass1Chain(left_c1_gray, left_c1_color,
+                                                   left_sec, is_first,
+                                                   c1_result, c1_pts3d, c1_strategy);
+        if (ok) {
+            pose = c1_pose;
+            c1_result.left_color = left_color_orig;
+            total_use = static_cast<int>(c1_result.pts_left_match.size());
+            n_bc_use = 0;   // 可视化分色: 链胜出点全部来自 class1
+            merged_pts_2d = c1_result.pts_left_match;
+            merged_kp_left.clear();
+            merged_pts_3d = std::move(c1_pts3d);
+            c1_fallback_used = true;
+        }
+    }
+
     // 9. Build PipelineResult
     PipelineResult result;
-    result.kp_left         = std::move(merged_kp_left);
-    result.n_kp_left       = total_use;
-    result.pts_left_match  = merged_pts_2d;
-    result.pts_left_good   = merged_pts_2d;
+    if (c1_fallback_used) {
+        result = std::move(c1_result);
+        result.n_kp_left = total_use;
+        result.pts_left_match = merged_pts_2d;
+        result.pts_left_good = merged_pts_2d;
+    } else {
+        result.kp_left         = std::move(merged_kp_left);
+        result.n_kp_left       = total_use;
+        result.pts_left_match  = merged_pts_2d;
+        result.pts_left_good   = merged_pts_2d;
+    }
     result.left_color      = left_color_orig;
     result.is_first_frame  = is_first;
 
     if (pose.success) {
         finalizePose(result, pose);
     }
-    result.warm_start_used = use_seed && pose.success;
-    result.strategy_name = bc_fallback_used ? "DualRoi_BC" : "DualRoi";
+    result.warm_start_used = use_seed && pose.success && !c1_fallback_used;
+    result.strategy_name = c1_fallback_used ? c1_strategy
+                         : (bc_fallback_used ? "DualRoi_BC" : "DualRoi");
 
     result.n_matched   = total_use;
     result.n_projected = 0;
-    addLogEntry(result, is_first, bc_fallback_used);
+    addLogEntry(result, is_first, bc_fallback_used || c1_fallback_used);
 
     // ---- Visualization (simplified, left-only) ----
     // PnP 失败时仍输出：Panel 0/1 不依赖位姿；Panel 2/3 内部各自按 pose.success 降级
@@ -439,7 +472,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         }
 
         // Panel 4: Image ↔ Template correspondence (side-by-side, 对齐 StereoTracker 的 dual_roi_correspondence)
-        if (total_use > 0) {
+        // class1 链胜出时跳过: 模板侧对应关系为 AKAZE 模板, 与链点 (BC/TT class1) 不匹配
+        if (!c1_fallback_used && total_use > 0) {
             // Left: class-0-ROI image
             cv::Mat p4_left = left_color_orig(
                 cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
@@ -502,9 +536,108 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         std::cout << "[DualRoi][Mono] Frame done: n_pts=" << total_use
                   << "  PnP=" << (pose.success ? "OK" : "FAIL")
                   << (bc_fallback_used ? "  [BC-fallback]" : "")
+                  << (c1_fallback_used ? "  [class1-chain:" + c1_strategy + "]" : "")
                   << std::endl;
 
     return result;
+}
+
+// ============================================================================
+// Dual-ROI Tier 3: class1 退化链 —— secondary ROI 上 BC → TT
+// (State 5 同款 class1 3D 尺寸机制; 提取失败或 PnP 失败均降级, 与主链同语义)
+// ============================================================================
+
+std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
+        const cv::Mat& left_gray, const cv::Mat& left_color,
+        const RoiRect& left_sec,
+        bool is_first,
+        PipelineResult& out_result,
+        std::vector<Eigen::Vector3d>& out_pts3d,
+        std::string& out_strategy) {
+    out_strategy.clear();
+    out_pts3d.clear();
+    if (left_gray.empty()) return {false, PoseEstimate{}};
+
+    // BC/TT 切到 class1 3D 尺寸; RAII 恢复, 避免 Dual-ROI 早退路径残留提取器状态
+    struct Class1ScaleGuard {
+        BinaryCornerExtractor* bc;
+        TinyTargetExtractor* tt;
+        ~Class1ScaleGuard() { bc->setUseClass1(false); tt->setUseClass1(false); }
+    } guard{binary_extractor_.get(), tiny_extractor_.get()};
+    binary_extractor_->setUseClass1(true);
+    tiny_extractor_->setUseClass1(true);
+
+    FeatureExtractor* chain[] = {binary_extractor_.get(), tiny_extractor_.get()};
+    for (auto* ext : chain) {
+        const bool is_bc = (ext->strategyType() == StrategyType::BinaryCorner);
+        if (verbose_console_)
+            std::cout << "[DualRoi][Mono] class1 chain: " << ext->name()
+                      << " on secondary ROI" << std::endl;
+
+        PipelineResult local = ext->extractMono(left_gray, left_color);
+        if (!(local.success && local.n_kp_left >= 3)) {
+            if (verbose_console_)
+                std::cout << "  [DualRoi][Mono] class1 " << ext->name()
+                          << " extraction failed" << std::endl;
+            continue;
+        }
+
+        // ROI 局部坐标 → 全图坐标 (PnP 用全图内参)
+        const float sox = static_cast<float>(left_sec.x);
+        const float soy = static_cast<float>(left_sec.y);
+        for (auto& p : local.pts_left_match) { p.x += sox; p.y += soy; }
+        for (auto& p : local.pts_left_good)  { p.x += sox; p.y += soy; }
+        for (auto& kp : local.kp_left) { kp.pt.x += sox; kp.pt.y += soy; }
+
+        // 2D/3D 配对: good_matches[i].trainIdx → class1 3D 模板 (与 process 主链同规则)
+        const auto& pts3d = ext->templateData().pts_3d;
+        std::vector<cv::Point2f> pnp_2d;
+        std::vector<Eigen::Vector3d> pnp_3d;
+        pnp_2d.reserve(std::min(local.good_matches.size(), local.pts_left_match.size()));
+        for (size_t i = 0; i < local.good_matches.size() &&
+                           i < local.pts_left_match.size(); ++i) {
+            int idx = local.good_matches[i].trainIdx;
+            if (idx >= 0 && idx < static_cast<int>(pts3d.size())) {
+                pnp_2d.push_back(local.pts_left_match[i]);
+                pnp_3d.push_back(pts3d[idx]);
+            }
+        }
+        if (pnp_2d.size() < 4) {
+            if (verbose_console_)
+                std::cout << "  [DualRoi][Mono] class1 " << ext->name()
+                          << " matched pairs < 4 (" << pnp_2d.size() << ")" << std::endl;
+            continue;
+        }
+
+        // 冷启动 MonoPnP (多候选择优); 不用板系 seed
+        PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        if (!p.success) {
+            if (verbose_console_)
+                std::cout << "  [DualRoi][Mono] class1 " << ext->name()
+                          << " PnP failed" << std::endl;
+            continue;
+        }
+
+        // 截断为 2D/3D 严格 1:1 的配对子集 (BC 近似角点多于模板时剔除尾部)
+        const int n_used = static_cast<int>(pnp_2d.size());
+        local.n_kp_left = n_used;
+        local.pts_left_match = pnp_2d;
+        if (static_cast<int>(local.pts_left_good.size()) > n_used)
+            local.pts_left_good.resize(n_used);
+        if (static_cast<int>(local.kp_left.size()) > n_used)
+            local.kp_left.resize(n_used);
+        local.good_matches.resize(n_used);
+        for (int i = 0; i < n_used; ++i)
+            local.good_matches[i] = cv::DMatch(i, i, 0.0f);
+        local.is_first_frame = is_first;
+        local.is_class1 = true;
+
+        out_result = std::move(local);
+        out_pts3d = std::move(pnp_3d);
+        out_strategy = is_bc ? "DualRoi_C1BC" : "DualRoi_C1TT";
+        return {true, p};
+    }
+    return {false, PoseEstimate{}};
 }
 
 PipelineResult MonoTracker::process(const cv::Mat& left_img,

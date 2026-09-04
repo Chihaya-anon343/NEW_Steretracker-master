@@ -177,7 +177,9 @@ bool StereoTracker::runExtraction(FeatureExtractor& ext,
 // PnP Helper: AKAZE path
 // ============================================================================
 
-std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(PipelineResult& result) {
+std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(
+        PipelineResult& result,
+        const std::vector<Eigen::Vector3d>& pnp_pts_3d) {
     PoseEstimate pose;
     double gpnp_timing = 0.0;
 
@@ -229,9 +231,7 @@ std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(PipelineResult& result)
     }
 
     // ---- AKAZE uses its own template pts_3d if available ----
-    const auto& pnp_pts_3d = !extractor_->templateData().pts_3d.empty()
-        ? extractor_->templateData().pts_3d
-        : template_.pts_3d;
+    // (pnp_pts_3d 由 dispatchPnP 按当前策略解析后传入)
 
     // ---- Pose estimation ----
     // 每帧始终运行 InitialPnP（几何一致初值），避免 GPnP HYBRID 路径复用上帧缓存旋转
@@ -273,10 +273,9 @@ std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(PipelineResult& result)
 // PnP Helper: BinaryCorner path
 // ============================================================================
 
-std::pair<bool, PoseEstimate> StereoTracker::runBinaryCornerPnP(PipelineResult& result) {
-    const auto& pnp_pts_3d = !extractor_->templateData().pts_3d.empty()
-        ? extractor_->templateData().pts_3d
-        : template_.pts_3d;
+std::pair<bool, PoseEstimate> StereoTracker::runBinaryCornerPnP(
+        PipelineResult& result,
+        const std::vector<Eigen::Vector3d>& pnp_pts_3d) {
     return solveBcPnpChain(result, pnp_pts_3d);
 }
 
@@ -350,12 +349,10 @@ std::pair<bool, PoseEstimate> StereoTracker::solveBcPnpChain(
 // PnP Helper: TinyTarget path
 // ============================================================================
 
-std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(PipelineResult& result) {
+std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(
+        PipelineResult& result,
+        const std::vector<Eigen::Vector3d>& pnp_pts_3d) {
     PoseEstimate pose;
-
-    const auto& pnp_pts_3d = !extractor_->templateData().pts_3d.empty()
-        ? extractor_->templateData().pts_3d
-        : template_.pts_3d;
 
     if (pnp_pts_3d.empty() || result.pts_left_match.size() < 4)
         return {false, pose};
@@ -407,13 +404,16 @@ std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(PipelineResult& re
 
 std::pair<bool, PoseEstimate> StereoTracker::dispatchPnP(FeatureExtractor* ext,
                                                            PipelineResult& result) {
+    // 3D 模板按当前策略 ext 解析 (退化链中 ext 可不同于成员 extractor_)
+    const auto& tmpl_pts = ext->templateData().pts_3d;
+    const auto& pnp_pts_3d = tmpl_pts.empty() ? template_.pts_3d : tmpl_pts;
     switch (ext->strategyType()) {
         case StrategyType::Akaze:
-            return runAkazePnP(result);
+            return runAkazePnP(result, pnp_pts_3d);
         case StrategyType::BinaryCorner:
-            return runBinaryCornerPnP(result);
+            return runBinaryCornerPnP(result, pnp_pts_3d);
         case StrategyType::TinyTarget:
-            return runTinyTargetPnP(result);
+            return runTinyTargetPnP(result, pnp_pts_3d);
         default:
             return {false, PoseEstimate{}};
     }
@@ -1282,12 +1282,9 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                   << " [3d=" << bc_3d_added << "], AK=" << m_ak_match << ")"
                   << "  pts3d=" << total_3d << std::endl;
 
-    if (total_use < 4) {
-        std::cerr << "[DualRoi] Too few merged points (" << total_use << "), aborting" << std::endl;
-        PipelineResult empty;
-        empty.is_first_frame = is_first;
-        empty.gpnp_success = false;
-        return empty;
+    if (total_use < 4 && verbose_console_) {
+        std::cout << "[DualRoi] Too few merged points (" << total_use
+                  << "), skipping merged solve, trying fallbacks" << std::endl;
     }
 
     // 7. Build PipelineResult
@@ -1337,7 +1334,11 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     double gpnp_timing = 0.0;
     auto t_pnp_start = std::chrono::high_resolution_clock::now();
 
-    if (config_.use_initial_pnp) {
+    if (total_use < 4) {
+        // 合并点数不足: 跳过合并解算, 由下方 BC-only / class1 退化链兜底
+        if (verbose_console_)
+            std::cout << "  [DualRoi] Skip merged PnP (" << total_use << " pts < 4)" << std::endl;
+    } else if (config_.use_initial_pnp) {
         // 每帧始终运行 InitialPnP（几何一致初值），避免 GPnP HYBRID 路径复用上帧缓存旋转
         MatchResult match_res;
         match_res.good_matches       = result.good_matches;
@@ -1411,10 +1412,36 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         }
     }
 
+    // 9c. 第 3 级退化: 合并与 BC-only 均失败 → 在 secondary ROI (class1) 上跑 BC→TT 链
+    //     (class1 3D 尺寸, State 5 同机制; 冷启动, 不依赖板系位姿缓存)
+    bool c1_fallback_used = false;
+    std::string c1_strategy;
+    if (!pose.success && config_.dual_roi_class1_fallback) {
+        if (verbose_console_)
+            std::cout << "  [DualRoi] BC-only fallback failed, trying class1 chain (BC→TT)"
+                      << std::endl;
+        PipelineResult c1_result;
+        std::vector<Eigen::Vector3d> c1_pts3d;
+        auto [ok, c1_pose] = runDualRoiClass1Chain(
+            left_c1_gray, right_c1_gray, left_c1_color, right_c1_color,
+            left_sec, right_sec, is_first, c1_result, c1_pts3d, c1_strategy);
+        if (ok) {
+            pose = c1_pose;
+            c1_result.left_color = left_color_orig;
+            c1_result.right_color = right_color_orig;
+            result = std::move(c1_result);
+            merged_pts3d = std::move(c1_pts3d);
+            total_use = static_cast<int>(result.pts_left_match.size());
+            bc_total = 0;   // 可视化分色: 链胜出点全部来自 class1
+            c1_fallback_used = true;
+        }
+    }
+
     if (pose.success) {
         finalizePose(result, pose);
     }
-    result.strategy_name = bc_fallback_used ? "DualRoi_BC" : "DualRoi";
+    result.strategy_name = c1_fallback_used ? c1_strategy
+                         : (bc_fallback_used ? "DualRoi_BC" : "DualRoi");
 
     // ---- Visualization (dual-ROI) ----
     if (visualize && pose.success) {
@@ -1542,7 +1569,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         }
 
         // --- Panel 5: Image ↔ Template correspondence (side-by-side) ---
-        {
+        // class1 链胜出时跳过: 模板侧对应关系为 AKAZE 模板, 与链点 (BC/TT class1) 不匹配
+        if (!c1_fallback_used) {
             // Left: class-0-ROI image
             cv::Mat p5_left = left_color_orig(
                 cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
@@ -1602,16 +1630,83 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     result.n_matched = total_use;
     result.n_projected = total_use;
-    addLogEntry(result, is_first, bc_fallback_used);
+    addLogEntry(result, is_first, bc_fallback_used || c1_fallback_used);
 
     if (verbose_console_)
         std::cout << "[DualRoi] Frame done: n_pts=" << total_use
                   << "  GPNP=" << (pose.success ? "OK" : "FAIL")
                   << (bc_fallback_used ? "  [BC-fallback]" : "")
+                  << (c1_fallback_used ? "  [class1-chain:" + c1_strategy + "]" : "")
                   << "  time=" << result.total_time_ms() << "ms"
                   << std::endl;
 
     return result;
+}
+
+// ============================================================================
+// Dual-ROI Tier 3: class1 退化链 —— secondary ROI 上 BC → TT
+// (State 5 同款 class1 3D 尺寸机制; 参考主退化链: 提取失败或 PnP 失败均降级)
+// ============================================================================
+
+std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
+        const cv::Mat& left_gray, const cv::Mat& right_gray,
+        const cv::Mat& left_color, const cv::Mat& right_color,
+        const RoiRect& left_sec, const RoiRect& right_sec,
+        bool is_first,
+        PipelineResult& out_result,
+        std::vector<Eigen::Vector3d>& out_pts3d,
+        std::string& out_strategy) {
+    out_strategy.clear();
+    out_pts3d.clear();
+    if (left_gray.empty() || right_gray.empty()) return {false, PoseEstimate{}};
+
+    // BC/TT 切到 class1 3D 尺寸; RAII 恢复, 避免 Dual-ROI 早退路径残留提取器状态
+    struct Class1ScaleGuard {
+        BinaryCornerExtractor* bc;
+        TinyTargetExtractor* tt;
+        ~Class1ScaleGuard() { bc->setUseClass1(false); tt->setUseClass1(false); }
+    } guard{binary_extractor_.get(), tiny_extractor_.get()};
+    binary_extractor_->setUseClass1(true);
+    tiny_extractor_->setUseClass1(true);
+
+    FeatureExtractor* chain[] = {binary_extractor_.get(), tiny_extractor_.get()};
+    for (auto* ext : chain) {
+        const bool is_bc = (ext->strategyType() == StrategyType::BinaryCorner);
+        if (verbose_console_)
+            std::cout << "[DualRoi] class1 chain: " << ext->name()
+                      << " on secondary ROI" << std::endl;
+
+        PipelineResult r;
+        const bool extract_ok = runExtraction(
+            *ext, left_gray, right_gray, left_color, right_color,
+            cv::Point2d(static_cast<double>(left_sec.x), static_cast<double>(left_sec.y)),
+            cv::Point2d(static_cast<double>(right_sec.x), static_cast<double>(right_sec.y)),
+            left_color, right_color, r);
+        if (!extract_ok || !(r.success && r.n_kp_left >= 3)) {
+            if (verbose_console_)
+                std::cout << "  [DualRoi] class1 " << ext->name()
+                          << " extraction failed" << std::endl;
+            continue;
+        }
+
+        const auto& pts3d = ext->templateData().pts_3d;
+        auto [ok, c1_pose] = is_bc ? solveBcPnpChain(r, pts3d)
+                                   : runTinyTargetPnP(r, pts3d);
+        if (!ok) {
+            if (verbose_console_)
+                std::cout << "  [DualRoi] class1 " << ext->name()
+                          << " PnP failed" << std::endl;
+            continue;
+        }
+
+        r.is_first_frame = is_first;
+        r.is_class1 = true;
+        out_result = std::move(r);
+        out_pts3d = pts3d;   // 与 out_result.pts_left_match 前缀 1:1 (BC/TT 规范序)
+        out_strategy = is_bc ? "DualRoi_C1BC" : "DualRoi_C1TT";
+        return {ok, c1_pose};
+    }
+    return {false, PoseEstimate{}};
 }
 
 // ============================================================================

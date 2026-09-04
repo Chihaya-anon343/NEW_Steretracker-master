@@ -122,6 +122,7 @@
     "dual_roi": {
       "_comment": "双ROI class1 拓展像素 + AKAZE scale",
       "secondary_expand_pixels": 50,
+      "class1_fallback_enabled": true,
       "akaze": {
         "scale": 1
       }

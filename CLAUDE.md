@@ -373,7 +373,7 @@ void configureStrategyChain(int roi_area, bool is_class1 = false) {
 | 1 | 远 | ≤800 px² | TinyTarget | solvePnP ITERATIVE | MonoPnP EPnP/IPPE | ❌ | 无→终止 |
 | 2 | 中 | 801~40000 | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | TT |
 | 3 | 中近 | 40001~489999 | AKAZE | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | BC→TT |
-| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP + BC-only 回退 | MonoPnP + BC-only 回退 | ✅ 双目 | BC-only 回退 |
+| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP + BC-only 回退 | MonoPnP + BC-only 回退 | ✅ 双目 | BC-only → class1 (BC→TT) |
 | 5 | 极近 | 无class0+有class1 | 按面积重分类 | 按重分类 | 按重分类 | 按重分类 | 按重分类 |
 
 ### 4.5 退化后备链
@@ -384,7 +384,7 @@ AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarg
 
 | 规则 | 说明 |
 |------|------|
-| Dual-ROI (State 4) | 独立并行路径，不进入退化链 |
+| Dual-ROI (State 4) | 独立并行路径，不进入 AKAZE→BC→TT 链；自身有三级退化链（合并 → BC-only → class1 BC→TT，见 §9.12 之二） |
 | YOLO 无检测 | 直接 skip 帧，不触发退化链 |
 | State 5 回退 | class 1 重分类后重新走 State 1~4 策略链 |
 | 退化链由 `configureStrategyChain()` 一次性配置 | 调用方只需遍历 `fallback_extractors_` 列表 |
@@ -729,12 +729,18 @@ struct Config {
 [Step 4] 恢复全图坐标:
   merged_pts_2d += (primary_roi.x, primary_roi.y)
 
-[Step 5] PnP:
-  GPnP (双目) 或 MonoPnP (单目)
-  失败 → BC-only 回退: 合并数组前缀 bc_total(≥4) 个 BC 角点
+[Step 5] PnP (三级退化链, 由 `config.dual_roi.class1_fallback_enabled` 控制第 3 级):
+  Tier1 合并解算: GPnP (双目) 或 MonoPnP (单目); merged < 4 点时跳过
+  失败 → Tier2 BC-only 回退: 合并数组前缀 bc_total(≥4) 个 BC 角点
         + dual_bc_tmpl_pts3d_ 重解 (双目走 solveBcPnpChain,
-        单目走 mono_pnp_.solve); 仍失败 → 整帧失败
+        单目走 mono_pnp_.solve)
         成功 → strategy_name="DualRoi_BC", LogEntry.fallback=true
+  仍失败 → Tier3 class1 退化链 (2026-09 新增): secondary ROI (class1) 上
+        setUseClass1(true) 后依次 BC → TT (提取失败或 PnP 失败均降级;
+        双目 solveBcPnpChain/runTinyTargetPnP 显式传 class1 3D, 单目
+        MonoPnP 冷启动不 seed); 成功 → strategy_name="DualRoi_C1BC"/
+        "DualRoi_C1TT", LogEntry.fallback=true, result.is_class1=true;
+        仍失败 → 整帧失败
 ```
 
 ### 5.6 光流追踪器 OpticalFlowTracker
@@ -837,22 +843,29 @@ solve(pts_2d, pts_3d, K):
 
 ### 6.4 MonoPnPSolver
 
-**流程** (2026-08 重构: 多候选择优):
+**流程** (2026-08 重构: 多候选择优; 2026-09: 4点 seeded 棘轮冻结修复):
 ```
 solve(pts_2d, pts_3d, K):
   1. 校验: size >= 4 && 2d.size() == 3d.size()
      verbose 时打印输入诊断 (n / 2D bbox / 3D span / K)
 
   2. n == 4: 直接 solvePnP(ITERATIVE) (RANSAC 无意义, EPnP 有共面二义性)
+     - 无 seed: 单次 ITERATIVE, 不做校验 (原行为)
+     - 有 seed (2026-09): 验收容差收紧为相对容差 clamp(5%×2D跨度, 1, 8)px;
+       SeedITER + 冷启动 ITERATIVE + IPPE 三路候选同池竞争择优
+       (ε-平票内偏 seed); 全部候选未过相对容差时回退旧平坦 8px
+       seeded→冷解路径 (不劣于原行为)
 
   3. n > 4: 多候选收集, 每个候选计算全点平均重投影误差并校验
      (有限 + t.z>0 + 10<|t|<100000 + 重投影<8px):
+     候选W:  seed 初值 ITERATIVE (有 seed 时; 时序连贯性候选)
      候选A1: solvePnPRansac(EPNP, 300 iter, 8.0px, 0.99) → 校验通过才收集
      候选A2: 仅当 A1 有效时, 以其为初值对 inliers 做 solvePnP(ITERATIVE) 精化
      候选B:  solvePnPGeneric(IPPE) — 共面闭式解, 返回 ≤2 解逐一校验
      (单目全部策略的 3D 点均在 z=0 平面, IPPE 适用; 非共面输入抛异常则跳过)
 
-  4. 有效候选中取平均重投影误差最小者; 无有效候选 → 失败
+  4. 有效候选中择优: ε-平票集 (reproj ≤ min + tie_epsilon_px) 内偏 seed,
+     否则纯重投影最小; 无有效候选 → 失败
      (最终 inliers = 重投影 <8px 的点数)
 
   5. 有效性检查 (见 §6.5, 防御性, 择优阶段已过滤)
@@ -860,6 +873,8 @@ solve(pts_2d, pts_3d, K):
 ```
 
 > **多候选择优**（2026-08 重构动机）：旧版 "EPnP RANSAC + ITERATIVE 精化 + 发散回退 RANSAC" 在极小 ROI（2D 跨度 ~20px）平面目标下 EPnP 本身数值崩溃（实测 |t|→2.8e19、重投影 16px），垃圾 RANSAC 结果经"发散回退"继续传播导致整帧失败。同一输入下 IPPE 重投影 0.46px 完美收敛（证明对应关系与内参均无问题，纯 EPnP 对微小平面目标的数值病态）。现所有候选必须通过重投影校验，垃圾解在收集阶段即被拦截；"ITERATIVE 发散回退到无效 RANSAC 结果"的路径已不存在（无效 RANSAC 不再作为初值/回退值）。
+
+> **4点 seeded 棘轮冻结修复**（2026-09）：旧版 n==4 + seed 路径 = 单一 seed 初值 ITERATIVE + 8px 平坦校验。4 点共面 IPPE 二义性下 ITERATIVE 恒收敛到 seed 盆地，8px 阈值在 15~30px 小目标上相当于 30~50% **相对**容差，陈旧 seed 解恒通过 → 逼近目标时深度冻结（日志实测 TT 阶段 t.z 钉死 ~8060mm 达 8 帧不跟踪，策略切到 BC 瞬间释放为 4959mm 大跳变）。修复 = 与 n>4 同款候选竞争 + 相对容差（坏 seed 解重投影显著更差，收集阶段即被拦截）；无 seed 路径与全候选失败回退路径均保持原行为，最坏不劣于旧版。回归测试: `test_mono_pnp_4pt_stale_seed_tracks_approach` / `test_mono_pnp_4pt_stale_seed_loses_competition` (tests/unit/test_pose_solvers.cpp)。
 
 ### 6.5 位姿有效性校验 (所有求解器共用)
 
@@ -1137,7 +1152,8 @@ struct SensorPacket {
         "dual_roi": {
             "trigger_area": 490000,    // 触发面积 (700×700)
             "secondary_expand_pixels": 10,  // class1 ROI外扩
-            "akaze_scale": 0.5         // class1 AKAZE scale
+            "akaze_scale": 0.5,        // class1 AKAZE scale
+            "class1_fallback_enabled": true  // 第3级退化: 合并与BC-only均失败后在class1 ROI上跑 BC→TT 链
         },
 
         // State 5 回退
@@ -1189,9 +1205,11 @@ if (left_group && left_group->is_dual) {
 
 **影响**:
 - Dual-ROI 不调用 `configureStrategyChain()`
-- 不进入退化后备链 (AKAZE→BC→TT)
+- 不进入退化后备链 (AKAZE→BC→TT)，但有自身三级退化链（见 §9.12 之二）：Tier1 合并解算 → Tier2 BC-only 重解 → Tier3 class1 (BC→TT) 链
 - 独立使用 `binary_extractor_` + `dual_akaze_extractor_` (不是 `akaze_extractor_`)
-- 合并 (BC+AK) 解算失败时有 **BC-only 回退**（2026-09 新增）：切合并数组前缀 `bc_total`（≥4）个外层 BC 角点 + `dual_bc_tmpl_pts3d_`，走 BC 策略的 PnP 链重解；成功后 `strategy_name = "DualRoi_BC"`、日志 `fallback=true`。BC-only 仍失败才整帧失败
+- Tier2 **BC-only 回退**（2026-09 新增）：切合并数组前缀 `bc_total`（≥4）个外层 BC 角点 + `dual_bc_tmpl_pts3d_`，走 BC 策略的 PnP 链重解；成功后 `strategy_name = "DualRoi_BC"`、日志 `fallback=true`
+- Tier3 **class1 退化链**（2026-09 新增）：Tier2 仍失败时在 secondary ROI 上 `setUseClass1(true)` 后依次 BC → TT（State 5 同款 class1 3D 尺寸机制，`runDualRoiClass1Chain()`），冷启动 PnP；成功后 `strategy_name = "DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`。受 `dual_roi.class1_fallback_enabled` 控制（默认开）。BC/TT 均失败才整帧失败
+- Tier3 的 3D 模板坐标系为 class1 系（非板系），依赖"class1 图案与靶标板同心"假设（与 State 5 语义一致）
 
 ### 9.2 ⚠️ 陷阱2: 单目模式无 warm-start
 
@@ -1322,23 +1340,27 @@ AKAZE_GPNP (State 3) ──失败──→ BinaryCorner (State 2) ──失败�
 > 退化不跨面积区间折返（如 TT 失败不会回到 BC）。
 > 单目 PnP 在链循环内逐策略执行（`MonoTracker::process` / `StereoTracker::processMono`，与双目 `dispatchPnP` 同语义）；2D/3D 按 `good_matches[i] ↔ pts_left_match[i]` 平行序配对——BC approxPolyDP 近似命中时角点数可多于模板角点（如 11 vs 10），尾部无匹配角点被自然剔除，不再因 2D/3D 数量不等被 MonoPnP 拒解。
 
-#### 二、Dual-ROI (State 4) — 独立路径 + BC-only 回退（2026-09 新增）
+#### 二、Dual-ROI (State 4) — 独立路径 + 三级退化链（Tier3 为 2026-09 新增）
 
 ```
-Dual-ROI (BC + AK 并行提取) ──合并解算失败──→ BC-only 重解（BC 策略 PnP 链）──仍失败──→ 终止
+Dual-ROI (BC + AK 并行提取) ──合并解算失败──→ BC-only 重解──仍失败──→ class1 链 (BC→TT) ──仍失败──→ 终止
+                              (Tier2, DualRoi_BC)         (Tier3, DualRoi_C1BC/C1TT)
 ```
 
 | 退化情况 | 触发条件 | 行为 |
 |---------|---------|------|
-| 合并点数不足 | `total_use < 4` | 直接失败（BC 前缀是 total 的子集，此时 BC 可用点必 <4，无点可退） |
-| 合并 PnP 失败 | 双目: InitialPnP+GPnP(默认深度) 全失败; 单目: MonoPnP 全候选失败 | **BC-only 回退**: 合并数组前缀 `[0, bc_total)` 即 BC 贡献（与 `dual_bc_tmpl_pts3d_` 一一对应），切片后重解；双目走 `solveBcPnpChain()`（InitialPnP→GPnP→回退），单目走 `mono_pnp_.solve()` |
-| BC 回退仍失败 | BC-only PnP 链失败 | 整帧失败，终止 |
+| 合并点数不足 | `total_use < 4` | **跳过合并解算**（不再早退整帧），落入 Tier2（BC 前缀 <4 自然不触发）/ Tier3 |
+| 合并 PnP 失败 (Tier1→Tier2) | 双目: InitialPnP+GPnP(默认深度) 全失败; 单目: MonoPnP 全候选失败 | **BC-only 回退**: 合并数组前缀 `[0, bc_total)` 即 BC 贡献（与 `dual_bc_tmpl_pts3d_` 一一对应），切片后重解；双目走 `solveBcPnpChain()`（InitialPnP→GPnP→回退），单目走 `mono_pnp_.solve()` |
+| BC 回退仍失败 (Tier2→Tier3) | BC-only PnP 链失败 且 `dual_roi.class1_fallback_enabled` | **class1 退化链** `runDualRoiClass1Chain()`: secondary ROI (class1, 已按 `secondary_expand_pixels` 外扩) 裁剪图上，`setUseClass1(true)` 后依次 BC → TT；提取失败（`!success || n_kp<3`）或 PnP 失败均降级下一级。双目: `solveBcPnpChain` / `runTinyTargetPnP` 显式传 class1 3D 模板；单目: `MonoPnP` 冷启动（不用板系 seed）。成功后 `strategy_name="DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`、`LogEntry.fallback=true` |
+| class1 链仍失败 | BC、TT 均失败 | 整帧失败，终止 |
 | BC/AK 单边提取失败 | 一侧 `pts_left_match` 为空 | 不必然失败：另一侧点数 ≥4 时合并点集即为其子集，正常解算 |
 | BC 模板角度偏差 | `|matched_angle| > 0.5°` | 用 `reorderByGeometry` 重排 3D 点（修正，不算退化） |
 
 > BC-only 回退的额外收益：AK 点无立体匹配时右图点用左图坐标占位（视差=0），毒化 GPnP 交叉射线残差——BC-only 子集的右点来自 BC 真实右图角点，天然剔除该毒化源。
-> 成功后标记：`strategy_name = "DualRoi_BC"`、`LogEntry.fallback=true`、verbose 输出 `[BC-fallback]`。
-> 代码证据：Dual-ROI 走 **EARLY RETURN**（不调用 `configureStrategyChain()`，不进入 AKAZE→BC→TT fallback 循环）；BC-only 回退实现在 `processDualRoi` 第 9b 步 / `MonoTracker::processDualRoi` 第 8b 步。
+> Tier3 的 3D 模板坐标系是 **class1 系**（class1 模板质心为原点），与 Tier1/2 的板系不同——依赖"class1 图案与靶标板同心"假设（与 State 5 语义一致）；`finalizePose` 会把 class1 系位姿写入帧间缓存，同心假设成立时对下帧 warm-start 无害。
+> Tier3 依赖 class1 尺寸配置：`binary_corner.pixel_to_meter_scale_class1`（>0）与 `tiny_target.square_size_m_class1`。
+> 成功后标记：Tier2 `strategy_name="DualRoi_BC"`、Tier3 `"DualRoi_C1BC"/"DualRoi_C1TT"`，均 `LogEntry.fallback=true`；verbose 输出 `[BC-fallback]` / `[class1-chain:...]`。
+> 代码证据：Dual-ROI 走 **EARLY RETURN**（不调用 `configureStrategyChain()`，不进入 AKAZE→BC→TT fallback 循环）；Tier2 实现在 `processDualRoi` 第 9b 步 / `MonoTracker::processDualRoi` 第 8b 步，Tier3 在第 9c 步 / 第 8c 步（`runDualRoiClass1Chain()`）。
 
 #### 三、State 5 极近 — class1 回退重分类
 
@@ -1425,6 +1447,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | MonoPnPSolver | EPnP RANSAC 失败/无效 | `inliers < 4` 或候选校验不过（重投影≥8px/\|t\|越界/t.z≤0） | 该候选被拦截，转由 IPPE 候选兜底 (2026-08 多候选择优) |
 | MonoPnPSolver | ITERATIVE 精化异常 | `solvePnP` 抛出异常 | **非致命**，保留 RANSAC 候选 |
 | MonoPnPSolver | 全部候选无效 | 无候选通过校验 | 返回 `PoseEstimate{success=false}`（打印各候选诊断） |
+| MonoPnPSolver | 4点 seeded 全候选未过相对容差 | clamp(5%×2D跨度,1,8)px 下 SeedITER/冷ITER/IPPE 均无效 | 回退旧平坦 8px seeded→冷解路径 (2026-09 棘轮冻结修复) |
 | TinyTarget solvePnP | 无 RANSAC，无 warm-start | ITERATIVE 失败 | 直接 `gpnp_success = false` |
 
 #### 十二、ROI 输入层退化
@@ -1460,8 +1483,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
    │  │  │  │    │
   St1 St2 St3  St4 (BC∥AK 独立路径)
    │  │  │  │    │
-   TT BC AKAZE  BC∥AK ──合并解算失败→BC-only重解──仍失败→终止
-   │  │  │  │    (不参与退化链)
+   TT BC AKAZE  BC∥AK ──合并失败→BC-only重解──仍失败→class1链(BC→TT)──仍失败→终止
+   │  │  │  │    (Tier3: DualRoi_C1BC/DualRoi_C1TT, 受 class1_fallback_enabled 控制)
    │  │  │
    │  │  ├─RatioTest<4→失败
    │  │  ├─CrossCheck<4→失败
@@ -1485,7 +1508,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 特征 | 说明 |
 |------|------|
 | **退化方向** | 始终单向：AKAZE → BC → TT，不可逆 |
-| **Dual-ROI 隔离** | State 4 不参与 AKAZE→BC→TT 链；合并解算失败回退 BC-only 重解（`DualRoi_BC`），仍失败才终止 |
+| **Dual-ROI 隔离** | State 4 不参与 AKAZE→BC→TT 链；有自身三级链：合并解算 → BC-only 重解（`DualRoi_BC`）→ class1 链 BC→TT（`DualRoi_C1BC/C1TT`），均失败才终止 |
 | **YOLO vs 特征退化分离** | YOLO 无检测 = skip 帧（不触发策略链）；特征提取失败 = 策略退化；两者互不触发 |
 | **单目退化面窄** | 单目无光流、无立体投影、无 MAD、无 warm-start — 比双目退化面缩窄约 5 类 |
 | **子退化不跨模块** | BC 内部旋转回退不影响策略链选择；AKAZE 匹配阶段回退不改变策略 |

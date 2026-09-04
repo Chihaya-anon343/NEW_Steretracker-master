@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/approach_seq/frame_000074.png",
-    "right": "tests/data/approach_seq/frame_000074.png"
+    "left": "tests/data/approach_seq/frame_000002.png",
+    "right": "tests/data/approach_seq/frame_000002.png"
   },
 
   "manual_roi": {
@@ -148,8 +148,9 @@
     },
 
     "dual_roi": {
-      "_comment": "双ROI class1 拓展像素 + AKAZE scale",
+      "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT)",
       "secondary_expand_pixels": 50,
+      "class1_fallback_enabled": true,
       "akaze": {
         "scale": 1
       }

@@ -53,6 +53,15 @@ std::vector<Eigen::Vector3d> makeTemplatePts3D() {
     };
 }
 
+/// Z=0 平面正方形 4 角 (mm), 边长 87mm — 对齐 tiny_target.square_size_m_class0
+std::vector<Eigen::Vector3d> makeSquarePts3D() {
+    const double h = 43.5;
+    return {
+        Eigen::Vector3d(-h, -h, 0),  Eigen::Vector3d(h, -h, 0),
+        Eigen::Vector3d(h,  h, 0),   Eigen::Vector3d(-h, h, 0),
+    };
+}
+
 /// 相机绕 Y 轴旋转 ry 弧度, 平移 tz 的位姿
 void makePose(double ry, double tz_mm, Eigen::Matrix3d& R, Eigen::Vector3d& t) {
     Eigen::Matrix3d Ry;
@@ -196,6 +205,85 @@ void test_mono_pnp_rejects_insufficient_points() {
 }
 
 // ----------------------------------------------------------------------------
+// MonoPnPSolver 4点 seeded 棘轮冻结回归测试 (2026-09 修复)
+//
+// 旧行为: n==4 + seed = 单一 seed 初值 ITERATIVE + 8px 平坦校验。
+// 4 点共面 IPPE 二义性下 ITERATIVE 恒收敛到 seed 盆地, 8px 阈值在
+// 15~30px 小目标上相当于 30~50% 相对容差 → 陈旧 seed 解恒通过,
+// 逼近目标时深度冻结 (实测日志 t.z 钉死 ~8060mm 8 帧不放)。
+// 新行为: 相对容差 clamp(5%×2D跨度,1,8)px + SeedITER/冷ITER/IPPE 候选竞争。
+// ----------------------------------------------------------------------------
+
+/// 多帧逼近 + 逐帧 seed 链: 深度 8000→5300mm (每帧 -300, 尺度 ~5%/帧增长),
+/// 每帧用上帧解作 seed, 模拟 normal 模式位姿链。逐帧深度误差须 < 6%。
+void test_mono_pnp_4pt_stale_seed_tracks_approach() {
+    const auto K = makeK();
+    const auto pts_3d = makeSquarePts3D();
+
+    Eigen::Matrix3d R_gt;
+    Eigen::Vector3d t_gt;
+
+    PoseEstimate prev;
+    for (int f = 0; f < 10; ++f) {
+        const double tz = 8000.0 - 300.0 * f;
+        makePose(0.1, tz, R_gt, t_gt);
+
+        std::vector<cv::Point2f> pts_2d;
+        for (const auto& p : pts_3d) pts_2d.push_back(project(p, R_gt, t_gt, K));
+        addPixelNoise(pts_2d, 0.2);
+
+        PoseEstimate pose;
+        MonoPnPSolver solver;
+        if (f == 0) {
+            pose = solver.solve(pts_2d, pts_3d, K);
+        } else {
+            PoseSeed seed;
+            seed.R = prev.R;
+            seed.t = prev.t;
+            pose = solver.solve(pts_2d, pts_3d, K, &seed, 0.3);
+        }
+
+        // 视觉跨度 ~11-16px 的小目标, 深度误差须逐帧受控 (无冻结/跳变)
+        const double t_err = std::abs(pose.t.norm() - tz) / tz;
+        TEST_ASSERT_MSG(pose.success && t_err < 0.06,
+                        "frame " + std::to_string(f) +
+                        " 深度误差过大: |t|=" + std::to_string(pose.t.norm()) +
+                        " (期望 " + std::to_string(tz) +
+                        ", err=" + std::to_string(t_err) + ")");
+        prev = pose;
+    }
+}
+
+/// 单帧冻结 seed: 真值 5000mm (span ~17px), seed 钉死在 8000mm (span ~11px)。
+/// 旧代码: seed 解重投影 ~3px < 8px 恒通过 → 返回 ~8000mm (60% 深度误差);
+/// 新代码: 相对容差 (~1px) 拦截 seed 解, 冷启动/IPPE 候选胜出。
+void test_mono_pnp_4pt_stale_seed_loses_competition() {
+    const auto K = makeK();
+    const auto pts_3d = makeSquarePts3D();
+
+    Eigen::Matrix3d R_gt;
+    Eigen::Vector3d t_gt;
+    makePose(0.1, 5000.0, R_gt, t_gt);
+
+    std::vector<cv::Point2f> pts_2d;
+    for (const auto& p : pts_3d) pts_2d.push_back(project(p, R_gt, t_gt, K));
+    addPixelNoise(pts_2d, 0.3);
+
+    PoseSeed seed;
+    seed.R = R_gt;
+    seed.t = Eigen::Vector3d(0.0, 0.0, 8000.0);   // 深度钉死在 1.6× 真值
+
+    MonoPnPSolver solver;
+    const PoseEstimate pose = solver.solve(pts_2d, pts_3d, K, &seed, 0.3);
+
+    const double t_err = (pose.t - t_gt).norm() / t_gt.norm();
+    TEST_ASSERT_MSG(pose.success && t_err < 0.05,
+                    "冻结 seed 未被候选竞争淘汰: |t|=" +
+                    std::to_string(pose.t.norm()) +
+                    " (期望 5000, err=" + std::to_string(t_err) + ")");
+}
+
+// ----------------------------------------------------------------------------
 // GPnPSolver 测试
 // ----------------------------------------------------------------------------
 
@@ -295,6 +383,8 @@ REGISTER_TEST(test_initial_pnp_validity_checks);
 
 REGISTER_TEST(test_mono_pnp_recovers_pose);
 REGISTER_TEST(test_mono_pnp_rejects_insufficient_points);
+REGISTER_TEST(test_mono_pnp_4pt_stale_seed_tracks_approach);
+REGISTER_TEST(test_mono_pnp_4pt_stale_seed_loses_competition);
 
 REGISTER_TEST(test_gpnp_recovers_pose_stereo);
 REGISTER_TEST(test_gpnp_rejects_insufficient_points);

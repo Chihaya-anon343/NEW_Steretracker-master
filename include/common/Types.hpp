@@ -79,6 +79,7 @@ struct TrackerConfig {
     int tiny_max_area_class1{0};         ///< class1-only 时的 TinyTarget 阈值 (0=回退到 tiny_max_area)
     int dual_roi_secondary_expand{10};   ///< 双 ROI 模式下次级（class 1）ROI 的拓展像素数
     double dual_roi_akaze_scale{0.5};    ///< 双 ROI class 1 提取时的 AKAZE 缩放
+    bool dual_roi_class1_fallback{true}; ///< 双 ROI 第 3 级退化: 合并与 BC-only 均失败后在 class1 ROI 上跑 BC→TT 链
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
 };
 

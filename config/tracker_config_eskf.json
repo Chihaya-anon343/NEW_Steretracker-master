@@ -117,6 +117,7 @@
 
     "dual_roi": {
       "secondary_expand_pixels": 50,
+      "class1_fallback_enabled": true,
       "akaze": { "scale": 1 }
     }
   },

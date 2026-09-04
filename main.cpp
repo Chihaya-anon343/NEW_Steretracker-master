@@ -156,12 +156,17 @@ int main(int argc, char** argv) {
         close_range_cfg.tiny_max_area  = tiny_max_area_class1;
     }
 
-    // 双 ROI 配置（class 1 ROI 拓展像素 + AKAZE 提取参数）
+    // 双 ROI 配置（class 1 ROI 拓展像素 + AKAZE 提取参数 + class1 三级退化链开关）
     int dual_expand = 10;
     double dual_akaze_scale = 0.5;
+    bool dual_class1_fallback = true;
     cv::FileNode dual_node = fs["strategies"]["dual_roi"];
     if (!dual_node.empty()) {
         dual_expand = dual_node["secondary_expand_pixels"];
+        {
+            cv::FileNode c1fb = dual_node["class1_fallback_enabled"];
+            if (!c1fb.empty()) dual_class1_fallback = static_cast<int>(c1fb) != 0;
+        }
         cv::FileNode ak_node = dual_node["akaze"];
         if (!ak_node.empty()) {
             dual_akaze_scale = ak_node["scale"];
@@ -462,6 +467,7 @@ int main(int argc, char** argv) {
                                                   akaze_min_area, tiny_max_area,
                                                   akaze_min_area_class1, tiny_max_area_class1,
                                                   dual_expand, dual_akaze_scale);
+    tracker_cfg.dual_roi_class1_fallback = dual_class1_fallback;
     tracker_cfg.temporal = temporal_cfg;
 
     try {
