@@ -94,6 +94,19 @@ void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
 
     applyBandChain(band_used, is_class1);
 
+    // 粘滞压低档位时补齐向上的回退链：提名高档若失效仍可向上退化，避免 TT 单点终结
+    if (tc.enabled && band_used < nominated_band_) {
+        auto pushIfAbsent = [&](FeatureExtractor* e) {
+            if (extractor_ == e) return;
+            for (auto* x : fallback_extractors_) if (x == e) return;
+            fallback_extractors_.push_back(e);
+        };
+        if (band_used <= 1 && nominated_band_ >= 2)
+            pushIfAbsent(binary_extractor_.get());
+        if (nominated_band_ == 3)
+            pushIfAbsent(akaze_extractor_.get());
+    }
+
     if (verbose_console_ && tc.enabled)
         std::cout << "[Temporal] locked=" << strategyNameFromBand(band_used)
                   << " nominated=" << strategyNameFromBand(nominated_band_)
@@ -275,13 +288,22 @@ bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
 
     if (tc.max_trans_ratio > 0.0) {
         double t_ref = seed.t.norm();
-        if (t_ref > 1e-9) {
+        double t_new = pose.t.norm();
+        if (t_ref > 1e-9 && t_new > 1e-9) {
             double dt = (pose.t - seed.t).norm();
-            double limit = tc.max_trans_ratio * t_ref * margin;
-            if (dt > limit) {
+            double dt_limit = tc.max_trans_ratio * t_ref * margin;
+            bool dt_ok = dt <= dt_limit;
+            // 径向快变判据：|t| 比值在容限内视为合法快速接近/远离（与 Δt 判据并列，任一满足即过）
+            bool scale_ok = false;
+            double scale = (t_new >= t_ref) ? t_new / t_ref : t_ref / t_new;
+            if (tc.max_scale_ratio > 1.0)
+                scale_ok = scale <= tc.max_scale_ratio * margin;
+            if (!dt_ok && !scale_ok) {
                 if (verbose_console_)
-                    std::cout << "[Gate] |Δt|=" << dt << "mm > " << limit
-                              << " (|t_seed|=" << t_ref << "mm, margin=" << margin
+                    std::cout << "[Gate] |Δt|=" << dt << "mm > " << dt_limit
+                              << ", scale=" << scale << " > " << tc.max_scale_ratio * margin
+                              << " (|t_seed|=" << t_ref << "mm, |t_new|=" << t_new
+                              << "mm, margin=" << margin
                               << ", " << (ext ? ext->name() : "?") << ")" << std::endl;
                 return false;
             }

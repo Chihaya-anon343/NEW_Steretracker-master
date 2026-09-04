@@ -53,8 +53,9 @@ struct TemporalConfig {
     double tie_epsilon_px{0.3};          ///< ε-平票窗口：重投影差在此内视为平票，平票内取离上帧位姿最近者
     // --- 运动门控 (机制C) ---
     double max_trans_ratio{0.35};        ///< |Δt| 上限 = 该值 × |t_prev|（相对门控，<=0 关闭平移检查）
+    double max_scale_ratio{3.0};         ///< 径向快变容限：|t_new|/|t_seed| 在界内视为合法快速接近/远离（与 Δt 判据并列，任一满足即过；<=1 关闭该判据）
     double max_rot_deg{15.0};            ///< Δθ 上限（度/帧，<=0 关闭旋转检查）
-    double switch_margin{2.0};           ///< 策略切换帧 / 冷重解第二道门控的阈值放宽倍数
+    double switch_margin{2.0};           ///< 策略切换帧门控的阈值放宽倍数
     // --- 策略粘滞 (机制B) ---
     int hold_frames{3};                  ///< 去抖：相邻档提名连续确认帧数
     double hysteresis_up{1.25};          ///< 升档迟滞余量：EMA面积需 > 边界阈值 × 该值

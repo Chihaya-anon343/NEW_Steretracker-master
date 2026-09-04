@@ -9,7 +9,7 @@
       "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/新建文件夹/pura70_white_v2_1p80_static",
+      "directory_path": "data/calib",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -58,8 +58,9 @@
     },
 
     "motion_gate": {
-      "_comment": "运动一致性门控: 跳变时冷启动重解→退化链→帧失败; 参数<=0关闭对应检查",
+      "_comment": "运动一致性门控: 平移=|Δt|或径向比值任一满足即过, 跳变时冷启动重解(直接采纳)→退化链→帧失败; 参数<=0关闭对应检查",
       "max_trans_ratio": 0.35,
+      "max_scale_ratio": 3.0,
       "max_rot_deg": 15.0,
       "switch_margin": 2.0
     },

@@ -386,6 +386,8 @@ int main(int argc, char** argv) {
                 if (!v.empty()) temporal_cfg.max_trans_ratio = static_cast<double>(v);
                 v = mg["max_rot_deg"];
                 if (!v.empty()) temporal_cfg.max_rot_deg = static_cast<double>(v);
+                v = mg["max_scale_ratio"];
+                if (!v.empty()) temporal_cfg.max_scale_ratio = static_cast<double>(v);
                 v = mg["switch_margin"];
                 if (!v.empty()) temporal_cfg.switch_margin = static_cast<double>(v);
             }

@@ -627,7 +627,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
             }
         }
         // 单目 PnP: 有 seed 走位姿链候选 + 运动门控；门控拒绝 → 冷启动重解一次
-        // （纯重投影择优，二道门用放宽阈值），仍拒绝则本策略判失败继续退化链
+        // （纯重投影择优，成功即采纳），冷重解也失败则本策略判失败继续退化链
         PoseEstimate p;
         GateStatus gate_st = GateStatus::NotApplicable;
         if (use_seed) {
@@ -638,11 +638,12 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                     gate_st = GateStatus::Pass;
                 } else {
                     PoseEstimate pc = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, nullptr, 0.0);
-                    if (pc.success && motionGatePass(pc, seed, ext, true)) {
+                    if (pc.success) {
+                        // 冷重解 = temporal-OFF 的可信路径，直接采纳（不再被陈旧 seed 锚定的门控二次审查）
                         p = pc;
                         gate_st = GateStatus::Recovered;
                         if (verbose_console_)
-                            std::cout << "[Gate] warm pose rejected, cold re-solve recovered"
+                            std::cout << "[Gate] warm pose rejected, cold re-solve accepted"
                                       << std::endl;
                     } else {
                         p = PoseEstimate{};
