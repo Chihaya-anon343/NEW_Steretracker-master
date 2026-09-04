@@ -206,18 +206,7 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
 
     last_call_debug_.roi_gray = roi_gray.clone();
 
-    // ---- 1. Otsu + 模板匹配 → 最佳角度 ----
-    cv::Mat roi_binary;
-    cv::threshold(roi_gray, roi_binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
-    last_call_debug_.otsu_binary = roi_binary.clone();
-
-    if (!templates_.empty()) {
-        auto match_res = matchTemplate(roi_binary);
-        best_angle = match_res.best_angle;
-        best_overlap = match_res.best_overlap;
-    }
-
-    // ---- 2. 超分辨率（×scale_factor）----
+    // ---- 1. 超分辨率（×scale_factor）+ Otsu ----
     int sf = config_.scale_factor;
     int new_w = roi_gray.cols * sf;
     int new_h = roi_gray.rows * sf;
@@ -228,27 +217,46 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
 
     cv::Mat binary;
     cv::threshold(large, binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
+    last_call_debug_.otsu_binary = binary.clone();  // 清理前快照
 
-    // 形态学清理
-    cv::Mat k_open  = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-    cv::Mat k_close = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
-    cv::morphologyEx(binary, binary, cv::MORPH_OPEN, k_open);
-    cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, k_close);
-    last_call_debug_.super_binary = binary.clone();
-
-    // ---- 3. 连通分量分析 + 评分 ----
+    // ---- 2. BC 品质清理链（超分空间，3×3 核等效原尺度 <1px）----
+    // 最大连通域（无触边排除——小目标常贴 ROI 边）→ 填洞 → CLOSE→OPEN
     cv::Mat labels, stats, centroids;
     int num_labels = cv::connectedComponentsWithStats(binary, labels, stats, centroids, 8);
+    if (num_labels <= 1) return Status::NoSuitableComponent;
 
-    int best_label = selectBestComponent(binary, labels, num_labels, stats, centroids);
-    if (best_label < 0) return Status::NoSuitableComponent;
+    int best_label = 1;
+    int best_area = stats.at<int>(1, cv::CC_STAT_AREA);
+    for (int i = 2; i < num_labels; ++i) {
+        int area = stats.at<int>(i, cv::CC_STAT_AREA);
+        if (area > best_area) { best_area = area; best_label = i; }
+    }
 
-    // 最佳分量的掩膜
-    cv::Mat best_mask = (labels == best_label);
-    best_mask.convertTo(best_mask, CV_8UC1, 255.0);
+    cv::Mat region = cv::Mat::zeros(binary.size(), CV_8UC1);
+    region.setTo(255, labels == best_label);
 
+    cv::Mat filled = cv::Mat::zeros(binary.size(), CV_8UC1);
+    std::vector<std::vector<cv::Point>> ext_contours;
+    cv::findContours(region, ext_contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (ext_contours.empty()) return Status::NoSuitableComponent;
+    cv::drawContours(filled, ext_contours, -1, cv::Scalar(255), cv::FILLED);
+
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    cv::Mat cleaned;
+    cv::morphologyEx(filled, cleaned, cv::MORPH_CLOSE, kernel);
+    cv::morphologyEx(cleaned, cleaned, cv::MORPH_OPEN, kernel);
+    last_call_debug_.super_binary = cleaned.clone();
+
+    // ---- 3. 角度匹配：清理后的二值图（与角点提取共用同一张图）----
+    if (!templates_.empty()) {
+        auto match_res = matchTemplate(cleaned);
+        best_angle = match_res.best_angle;
+        best_overlap = match_res.best_overlap;
+    }
+
+    // 角点提取输入：清理后的单域实心二值图
     std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(best_mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    cv::findContours(cleaned, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     if (contours.empty()) return Status::NoSuitableComponent;
 
     auto best_contour = std::max_element(contours.begin(), contours.end(),
@@ -342,59 +350,6 @@ TinyTargetExtractor::matchTemplate(const cv::Mat& roi_binary) {
               [](const auto& a, const auto& b) { return a.second > b.second; });
 
     return result;
-}
-
-// ============================================================================
-// 分量选择（评分系统，与旧版相同）
-// ============================================================================
-
-int TinyTargetExtractor::selectBestComponent(
-    const cv::Mat& binary, const cv::Mat& label_map,
-    int num_labels, const cv::Mat& stats, const cv::Mat& centroids) {
-
-    double roi_cx = binary.cols / 2.0;
-    double roi_cy = binary.rows / 2.0;
-    double total_area = static_cast<double>(binary.cols) * binary.rows;
-    double max_dist = std::sqrt(roi_cx * roi_cx + roi_cy * roi_cy);
-
-    int best_label = -1;
-    double best_score = -1.0;
-
-    for (int i = 1; i < num_labels; ++i) {
-        int x    = stats.at<int>(i, cv::CC_STAT_LEFT);
-        int y    = stats.at<int>(i, cv::CC_STAT_TOP);
-        int bw   = stats.at<int>(i, cv::CC_STAT_WIDTH);
-        int bh   = stats.at<int>(i, cv::CC_STAT_HEIGHT);
-        int area = stats.at<int>(i, cv::CC_STAT_AREA);
-
-        if (area < 200) continue;
-
-        double bbox_area  = static_cast<double>(bw) * bh;
-        double rect_ratio = area / bbox_area;
-        double aspect     = std::max(bw, bh) / (std::min(bw, bh) + 1e-6);
-
-        double comp_cx = centroids.at<double>(i, 0);
-        double comp_cy = centroids.at<double>(i, 1);
-        double dist = std::sqrt((comp_cx - roi_cx) * (comp_cx - roi_cx) +
-                                 (comp_cy - roi_cy) * (comp_cy - roi_cy));
-        double center_score = 1.0 - dist / max_dist;
-
-        double area_ratio = area / total_area;
-        double area_score = (area_ratio >= 0.15 && area_ratio <= 0.6)
-            ? 1.0 : std::max(0.0, 1.0 - std::abs(area_ratio - 0.35) * 3.0);
-
-        double aspect_score = 1.0 / aspect;
-
-        double score = rect_ratio * 0.25 + area_score * 0.3 +
-                       center_score * 0.3 + aspect_score * 0.15;
-
-        if (score > best_score) {
-            best_score = score;
-            best_label = i;
-        }
-    }
-
-    return best_label;
 }
 
 // ============================================================================

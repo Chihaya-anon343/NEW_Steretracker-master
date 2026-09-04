@@ -374,30 +374,26 @@ Status estimatePose(
 ```
 输入 ROI 灰度图
   │
-  ├─[1] 模板匹配（matchTemplate）
-  │   ├─ Otsu 二值化 ROI
-  │   ├─ 提取最大连通分量 → 裁剪正方形外接框
+  ├─[1] 超分辨率 + Otsu（超分空间）
+  │   ├─ resize × scale_factor（INTER_CUBIC）
+  │   ├─ GaussianBlur(3×3, σ=0.3)
+  │   └─ Otsu 二值化（快照 = otsu_binary，清理前）
+  │
+  ├─[2] BC 品质清理链（2026-09 升级，超分空间统一；3×3 核等效原尺度 <1px）
+  │   ├─ 最大连通域（无触边排除——小目标常贴 ROI 边）
+  │   ├─ 填洞：findContours(RETR_EXTERNAL) + drawContours(FILLED)
+  │   ├─ MORPH_CLOSE(3×3) → MORPH_OPEN(3×3)（同核，BC smoothBoundary 同序）
+  │   └─ 快照 = super_binary（清理后，角度匹配与角点提取共用输入）
+  │
+  ├─[3] 模板匹配（matchTemplate）
+  │   ├─ 输入 = 清理后二值图（与角点提取共用同一张图）
+  │   ├─ 提取最大连通分量 → 裁剪正方形外接框（对已清理图冗余保险）
   │   ├─ 归一化到 target_size（INTER_NEAREST）
   │   ├─ 遍历所有模板，calculateOverlap() 计算 IoU
   │   └─ 返回 best_angle + best_overlap + 全部重叠度（降序）
   │
-  ├─[2] 超分辨率 + 连通域分析
-  │   ├─ resize × scale_factor（INTER_CUBIC）
-  │   ├─ GaussianBlur(3×3, σ=0.3)
-  │   ├─ Otsu 二值化
-  │   ├─ MORPH_OPEN(3×3) + MORPH_CLOSE(5×5)
-  │   └─ connectedComponentsWithStats
-  │
-  ├─[3] selectBestComponent() — 评分选择最佳连通域
-  │   评分 = rect_ratio×0.25 + area_score×0.30 + center_score×0.30 + aspect_score×0.15
-  │   ├─ rect_ratio: area / bbox_area（矩形度）
-  │   ├─ area_score: 面积比例，最佳区间 [0.15, 0.6]
-  │   ├─ center_score: 距图像中心越近越高
-  │   └─ aspect_score: 1/aspect_ratio（越接近正方形越高）
-  │   过滤条件：area < 200 的直接跳过
-  │
   ├─[4] minAreaRect + 角点排序
-  │   ├─ 提取最佳分量的最大轮廓
+  │   ├─ 提取清理后二值图的最大轮廓
   │   ├─ cv::minAreaRect → 4 个顶点
   │   └─ PoseUtils::orderPoints() → TL→TR→BR→BL
   │
@@ -431,8 +427,8 @@ struct TemplateMatchResult {
 };
 ```
 
-匹配流程：
-1. Otsu 二值化 → 提取最大连通分量 → 正方形裁剪 → resize 到 target_size
+匹配流程（2026-09 起输入 = BC 清理链后的二值图，与角点提取共用同一张图）：
+1. 提取最大连通分量 → 正方形裁剪 → resize 到 target_size（对已清理图冗余保险）
 2. 与每个模板的 `image_bool` 计算 IoU
 3. 返回最佳角度和全部重叠度（降序排列）
 

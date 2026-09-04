@@ -7,10 +7,10 @@
  * 使用超分辨率 + 最小外接矩形 + 亚像素角点优化。
  * 当 ROI 面积 ≤ 800 px 时被选中。
  *
- * 流水线:
- *   1. Otsu 二值化 → 模板 IoU 匹配 → 最佳角度
- *   2. 超分辨率（×scale_factor）→ Otsu → 形态学开+闭操作
- *   3. 连通域评分（矩形度、面积、中心、纵横比）
+ * 流水线 (2026-09: 二值图处理升级为 BC 品质清理链，超分空间统一):
+ *   1. 超分辨率（×scale_factor）+ GaussianBlur → Otsu 二值化
+ *   2. BC 清理链：最大连通域 → 填洞 → CLOSE→OPEN（同核 3×3）
+ *   3. 清理后二值图 → 模板 IoU 匹配 → 最佳角度（与角点提取共用同一张图）
  *   4. 最小外接矩形 → 4个角点 → 亚像素优化
  *   5. 角度对齐 → 缩放还原 → 4个有序角点
  *
@@ -84,8 +84,8 @@ public:
     /// 最近一次 extract4Corners 的中间图快照（用于可视化）。
     struct DebugImages {
         cv::Mat roi_gray;      ///< 输入 ROI 灰度图
-        cv::Mat otsu_binary;   ///< 原尺度 Otsu 二值图（模板 IoU 匹配的输入）
-        cv::Mat super_binary;  ///< ×scale_factor 超分 + 形态学后的二值图（角点提取输入，尺寸 = ROI × sf）
+        cv::Mat otsu_binary;   ///< 超分空间 Otsu 二值图（BC 清理链输入）
+        cv::Mat super_binary;  ///< BC 清理链后的二值图（角度匹配与角点提取共用输入，尺寸 = ROI × sf）
     };
     const DebugImages& lastLeftDebug() const { return last_left_debug_; }
     const DebugImages& lastRightDebug() const { return last_right_debug_; }
@@ -105,11 +105,6 @@ private:
         std::vector<std::pair<int, double>> all_overlaps;
     };
     TemplateMatchResult matchTemplate(const cv::Mat& roi_binary);
-
-    // Component scoring & selection
-    int selectBestComponent(const cv::Mat& binary, const cv::Mat& label_map,
-                            int num_labels, const cv::Mat& stats,
-                            const cv::Mat& centroids);
 
     // Sub-pixel corner refinement
     std::vector<cv::Point2f> refineCorners(const cv::Mat& image,

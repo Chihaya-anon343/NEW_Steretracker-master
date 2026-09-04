@@ -876,15 +876,13 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
         if (is_tiny) {
             const auto& pnp_pts_3d = winning_ext->templateData().pts_3d;
 
-            // -- Panel: ROI 与二值化图 (灰度 ROI | 原尺度 Otsu | 超分二值) --
+            // -- Panel: ROI 与二值化图 (灰度 ROI | 清理前 Otsu | 清理后二值) --
             {
                 auto* tte = tiny_extractor_.get();
                 const auto& dbg = tte->lastLeftDebug();
                 if (!dbg.roi_gray.empty()) {
                     float lx_roi = static_cast<float>(left_offset.x);
                     float ly_roi = static_cast<float>(left_offset.y);
-                    float sf = static_cast<float>(dbg.super_binary.cols)
-                             / std::max(1, dbg.roi_gray.cols);
                     auto drawPts = [&](cv::Mat& img, float k) {
                         for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
                             cv::Point p(
@@ -898,19 +896,19 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                     cv::cvtColor(dbg.roi_gray, g, cv::COLOR_GRAY2BGR);
                     drawPts(g, 1.0f);
                     tiles.push_back(g);
-                    if (!dbg.otsu_binary.empty()) {
-                        cv::Mat o;
-                        cv::cvtColor(dbg.otsu_binary, o, cv::COLOR_GRAY2BGR);
-                        drawPts(o, 1.0f);
-                        tiles.push_back(o);
-                    }
-                    if (!dbg.super_binary.empty()) {
-                        cv::Mat s;
-                        cv::cvtColor(dbg.super_binary, s, cv::COLOR_GRAY2BGR);
-                        drawPts(s, sf);
-                        cv::resize(s, s, g.size(), 0, 0, cv::INTER_NEAREST);
-                        tiles.push_back(s);
-                    }
+                    // otsu/super 均为超分尺度：按各自宽度比绘制角点后缩回 ROI 尺寸
+                    auto addTile = [&](const cv::Mat& bin) {
+                        if (bin.empty()) return;
+                        float k = static_cast<float>(bin.cols)
+                                / std::max(1, dbg.roi_gray.cols);
+                        cv::Mat t;
+                        cv::cvtColor(bin, t, cv::COLOR_GRAY2BGR);
+                        drawPts(t, k);
+                        cv::resize(t, t, g.size(), 0, 0, cv::INTER_NEAREST);
+                        tiles.push_back(t);
+                    };
+                    addTile(dbg.otsu_binary);
+                    addTile(dbg.super_binary);
                     cv::Mat panel = tiles[0];
                     for (size_t i = 1; i < tiles.size(); ++i)
                         cv::hconcat(panel, tiles[i], panel);

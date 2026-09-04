@@ -630,32 +630,23 @@ struct Config {
 **extractMono() / extract() 核心 — extract4Corners()**:
 
 ```
-[Step 1] Otsu + 模板匹配 (IoU):
-  threshold(gray, binary, 0, 255, THRESH_BINARY|THRESH_OTSU)
+[Step 1] 超分辨率放大 (×4) + Otsu:
+  resize(INTER_CUBIC) × scale_factor (默认4)
+  GaussianBlur(3×3, σ=0.3)
+  Otsu 二值化
+
+[Step 2] BC 品质清理链 (2026-09 升级, 超分空间统一):
+  最大连通域 (BC keepLargestRegion 规则, 但无触边排除——小目标常贴 ROI 边)
+  → fillHoles (RETR_EXTERNAL 外轮廓实心化)
+  → MORPH_CLOSE(3×3) → MORPH_OPEN(3×3) (与 BC smoothBoundary 同序同核)
+  → 清理后二值图 = 角度匹配与角点提取的共用输入 (单域实心)
+
+[Step 3] 模板匹配 (IoU, 输入=清理后二值图):
   matchTemplate():
-    connectedComponentsWithStats(8) → 取最大连通域
+    connectedComponentsWithStats(8) → 取最大连通域 (清理后仅单域, 冗余保险)
     裁剪包围盒 → 扩展正方形 → resize 50×50 (INTER_NEAREST)
     遍历24个模板: calculateOverlap(IoU)
     → best_angle, best_overlap
-
-[Step 2] 超分辨率放大 (×4):
-  resize(INTER_CUBIC) × scale_factor (默认4)
-  GaussianBlur(3×3, σ=0.3)
-  Otsu →
-  MORPH_OPEN(3×3) → MORPH_CLOSE(5×5)
-
-[Step 3] 连通域评分 selectBestComponent():
-  最小面积过滤: area < 200 (×4空间) → 跳过
-  4维评分:
-    ┌──────────────┬──────────────────────────────┬────────┐
-    │ 指标         │ 公式                         │ 权重   │
-    ├──────────────┼──────────────────────────────┼────────┤
-    │ 矩形度       │ area / (w * h)               │ 0.25   │
-    │ 面积合理性   │ area_ratio ∈ [0.15, 0.6]     │ 0.30   │
-    │ 中心距离     │ 1 - dist/roi_radius          │ 0.30   │
-    │ 长宽比       │ 1 / (max(w,h)/min(w,h))      │ 0.15   │
-    └──────────────┴──────────────────────────────┴────────┘
-  总分 = Σ(score × weight)，取最高分
 
 [Step 4] minAreaRect + 角点排序:
   minAreaRect(best_contour) → 4角点
@@ -1396,8 +1387,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 | 子退化 | 触发条件 | 行为 |
 |--------|---------|------|
-| 连通域面积过滤 | `area < 200`（×4 超分空间） | 跳过该连通域 |
-| 连通域评分 | 4 维加权评分（矩形度 0.25 + 面积 0.30 + 中心距 0.30 + 长宽比 0.15）仅取最高分 | 无合格 → `success=false` → 触发策略链终止 |
+| 无白色连通域 | Otsu 后 `num_labels ≤ 1` | `NoSuitableComponent` → 失败 |
+| 最大域选择 | BC 规则（无触边排除），多域时取面积最大（2026-09 取代旧 4 维评分） | 面积最大者胜出，其余丢弃 |
 | 策略链终点 | TT 失败 | **无 further fallback**，输出空位姿 |
 
 #### 八、光流追踪 — 点级退化（仅双目 AKAZE）

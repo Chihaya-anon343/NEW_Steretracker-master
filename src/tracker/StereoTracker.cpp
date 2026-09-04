@@ -698,7 +698,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 }
             }
 
-            // --- Panel 0c: TinyTarget ROI 与二值化图 (各: 灰度 ROI | 原尺度 Otsu | 超分二值) ---
+            // --- Panel 0c: TinyTarget ROI 与二值化图 (各: 灰度 ROI | 清理前 Otsu | 清理后二值) ---
             if (is_tiny) {
                 auto* tte = tiny_extractor_.get();
                 float lx_roi = static_cast<float>(left_offset.x);
@@ -710,8 +710,6 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                                       float ox, float oy) -> cv::Mat {
                     cv::Mat panel;
                     if (dbg.roi_gray.empty()) return panel;
-                    float sf = static_cast<float>(dbg.super_binary.cols)
-                             / std::max(1, dbg.roi_gray.cols);
                     auto drawPts = [&](cv::Mat& img, float k) {
                         for (size_t i = 0; i < pts_full.size(); ++i) {
                             cv::Point p(
@@ -725,19 +723,19 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                     cv::cvtColor(dbg.roi_gray, g, cv::COLOR_GRAY2BGR);
                     drawPts(g, 1.0f);
                     tiles.push_back(g);
-                    if (!dbg.otsu_binary.empty()) {
-                        cv::Mat o;
-                        cv::cvtColor(dbg.otsu_binary, o, cv::COLOR_GRAY2BGR);
-                        drawPts(o, 1.0f);
-                        tiles.push_back(o);
-                    }
-                    if (!dbg.super_binary.empty()) {
-                        cv::Mat s;
-                        cv::cvtColor(dbg.super_binary, s, cv::COLOR_GRAY2BGR);
-                        drawPts(s, sf);
-                        cv::resize(s, s, g.size(), 0, 0, cv::INTER_NEAREST);
-                        tiles.push_back(s);
-                    }
+                    // otsu/super 均为超分尺度：按各自宽度比绘制角点后缩回 ROI 尺寸
+                    auto addTile = [&](const cv::Mat& bin) {
+                        if (bin.empty()) return;
+                        float k = static_cast<float>(bin.cols)
+                                / std::max(1, dbg.roi_gray.cols);
+                        cv::Mat t;
+                        cv::cvtColor(bin, t, cv::COLOR_GRAY2BGR);
+                        drawPts(t, k);
+                        cv::resize(t, t, g.size(), 0, 0, cv::INTER_NEAREST);
+                        tiles.push_back(t);
+                    };
+                    addTile(dbg.otsu_binary);
+                    addTile(dbg.super_binary);
                     panel = tiles[0];
                     for (size_t i = 1; i < tiles.size(); ++i)
                         cv::hconcat(panel, tiles[i], panel);
