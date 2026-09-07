@@ -558,6 +558,15 @@ int main(int argc, char** argv) {
         // Phase 3.2: 位姿成功帧计数 (汇总统计用)
         int processed_ok = 0;
 
+        // 阶段计时累加 (运行汇总: YOLO / 位姿估计平均用时)
+        double yolo_ms_total = 0.0;  int yolo_calls = 0;
+        double pose_ms_total = 0.0;  int pose_calls = 0;
+        auto steadyNow = []() { return std::chrono::steady_clock::now(); };
+        auto elapsedMs = [](std::chrono::steady_clock::time_point t0) {
+            return std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0).count();
+        };
+
         // 终端每帧一行输出。capture_log 时 cout 被重定向到日志，这里直写原始终端缓冲区
         auto termLine = [&](const std::string& s) {
             if (capture_log && saved_cout) {
@@ -578,7 +587,9 @@ int main(int argc, char** argv) {
                 if (use_manual_roi) {
                     left_group = RoiGroup{manual_rl, {}, false};
                 } else if (yolo_ok) {
+                    auto t_yolo = steadyNow();
                     left_group = yolo.detectMono(L);
+                    yolo_ms_total += elapsedMs(t_yolo); ++yolo_calls;
                     if (!left_group.valid()) {
                         tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
@@ -586,7 +597,9 @@ int main(int argc, char** argv) {
                     }
                 }
                 tracker->setFrameNumber(frame);
+                auto t_pose = steadyNow();
                 result = mt->process(L, visualize, &left_group);
+                pose_ms_total += elapsedMs(t_pose); ++pose_calls;
             } else {
                 auto* st = static_cast<StereoTracker*>(tracker.get());
                 RoiGroup lg, rg;
@@ -600,7 +613,9 @@ int main(int argc, char** argv) {
                                   << "," << manual_rr.height << ")" << std::endl;
                     }
                 } else if (yolo_ok) {
+                    auto t_yolo = steadyNow();
                     std::tie(lg, rg) = yolo.detect(L, R);
+                    yolo_ms_total += elapsedMs(t_yolo); ++yolo_calls;
                     if (!lg.valid() && !rg.valid()) {
                         tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
                         termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
@@ -614,11 +629,15 @@ int main(int argc, char** argv) {
                 tracker->setFrameNumber(frame);
                 if (lg.valid() && rg.valid()) {
                     // 双侧检测 → 双目
+                    auto t_pose = steadyNow();
                     result = st->process(L, R, visualize, &lg, &rg);
+                    pose_ms_total += elapsedMs(t_pose); ++pose_calls;
                 } else if (stereo_mono_fallback && (lg.valid() || rg.valid())) {
                     // 单侧检测 → 单目降级（需 stereo_mono_fallback=true）
+                    auto t_pose = steadyNow();
                     result = st->processMono(lg.valid() ? L : R, visualize,
                                               lg.valid() ? &lg : &rg);
+                    pose_ms_total += elapsedMs(t_pose); ++pose_calls;
                 } else {
                     tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
                     termLine("[Frame " + std::to_string(frame) + "] YOLO未检测到目标");
@@ -762,6 +781,14 @@ int main(int argc, char** argv) {
                         + " (" + std::to_string(100.0 * processed_ok / frame) + "%)\n");
                 if (secs > 0.0) {
                     termOut("实际处理 FPS: " + std::to_string(frame / secs) + "\n");
+                }
+                if (yolo_calls > 0) {
+                    termOut("YOLO 平均用时: " + std::to_string(yolo_ms_total / yolo_calls)
+                            + " ms/帧  (共 " + std::to_string(yolo_calls) + " 帧)\n");
+                }
+                if (pose_calls > 0) {
+                    termOut("位姿估计平均用时: " + std::to_string(pose_ms_total / pose_calls)
+                            + " ms/帧  (共 " + std::to_string(pose_calls) + " 帧)\n");
                 }
                 if (ist.captured > 0) {
                     termOut("输入统计 (线程化采集): 采集 " + std::to_string(ist.captured)

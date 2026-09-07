@@ -1058,6 +1058,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                                                const RoiGroup& left_group,
                                                const RoiGroup& right_group,
                                                bool visualize) {
+    auto t_dual_start = std::chrono::steady_clock::now();
+
     // 0. Ensure template preprocessing is done
     prepareDualBcTemplate();
 
@@ -1631,6 +1633,9 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     result.n_matched = total_use;
     result.n_projected = total_use;
     addLogEntry(result, is_first, bc_fallback_used || c1_fallback_used);
+
+    result.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_dual_start).count();
 
     if (verbose_console_)
         std::cout << "[DualRoi] Frame done: n_pts=" << total_use

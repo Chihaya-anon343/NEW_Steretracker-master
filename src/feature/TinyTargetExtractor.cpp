@@ -7,6 +7,7 @@
 #include <opencv2/calib3d.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -97,6 +98,8 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
         return result;
     }
 
+    auto t_extract_start = std::chrono::steady_clock::now();
+
     bool has_right = !right_gray.empty();
     if (g_verbose_console) {
         std::cout << "[TinyTarget] Left ROI=" << left_gray.cols << "x" << left_gray.rows;
@@ -179,7 +182,8 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
 
     // 3D 物方点已在构造时由 initPts3d() 初始化。
 
-    result.timing["tiny_target"] = 0.0;
+    result.timing["tiny_target"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_extract_start).count();
 
     if (g_verbose_console)
         std::cout << "[TinyTarget] Extracted 4 corners (L), " << right_corners.size()
@@ -425,6 +429,8 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
         return result;
     }
 
+    auto t_extract_start = std::chrono::steady_clock::now();
+
     if (g_verbose_console) std::cout << "[TinyTarget] Mono ROI=" << gray.cols << "x" << gray.rows << std::endl;
 
     // 单图提取4个角点
@@ -475,7 +481,8 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
 
     // 3D 物方点已在构造时由 initPts3d() 初始化。
 
-    result.timing["tiny_target"] = 0.0;
+    result.timing["tiny_target"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_extract_start).count();
 
     result.n_matched = 4;
     result.success = true;

@@ -7,6 +7,7 @@
 #include <opencv2/calib3d.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -176,6 +177,8 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
         return result;
     }
 
+    auto t_extract_start = std::chrono::steady_clock::now();
+
     // ---- 第1步: Otsu 二值化（两幅图像） ----
     cv::Mat left_binary, right_binary;
     cv::threshold(left_gray, left_binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
@@ -306,7 +309,8 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
     // pts_left_used/pts_right_used/pts_right_projected 保持为空
     //   （GPNP 直接通过 idx_from_filtered 使用 pts_left_good/pts_right_good）
 
-    result.timing["binary_corner"] = 0.0;
+    result.timing["binary_corner"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_extract_start).count();
 
     if (g_verbose_console)
         std::cout << "[BinaryCorner] Extracted " << left_corners.size()
@@ -1191,6 +1195,8 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
         return result;
     }
 
+    auto t_extract_start = std::chrono::steady_clock::now();
+
     // Otsu 二值化
     cv::Mat binary;
     cv::threshold(gray, binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
@@ -1246,6 +1252,8 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
 
     result.n_matched = static_cast<int>(result.good_matches.size());
     result.success = !corners.empty();
+    result.timing["binary_corner"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_extract_start).count();
     return result;
 }
 

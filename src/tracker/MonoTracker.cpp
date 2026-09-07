@@ -15,6 +15,7 @@
 #include <opencv2/calib3d.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <future>
 #include <iostream>
 #include <sstream>
@@ -143,6 +144,8 @@ void MonoTracker::prepareDualBcTemplate() {
 PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                                                   const RoiGroup& left_group,
                                                   bool visualize) {
+    auto t_dual_start = std::chrono::steady_clock::now();
+
     // 0. Ensure template preprocessing is done
     prepareDualBcTemplate();
 
@@ -260,6 +263,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         PipelineResult empty;
         empty.is_first_frame = is_first;
         empty.gpnp_success = false;
+        empty.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_dual_start).count();
         return empty;
     }
 
@@ -531,6 +536,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             std::cout << "  [DualRoi][Mono] Visualized: " << n_bc_use << " BC + "
                       << (total_use - n_bc_use) << " AK corners" << std::endl;
     }
+
+    result.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_dual_start).count();
 
     if (verbose_console_)
         std::cout << "[DualRoi][Mono] Frame done: n_pts=" << total_use

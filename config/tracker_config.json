@@ -1,5 +1,5 @@
 {
-  "mode": "normal",
+  "mode": "debug",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/approach_seq/frame_000102.png",
-    "right": "tests/data/approach_seq/frame_000102.png"
+    "left": "data/big/cj01_image_0032.jpg",
+    "right": "data/big/cj01_image_0032.jpg"
   },
 
   "manual_roi": {
