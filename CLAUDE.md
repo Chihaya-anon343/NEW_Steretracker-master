@@ -636,7 +636,8 @@ struct Config {
   Otsu 二值化
 
 [Step 2] BC 品质清理链 (2026-09 升级, 超分空间统一):
-  最大连通域 (BC keepLargestRegion 规则, 但无触边排除——小目标常贴 ROI 边)
+  最大连通域 (BC keepLargestRegion 同款触边排除 + 全贴边回退全局最大——
+    小目标被 ROI 截断时所有白域贴边, 回退保证不劣于旧行为)
   → fillHoles (RETR_EXTERNAL 外轮廓实心化)
   → MORPH_CLOSE(3×3) → MORPH_OPEN(3×3) (与 BC smoothBoundary 同序同核)
   → 清理后二值图 = 角度匹配与角点提取的共用输入 (单域实心)
@@ -1410,7 +1411,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 子退化 | 触发条件 | 行为 |
 |--------|---------|------|
 | 无白色连通域 | Otsu 后 `num_labels ≤ 1` | `NoSuitableComponent` → 失败 |
-| 最大域选择 | BC 规则（无触边排除），多域时取面积最大（2026-09 取代旧 4 维评分） | 面积最大者胜出，其余丢弃 |
+| 最大域选择 | BC 规则（触边排除 + 全贴边回退全局最大），多域时取面积最大 | 内部面积最大者胜出，其余丢弃；全贴边时回退全局最大 |
 | 策略链终点 | TT 失败 | **无 further fallback**，输出空位姿 |
 
 #### 八、光流追踪 — 点级退化（仅双目 AKAZE）

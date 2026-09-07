@@ -7,7 +7,7 @@
 | `test_config.cpp` | 8 | 配置工厂函数 | 纯代码，无外部依赖 | 精确值 / 异常类型 |
 | `test_roi_generator.cpp` | 16 | ROI 生成 & 五状态判定 | 代码合成 `Detection` 结构体 | 精确面积/尺寸/布尔值 |
 | `test_pose_solvers.cpp` | 7 | InitialPnP / MonoPnP / GPnP | 代码合成 Z=0 平面 8 点 + 高斯噪声 | 误差阈值 (5%~15%) |
-| `test_extractors.cpp` | 8 | BinaryCorner / TinyTarget 提取器 | `data/fixtures/` 图片 (mono_bc/mono_tiny) + `rois.json` + `data/NewMuBan(reordered)/` 模板 | 结构性 (成功/不崩溃) |
+| `test_extractors.cpp` | 9 | BinaryCorner / TinyTarget 提取器 | `data/fixtures/` 图片 (mono_bc/mono_tiny) + `rois.json` + `data/NewMuBan(reordered)/` 模板 | 结构性 (成功/不崩溃) |
 | `test_input_system.cpp` | 14 | 输入系统 & RingBuffer & 线程化采集 | `cv::imwrite` 临时目录 (自动创建+清理) | 精确尺寸/FIFO 顺序 |
 | `test_integration.cpp` | 3 | MonoTracker / StereoTracker 全流程 | `data/fixtures/` 图片 (mono_akaze/synthetic_akaze/synthetic_dual) + `rois.json` + 模板目录 | 冒烟 (仅验证不崩溃) |
 | `test_eskf_fusion.cpp` | 13 | ESKF 延迟反向传播 / 兜底 / 退化监控 / 线程化 | 代码合成悬停/匀加速 IMU + 精确相机位姿 (零噪声) | 逐元素一致 (1e-6~1e-9) / 分级枚举 / 严格不等式 |
@@ -169,7 +169,7 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 
 ---
 
-### 4.4 `test_extractors.cpp` — 特征提取器 (8 用例)
+### 4.4 `test_extractors.cpp` — 特征提取器 (9 用例)
 
 **被测 API**: `BinaryCornerExtractor::extract()` / `TinyTargetExtractor::extractMono()`
 **输入数据**: `data/fixtures/` 图片 (ROI 按 `rois.json` 裁剪) + `data/NewMuBan(reordered)/` 模板目录
@@ -184,8 +184,9 @@ class0 面积 ≥490000 + class1 存在   → State 4 近    (Dual-ROI)
 | 6 | `test_tiny_target_empty_input` | 是 | 空 cv::Mat | 不崩溃, !success, kp 为空 |
 | 7 | `test_tiny_target_small_black_square` | 是 | `fixtures/mono_tiny/left_000.png` 裁剪 class0 ROI (310,230,20×20) | 不崩溃; 成功时 4 角点, 坐标∈ROI |
 | 8 | `test_tiny_target_set_use_class1` | 是 | 切换 class0/class1 物理尺寸 | setUseClass1(true/false) 不崩溃 |
+| 9 | `test_tiny_target_border_exclusion_prefers_interior` | 是 | 合成 160×160：贴边白框 + 内部白方块 (黑色环带隔开) | 触边排除生效: 4 角点落在内部方块附近而非铺满画布 |
 
-> 模板目录或 fixtures 缺失时用例 3/5/7 静默跳过 (不打 FAIL)；用例 4~8 仅在模板目录缺失时跳过。
+> 模板目录或 fixtures 缺失时用例 3/5/7 静默跳过 (不打 FAIL)；用例 4~6、8~9 仅在模板目录缺失时跳过。
 
 ---
 

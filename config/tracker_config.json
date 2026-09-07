@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/approach_seq/frame_000002.png",
-    "right": "tests/data/approach_seq/frame_000002.png"
+    "left": "tests/data/approach_seq/frame_000102.png",
+    "right": "tests/data/approach_seq/frame_000102.png"
   },
 
   "manual_roi": {

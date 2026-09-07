@@ -220,16 +220,38 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     last_call_debug_.otsu_binary = binary.clone();  // 清理前快照
 
     // ---- 2. BC 品质清理链（超分空间，3×3 核等效原尺度 <1px）----
-    // 最大连通域（无触边排除——小目标常贴 ROI 边）→ 填洞 → CLOSE→OPEN
+    // 最大连通域（BC 同款触边排除，全贴边时回退全局最大）→ 填洞 → CLOSE→OPEN
     cv::Mat labels, stats, centroids;
     int num_labels = cv::connectedComponentsWithStats(binary, labels, stats, centroids, 8);
     if (num_labels <= 1) return Status::NoSuitableComponent;
 
-    int best_label = 1;
-    int best_area = stats.at<int>(1, cv::CC_STAT_AREA);
-    for (int i = 2; i < num_labels; ++i) {
+    // ROI 边界处为背景残片，真实目标通常位于 ROI 内部（BC keepLargestRegion 同款）
+    const int img_w = binary.cols;
+    const int img_h = binary.rows;
+    auto touchesBorder = [&](int i) {
+        int left = stats.at<int>(i, cv::CC_STAT_LEFT);
+        int top  = stats.at<int>(i, cv::CC_STAT_TOP);
+        int w    = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h    = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        return left <= 0 || top <= 0 || left + w >= img_w || top + h >= img_h;
+    };
+
+    int best_label = -1;
+    int best_area = 0;
+    for (int i = 1; i < num_labels; ++i) {
+        if (touchesBorder(i)) continue;
         int area = stats.at<int>(i, cv::CC_STAT_AREA);
         if (area > best_area) { best_area = area; best_label = i; }
+    }
+
+    // 全部白域都贴边（小目标被 ROI 截断的常态）→ 回退全局最大，不劣于旧行为
+    if (best_label < 0) {
+        best_label = 1;
+        best_area = stats.at<int>(1, cv::CC_STAT_AREA);
+        for (int i = 2; i < num_labels; ++i) {
+            int area = stats.at<int>(i, cv::CC_STAT_AREA);
+            if (area > best_area) { best_area = area; best_label = i; }
+        }
     }
 
     cv::Mat region = cv::Mat::zeros(binary.size(), CV_8UC1);

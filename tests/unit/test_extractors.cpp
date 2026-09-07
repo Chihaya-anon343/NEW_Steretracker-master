@@ -219,6 +219,30 @@ void test_tiny_target_set_use_class1() {
 }
 REGISTER_TEST(test_tiny_target_set_use_class1);
 
+void test_tiny_target_border_exclusion_prefers_interior() {
+    if (!templateDirExists()) return;
+
+    TinyTargetExtractor::Config cfg;
+    cfg.square_size_m_class0 = 0.05;
+    TinyTargetExtractor ext(cfg, kMuBanDir);
+
+    // 白色边框（贴四边, 面积更大）+ 内部白色方块（不贴边, 面积更小），
+    // 黑色环带隔开 —— 触边排除后应选中内部方块而非边框（背景）
+    cv::Mat img(160, 160, CV_8UC1, cv::Scalar(255));
+    cv::rectangle(img, cv::Rect(30, 30, 100, 100), cv::Scalar(0), -1);
+    cv::rectangle(img, cv::Rect(50, 50, 60, 60), cv::Scalar(255), -1);
+
+    PipelineResult r = ext.extractMono(img, img);
+    TEST_ASSERT(r.success);
+    TEST_ASSERT_EQ(r.pts_left_match.size(), size_t(4));
+    // 角点应落在内部方块 (50,50)-(110,110) 附近，而非铺满全画布
+    for (const auto& p : r.pts_left_match) {
+        TEST_ASSERT(p.x >= 46.0f && p.x <= 114.0f);
+        TEST_ASSERT(p.y >= 46.0f && p.y <= 114.0f);
+    }
+}
+REGISTER_TEST(test_tiny_target_border_exclusion_prefers_interior);
+
 } // namespace
 
 // ============================================================================
