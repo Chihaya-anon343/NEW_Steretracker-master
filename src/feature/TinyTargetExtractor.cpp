@@ -208,7 +208,7 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
 
     if (roi_gray.empty()) return Status::EmptyInput;
 
-    last_call_debug_.roi_gray = roi_gray.clone();
+    if (debug_capture_) last_call_debug_.roi_gray = roi_gray.clone();
 
     // ---- 1. 超分辨率（×scale_factor）+ Otsu ----
     int sf = config_.scale_factor;
@@ -221,7 +221,7 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
 
     cv::Mat binary;
     cv::threshold(large, binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
-    last_call_debug_.otsu_binary = binary.clone();  // 清理前快照
+    if (debug_capture_) last_call_debug_.otsu_binary = binary.clone();  // 清理前快照
 
     // ---- 2. BC 品质清理链（超分空间，3×3 核等效原尺度 <1px）----
     // 最大连通域（BC 同款触边排除，全贴边时回退全局最大）→ 填洞 → CLOSE→OPEN
@@ -271,7 +271,7 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     cv::Mat cleaned;
     cv::morphologyEx(filled, cleaned, cv::MORPH_CLOSE, kernel);
     cv::morphologyEx(cleaned, cleaned, cv::MORPH_OPEN, kernel);
-    last_call_debug_.super_binary = cleaned.clone();
+    if (debug_capture_) last_call_debug_.super_binary = cleaned.clone();
 
     // ---- 3. 角度匹配：清理后的二值图（与角点提取共用同一张图）----
     if (!templates_.empty()) {

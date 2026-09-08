@@ -133,7 +133,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
     const int n = static_cast<int>(pts_2d.size());
     if (n < 4 || pts_3d.size() != pts_2d.size()) {
         std::cout << "[MonoPnP] 点数不足: pts_2d=" << n
-                  << ", pts_3d=" << pts_3d.size() << " (需要 ≥4)" << std::endl;
+                  << ", pts_3d=" << pts_3d.size() << " (需要 ≥4)" << "\n";
         return pose;
     }
 
@@ -177,7 +177,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                   << (maxy - miny) << "px)"
                   << ", 3D span=" << span3d << "mm"
                   << ", K: f=(" << K(0, 0) << "," << K(1, 1) << ") c=("
-                  << K(0, 2) << "," << K(1, 2) << ")" << std::endl;
+                  << K(0, 2) << "," << K(1, 2) << ")" << "\n";
     }
 
     // --- 2. PnP 求解 ---
@@ -198,7 +198,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                       << ": |t|=" << cv::norm(tv)
                       << ", t.z=" << tv.at<double>(2)
                       << ", 重投影=" << re << "px"
-                      << (ok ? " [有效]" : " [无效]") << std::endl;
+                      << (ok ? " [有效]" : " [无效]") << "\n";
         if (ok) {
             PnpCandidate c;
             c.rvec = rv.clone();
@@ -227,7 +227,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                 pnp_ok = !rv.empty() && !tv.empty();
                 if (pnp_ok) { rvec = rv; tvec = tv; inliers = {0, 1, 2, 3}; }
             } catch (const cv::Exception& e) {
-                std::cout << "[MonoPnP] ITERATIVE (4pts) 异常: " << e.what() << std::endl;
+                std::cout << "[MonoPnP] ITERATIVE (4pts) 异常: " << e.what() << "\n";
                 return pose;
             }
         } else {
@@ -259,7 +259,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                 collect("4pt-SeedITER", rv, tv);
             } catch (const cv::Exception& e) {
                 std::cout << "[MonoPnP] 4点 Seed ITERATIVE 异常（忽略该候选）: "
-                          << e.what() << std::endl;
+                          << e.what() << "\n";
             }
 
             // ---- 候选C: 冷启动 ITERATIVE ----
@@ -270,7 +270,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                 collect("4pt-ColdITER", rv, tv);
             } catch (const cv::Exception& e) {
                 std::cout << "[MonoPnP] 4点 Cold ITERATIVE 异常（忽略该候选）: "
-                          << e.what() << std::endl;
+                          << e.what() << "\n";
             }
 
             // ---- 候选B: IPPE（共面闭式解，返回 ≤2 个解）----
@@ -285,7 +285,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                             rvecs_ippe[s], tvecs_ippe[s]);
             } catch (const cv::Exception& e) {
                 if (g_verbose_console)
-                    std::cout << "[MonoPnP] 4点 IPPE 跳过: " << e.what() << std::endl;
+                    std::cout << "[MonoPnP] 4点 IPPE 跳过: " << e.what() << "\n";
             }
 
             if (!candidates.empty()) {
@@ -298,7 +298,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                     std::cout << "[MonoPnP] 4点择优: 重投影=" << best->reproj
                               << "px, |t|=" << cv::norm(tvec) << "mm"
                               << " (容差=" << collect_tol << "px, seed平票偏好)"
-                              << std::endl;
+                              << "\n";
                 // 最终内点计数（重投影 < 8px 的点数）
                 std::vector<cv::Point2f> proj;
                 cv::projectPoints(object_points, rvec, tvec, K_cv, cv::Mat(), proj);
@@ -313,7 +313,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
             } else {
                 // 全部候选未过相对容差 → 回退旧平坦 8px 路径（保持原行为可达）
                 std::cout << "[MonoPnP] 4点候选均未过相对容差 (" << collect_tol
-                          << "px), 回退平坦 8px 路径" << std::endl;
+                          << "px), 回退平坦 8px 路径" << "\n";
                 try {
                     cv::Mat rv = seedRvec(*seed), tv = seedTvec(*seed);
                     cv::solvePnP(object_points, pts_2d, K_cv, cv::Mat(),
@@ -335,7 +335,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                     if (pnp_ok) { rvec = rv; tvec = tv; inliers = {0, 1, 2, 3}; }
                 } catch (const cv::Exception& e) {
                     std::cout << "[MonoPnP] 4点回退 ITERATIVE 异常: "
-                              << e.what() << std::endl;
+                              << e.what() << "\n";
                 }
             }
         }
@@ -353,7 +353,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                              cv::SOLVEPNP_ITERATIVE);
                 collect("SeedITER", rv, tv);
             } catch (const cv::Exception& e) {
-                std::cout << "[MonoPnP] Seed ITERATIVE 异常（忽略该候选）: " << e.what() << std::endl;
+                std::cout << "[MonoPnP] Seed ITERATIVE 异常（忽略该候选）: " << e.what() << "\n";
             }
         }
 
@@ -374,12 +374,12 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                         ransac_inliers.size() >= 4;
             if (ransac_ok) { rvec = rv; tvec = tv; }
         } catch (const cv::Exception& e) {
-            std::cout << "[MonoPnP] solvePnPRansac 异常: " << e.what() << std::endl;
+            std::cout << "[MonoPnP] solvePnPRansac 异常: " << e.what() << "\n";
         }
 
         if (!ransac_ok) {
             std::cout << "[MonoPnP] RANSAC EPnP 失败（内点="
-                      << ransac_inliers.size() << "）" << std::endl;
+                      << ransac_inliers.size() << "）" << "\n";
         } else if (collect("EPnP_RANSAC", rvec, tvec)) {
             // 仅当 RANSAC 结果有效时才作为 ITERATIVE 初值（垃圾初值必然精化出垃圾）
             std::vector<cv::Point3f> inl_obj;
@@ -399,7 +399,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                 collect("ITER精化", rv, tv);
             } catch (const cv::Exception& e) {
                 std::cout << "[MonoPnP] ITERATIVE 精化异常（保留 RANSAC 结果）: "
-                          << e.what() << std::endl;
+                          << e.what() << "\n";
             }
         }
 
@@ -415,13 +415,13 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
                 collect("IPPE#" + std::to_string(s), rvecs_ippe[s], tvecs_ippe[s]);
         } catch (const cv::Exception& e) {
             if (g_verbose_console)
-                std::cout << "[MonoPnP] IPPE 跳过: " << e.what() << std::endl;
+                std::cout << "[MonoPnP] IPPE 跳过: " << e.what() << "\n";
         }
 
         // ---- 择优: 两阶段（ε-平票 → seed 时序偏好 / 纯重投影最小）----
         if (candidates.empty()) {
             std::cout << "[MonoPnP] 无有效候选（|t|越界/t.z≤0/重投影≥"
-                      << kMaxReprojErrorPx << "px），输入对应关系或内参可疑" << std::endl;
+                      << kMaxReprojErrorPx << "px），输入对应关系或内参可疑" << "\n";
             return pose;
         }
         const PnpCandidate* best = selectBestCandidate(candidates, seed, tie_epsilon_px);
@@ -431,7 +431,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
         if (g_verbose_console)
             std::cout << "[MonoPnP] 择优: 重投影=" << best->reproj
                       << "px, |t|=" << cv::norm(tvec) << "mm"
-                      << (seed ? " (seed平票偏好)" : "") << std::endl;
+                      << (seed ? " (seed平票偏好)" : "") << "\n";
 
         // 最终内点计数（重投影 < 阈值的点数）
         std::vector<cv::Point2f> proj;
@@ -447,7 +447,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
     }
 
     if (!pnp_ok) {
-        std::cout << "[MonoPnP] PnP 失败" << std::endl;
+        std::cout << "[MonoPnP] PnP 失败" << "\n";
         return pose;
     }
 
@@ -467,19 +467,19 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
     // --- 5. 有效性校验（防御：择优阶段已过滤，正常不再触发） ---
     // t[2] > 0: 相机必须在模板平面前方
     if (t(2) <= 0.0) {
-        std::cout << "[MonoPnP] 无效：t.z = " << t(2) << " ≤ 0（相机在模板后方）" << std::endl;
+        std::cout << "[MonoPnP] 无效：t.z = " << t(2) << " ≤ 0（相机在模板后方）" << "\n";
         return pose;
     }
 
     double t_norm = t.norm();
     if (t_norm < 10.0 || t_norm > 100000.0) {
         std::cout << "[MonoPnP] 无效：|t| = " << t_norm
-                  << " mm（超出 [10, 20000]）" << std::endl;
+                  << " mm（超出 [10, 20000]）" << "\n";
         return pose;
     }
 
     if (!R.allFinite() || !t.allFinite()) {
-        std::cout << "[MonoPnP] 无效：结果包含非有限值" << std::endl;
+        std::cout << "[MonoPnP] 无效：结果包含非有限值" << "\n";
         return pose;
     }
 
@@ -492,7 +492,7 @@ PoseEstimate MonoPnPSolver::solve(const std::vector<cv::Point2f>& pts_2d,
     if (g_verbose_console)
         std::cout << "[MonoPnP] 成功: inliers=" << inliers.size()
                   << "/" << n << ", t=(" << t(0) << ", " << t(1) << ", " << t(2) << ") mm"
-                  << std::endl;
+                  << "\n";
 
     return pose;
 }

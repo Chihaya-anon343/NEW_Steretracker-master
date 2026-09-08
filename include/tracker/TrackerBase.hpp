@@ -60,7 +60,7 @@ protected:
     // ---- 共享方法 ----
     void configureStrategyChain(int roi_area, bool is_class1 = false);
     static RoiRect validateRoi(const RoiRect* roi, const cv::Size& img, const std::string& name);
-    static std::pair<cv::Mat, cv::Mat> loadImage(const cv::Mat& img);
+    static std::pair<cv::Mat, cv::Mat> loadImage(const cv::Mat& img, bool need_color = true);
     void finalizePose(PipelineResult& result, const PoseEstimate& pose);
     void addLogEntry(const PipelineResult& result, bool is_first, bool fallback_used);
 

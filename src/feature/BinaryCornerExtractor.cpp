@@ -182,12 +182,12 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
     // ---- 第1步: Otsu 二值化（两幅图像） ----
     cv::Mat left_binary, right_binary;
     cv::threshold(left_gray, left_binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
-    last_left_binary_ = left_binary.clone();   // 保存用于可视化
+    if (debug_capture_) last_left_binary_ = left_binary.clone();   // 保存用于可视化
 
     bool has_right = !right_gray.empty();
     if (has_right) {
         cv::threshold(right_gray, right_binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
-        last_right_binary_ = right_binary.clone();
+        if (debug_capture_) last_right_binary_ = right_binary.clone();
     }
 
     if (g_verbose_console) {
@@ -361,15 +361,9 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
         return Status::InvalidSize;
     }
 
-    // 确保二值化 (0/255)
-    if (cv::countNonZero(work_img != 0) > 0 &&
-        cv::countNonZero(work_img != 255) > 0) {
-        cv::threshold(work_img, work_img, 127, 255, cv::THRESH_BINARY);
-    }
-
     // ---- 第1步: 保留最大连通域 ----
     cv::Mat largest_region = keepLargestRegion(work_img);
-    last_largest_region_ = largest_region.clone();
+    if (debug_capture_) last_largest_region_ = largest_region.clone();
 
     // ---- 第2步: 填充孔洞 ----
     cv::Mat filled = fillHoles(largest_region);
@@ -425,12 +419,15 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
 
             cv::Mat gray_rotated;
             cv::warpAffine(gray_roi, gray_rotated, M, cv::Size(new_w, new_h),
-                           cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0));
+                           cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
             // Otsu 自动阈值 × 系数（>1 提高阈值，减少背景被误判为白色）
+            // ratio==1 时首遍 Otsu 输出即最终结果, 跳过第二遍全图扫描
             double otsu_val = cv::threshold(gray_rotated, cleaned, 0, 255,
                                              cv::THRESH_BINARY + cv::THRESH_OTSU);
-            double adjusted = otsu_val * config_.otsu_ratio;
-            cv::threshold(gray_rotated, cleaned, adjusted, 255, cv::THRESH_BINARY);
+            if (std::abs(config_.otsu_ratio - 1.0) > 1e-9) {
+                cv::threshold(gray_rotated, cleaned, otsu_val * config_.otsu_ratio,
+                              255, cv::THRESH_BINARY);
+            }
             // 过滤：从中心蔓延找目标 → 填洞 → 平滑
             cleaned = keepRegionFromCenter(cleaned);
             cleaned = fillHoles(cleaned);
@@ -444,12 +441,12 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
             center_rot = cr;
             did_rotate = true;
         }
-        last_upright_binary_ = cleaned.clone();
+        if (debug_capture_) last_upright_binary_ = cleaned.clone();
     } else {
         cleaned = smoothed;
-        last_upright_binary_ = cleaned.clone();
+        if (debug_capture_) last_upright_binary_ = cleaned.clone();
     }
-    last_contour_binary_ = cleaned.clone();
+    if (debug_capture_) last_contour_binary_ = cleaned.clone();
 
     // ---- 第5步: 提取最大轮廓 ----
     std::vector<cv::Point> contour = extractLargestContour(cleaned);
@@ -1200,7 +1197,7 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
     // Otsu 二值化
     cv::Mat binary;
     cv::threshold(gray, binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
-    last_left_binary_ = binary.clone();
+    if (debug_capture_) last_left_binary_ = binary.clone();
 
     // 从二值图像提取角点
     std::vector<cv::Point2f> corners;

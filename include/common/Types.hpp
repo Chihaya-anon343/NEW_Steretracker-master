@@ -80,6 +80,7 @@ struct TrackerConfig {
     int dual_roi_secondary_expand{10};   ///< 双 ROI 模式下次级（class 1）ROI 的拓展像素数
     double dual_roi_akaze_scale{0.5};    ///< 双 ROI class 1 提取时的 AKAZE 缩放
     bool dual_roi_class1_fallback{true}; ///< 双 ROI 第 3 级退化: 合并与 BC-only 均失败后在 class1 ROI 上跑 BC→TT 链
+    double dual_roi_primary_span_ratio{0.99}; ///< 巨型 primary 短路: primary 边长覆盖画幅 ≥ 该比例 → 目标外角点出视野, 跳过 Tier1/2 直接 class1 链 (<=0 关闭)
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
 };
 

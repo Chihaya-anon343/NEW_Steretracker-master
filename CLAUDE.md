@@ -384,7 +384,7 @@ AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarg
 
 | 规则 | 说明 |
 |------|------|
-| Dual-ROI (State 4) | 独立并行路径，不进入 AKAZE→BC→TT 链；自身有三级退化链（合并 → BC-only → class1 BC→TT，见 §9.12 之二） |
+| Dual-ROI (State 4) | 独立并行路径，不进入 AKAZE→BC→TT 链；自身有三级退化链（合并 → BC-only → class1 BC→TT，见 §9.14 之二） |
 | YOLO 无检测 | 直接 skip 帧，不触发退化链 |
 | State 5 回退 | class 1 重分类后重新走 State 1~4 策略链 |
 | 退化链由 `configureStrategyChain()` 一次性配置 | 调用方只需遍历 `fallback_extractors_` 列表 |
@@ -559,8 +559,9 @@ struct Config {
       取最高IoU角度 → last_matched_template_
 
   1.6 旋转回正:
-      优选: warpAffine(INTER_CUBIC)旋转灰度图
-        → Otsu × otsu_ratio
+      优选: warpAffine(INTER_LINEAR)旋转灰度图 (2026-09 由 CUBIC 降为 LINEAR, 提速 2-3×)
+        → Otsu 首遍即写结果; 仅 otsu_ratio≠1 时按 otsu_val×ratio 二遍重写
+          (ratio==1 时跳过第二遍全图扫描, 输出与旧双遍等价)
         → keepRegionFromCenter(): 从中心螺旋搜索→floodFill
         → fillHoles + smoothBoundary
       回退: warpAffine(INTER_NEAREST)旋转二值图 + 形态学
@@ -696,18 +697,26 @@ struct Config {
       与 AKAZE 模板 3D 点同源同尺度且同样中心化, 故可与 template_.pts_3d 混合进同一次 PnP)
   → dual_bc_tmpl_corners_ + dual_bc_tmpl_pts3d_
 
-[Step 1] 裁剪4个子图:
+[Step 0.5] 巨型 primary 短路 (2026-09 新增, 单双目同语义):
+  条件: dual_roi.primary_span_ratio > 0 && class1_fallback_enabled &&
+        primary.width ≥ img.cols × ratio && primary.height ≥ img.rows × ratio
+        (ratio 默认 0.99; 物理意义 = 目标外角点已出视野, BC 全图角点必败,
+         Tier1/2 的 PnP 必失败, 而全图级 BC 提取极耗时)
+  触发 → 跳过 class0 裁剪 + Step 2~4 + Tier1/2, 直接执行 Tier3 class1 链
+  (c0 子图保持空, 合并/BC-only 相关变量保持失败初值; 关闭 Tier3 开关时不短路)
+
+[Step 1] 裁剪4个子图 (c0 两张在短路时跳过):
   left_class0 = left_img(primary_roi)
   right_class0 = right_img(primary_roi)
   left_class1 = left_img(secondary_roi_expanded)
   right_class1 = right_img(secondary_roi_expanded)
 
-[Step 2] 并行提取:
+[Step 2] 并行提取 (短路时跳过):
   result_bc = binary_extractor_->extract(left_class0, right_class0, ...)
   result_ak = dual_akaze_extractor_->extract(left_class1, right_class1, ...)
   (左右独立的BC + AKAZE含光流/投影/匹配)
 
-[Step 3] 合并:
+[Step 3] 合并 (短路时跳过):
   // AK的所有点 += secondary→primary的偏移量
   result_ak 所有坐标 += (sec.x - pri.x, sec.y - pri.y)
 
@@ -730,7 +739,8 @@ struct Config {
 [Step 4] 恢复全图坐标:
   merged_pts_2d += (primary_roi.x, primary_roi.y)
 
-[Step 5] PnP (三级退化链, 由 `config.dual_roi.class1_fallback_enabled` 控制第 3 级):
+[Step 5] PnP (三级退化链, 由 `config.dual_roi.class1_fallback_enabled` 控制第 3 级;
+          短路帧 Tier1/2 直接视为失败, Tier3 成为唯一路径):
   Tier1 合并解算: GPnP (双目) 或 MonoPnP (单目); merged < 4 点时跳过
   失败 → Tier2 BC-only 回退: 合并数组前缀 bc_total(≥4) 个 BC 角点
         + dual_bc_tmpl_pts3d_ 重解 (双目走 solveBcPnpChain,
@@ -1154,7 +1164,8 @@ struct SensorPacket {
             "trigger_area": 490000,    // 触发面积 (700×700)
             "secondary_expand_pixels": 10,  // class1 ROI外扩
             "akaze_scale": 0.5,        // class1 AKAZE scale
-            "class1_fallback_enabled": true  // 第3级退化: 合并与BC-only均失败后在class1 ROI上跑 BC→TT 链
+            "class1_fallback_enabled": true,  // 第3级退化: 合并与BC-only均失败后在class1 ROI上跑 BC→TT 链
+            "primary_span_ratio": 0.99 // 巨型primary短路: primary边长覆盖画幅≥该比例 → 跳过Tier1/2直接class1链 (<=0关闭)
         },
 
         // State 5 回退
@@ -1206,11 +1217,12 @@ if (left_group && left_group->is_dual) {
 
 **影响**:
 - Dual-ROI 不调用 `configureStrategyChain()`
-- 不进入退化后备链 (AKAZE→BC→TT)，但有自身三级退化链（见 §9.12 之二）：Tier1 合并解算 → Tier2 BC-only 重解 → Tier3 class1 (BC→TT) 链
+- 不进入退化后备链 (AKAZE→BC→TT)，但有自身三级退化链（见 §9.14 之二）：Tier1 合并解算 → Tier2 BC-only 重解 → Tier3 class1 (BC→TT) 链
 - 独立使用 `binary_extractor_` + `dual_akaze_extractor_` (不是 `akaze_extractor_`)
 - Tier2 **BC-only 回退**（2026-09 新增）：切合并数组前缀 `bc_total`（≥4）个外层 BC 角点 + `dual_bc_tmpl_pts3d_`，走 BC 策略的 PnP 链重解；成功后 `strategy_name = "DualRoi_BC"`、日志 `fallback=true`
 - Tier3 **class1 退化链**（2026-09 新增）：Tier2 仍失败时在 secondary ROI 上 `setUseClass1(true)` 后依次 BC → TT（State 5 同款 class1 3D 尺寸机制，`runDualRoiClass1Chain()`），冷启动 PnP；成功后 `strategy_name = "DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`。受 `dual_roi.class1_fallback_enabled` 控制（默认开）。BC/TT 均失败才整帧失败
 - Tier3 的 3D 模板坐标系为 class1 系（非板系），依赖"class1 图案与靶标板同心"假设（与 State 5 语义一致）
+- **巨型 primary 短路**（2026-09 新增，单双目同语义）：`primary.width/height ≥ 画幅 × dual_roi.primary_span_ratio`（默认 0.99）且 Tier3 开关开启时，目标外角点已出视野 → BC 全图角点与 Tier1/2 的 PnP 必败，直接跳过 class0 裁剪与 Tier1/2，Tier3 class1 链成为唯一路径。典型场景：近距离下 class0 ROI≈全图（Tier1 成功面积上限与短路分界在实测数据中完美分隔）。`primary_span_ratio ≤ 0` 关闭短路
 
 ### 9.2 ⚠️ 陷阱2: 单目模式无 warm-start
 
@@ -1309,7 +1321,19 @@ void StereoTracker::prepareDualBcTemplate() {
 // 见 TinyTargetExtractor: square_size_m 可能不同
 ```
 
-### 9.11 提取器 vs 策略对应关系
+### 9.11 ⚠️ 陷阱11: color 矩阵是引用共享，visualize=false 时可能为空 (2026-09)
+
+`TrackerBase::loadImage(img, need_color)`（2026-09 起带 `need_color` 参数，默认 true）：
+- 3 通道输入：`need_color=true` 时 color **直接引用共享输入 Mat（不 clone）**，只做 cvtColor 产灰度；`need_color=false` 时 color 返回**空 Mat**
+- Mono/Stereo tracker 在 `process()`/`processDualRoi()`/`processMono()` 中均传 `visualize` —— 非可视化帧（生产主路径）**不存在全图 clone 与全图 cvtColor**
+
+下游使用约定（违反会崩溃或画错）：
+- 从 color 取 ROI 子图前必须判空：`color.empty() ? color : color(rect)`（crop 守护）
+- 三个提取器的 `extract()`/`extractMono()` 对 color 参数**仅透传赋值**（`result.left_color = color`），绝不读像素——空 Mat 安全
+- 可视化画图处一律先 `clone()` 再画（如 `[Viz]` 坐标轴叠加），且都在 `if (visualize && ...)` 分支内
+- MonoTracker 单目主链为 ROI 级 cvtColor（`cvtColor(img(roi), gray_roi)`），Dual-ROI 帧对 c0/c1 子图分别按 ROI 转灰度；无 ROI 全图回退路径需全图灰度，故 StereoTracker::process 保留全图 cvtColor
+
+### 9.12 提取器 vs 策略对应关系
 
 | 成员变量 | 类型 | 用途 |
 |----------|------|------|
@@ -1320,7 +1344,20 @@ void StereoTracker::prepareDualBcTemplate() {
 
 > `akaze_extractor_` 和 `dual_akaze_extractor_` 是**两个不同的实例**，参数不同（scale, min_pts 等）。Dual-ROI 用的是 `dual_akaze_extractor_`。
 
-### 9.12 退化全景 ⚠️
+### 9.13 ⚠️ 陷阱12: BC/TT 调试快照受 setDebugCapture 控制，热路径日志无 endl (2026-09)
+
+```cpp
+// BC/TT 提取器内部的 last_*_ 调试快照 (二值图/连通域/超分图等 7+3 处 clone)
+// 受开关控制, 默认 true 保持旧行为; tracker 在 process() 入口按 visualize 设置:
+binary_extractor_->setDebugCapture(visualize);
+tiny_extractor_->setDebugCapture(visualize);
+```
+
+- 关闭时 `last_left_binary_` / `last_upright_binary_` / `last_call_debug_` 等**保持为空**——可视化面板与单测若依赖这些快照，须确保 `setDebugCapture(true)`（默认即是）
+- BC `extractFromBinary()` 入口的 countNonZero 二值化预检已删除：所有调用方（extract/extractMono/dual 路径）均喂 Otsu 输出的 0/255 图，预检是纯死开销（每眼每帧 2 次全图扫描 + 2 块临时掩码）
+- 热路径 verbose 日志（MonoPnPSolver 每候选行、[Mono]/[DualRoi]/[StereoMono]/[TrackerBase] 每帧行）已 `endl`→`"\n"`：capture_log 模式 cout 重定向进日志文件时不再逐行 flush；`std::cerr` 行保留原样（cerr 本就无缓冲，不受影响）
+
+### 9.14 退化全景 ⚠️
 
 系统中共有 **13 类退化/fallback 机制**，按触发层级从高到低排列：
 
@@ -1341,7 +1378,7 @@ AKAZE_GPNP (State 3) ──失败──→ BinaryCorner (State 2) ──失败�
 > 退化不跨面积区间折返（如 TT 失败不会回到 BC）。
 > 单目 PnP 在链循环内逐策略执行（`MonoTracker::process` / `StereoTracker::processMono`，与双目 `dispatchPnP` 同语义）；2D/3D 按 `good_matches[i] ↔ pts_left_match[i]` 平行序配对——BC approxPolyDP 近似命中时角点数可多于模板角点（如 11 vs 10），尾部无匹配角点被自然剔除，不再因 2D/3D 数量不等被 MonoPnP 拒解。
 
-#### 二、Dual-ROI (State 4) — 独立路径 + 三级退化链（Tier3 为 2026-09 新增）
+#### 二、Dual-ROI (State 4) — 独立路径 + 巨型 primary 短路 + 三级退化链（短路与 Tier3 均为 2026-09 新增）
 
 ```
 Dual-ROI (BC + AK 并行提取) ──合并解算失败──→ BC-only 重解──仍失败──→ class1 链 (BC→TT) ──仍失败──→ 终止
@@ -1350,6 +1387,7 @@ Dual-ROI (BC + AK 并行提取) ──合并解算失败──→ BC-only 重解
 
 | 退化情况 | 触发条件 | 行为 |
 |---------|---------|------|
+| **巨型 primary 短路** (2026-09 新增) | `primary.width/height ≥ 画幅 × dual_roi.primary_span_ratio`(默认0.99) 且 Tier3 开关开启 | **跳过 class0 裁剪 + Tier1/2**（全图级 BC 提取与必败的 PnP 不再付费），Tier3 class1 链成为唯一路径；verbose 输出 `[DualRoi] primary spans frame ... skip Tier1/2` |
 | 合并点数不足 | `total_use < 4` | **跳过合并解算**（不再早退整帧），落入 Tier2（BC 前缀 <4 自然不触发）/ Tier3 |
 | 合并 PnP 失败 (Tier1→Tier2) | 双目: InitialPnP+GPnP(默认深度) 全失败; 单目: MonoPnP 全候选失败 | **BC-only 回退**: 合并数组前缀 `[0, bc_total)` 即 BC 贡献（与 `dual_bc_tmpl_pts3d_` 一一对应），切片后重解；双目走 `solveBcPnpChain()`（InitialPnP→GPnP→回退），单目走 `mono_pnp_.solve()` |
 | BC 回退仍失败 (Tier2→Tier3) | BC-only PnP 链失败 且 `dual_roi.class1_fallback_enabled` | **class1 退化链** `runDualRoiClass1Chain()`: secondary ROI (class1, 已按 `secondary_expand_pixels` 外扩) 裁剪图上，`setUseClass1(true)` 后依次 BC → TT；提取失败（`!success || n_kp<3`）或 PnP 失败均降级下一级。双目: `solveBcPnpChain` / `runTinyTargetPnP` 显式传 class1 3D 模板；单目: `MonoPnP` 冷启动（不用板系 seed）。成功后 `strategy_name="DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`、`LogEntry.fallback=true` |
@@ -1402,7 +1440,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 子退化 | 触发条件 | 降级行为 |
 |--------|---------|---------|
 | 连通域过少 | `connectedComponentsWithStats` → `num_labels ≤ 1` | 保留原始二值图，不做连通域筛选 |
-| 旋转回退 | `warpAffine(INTER_CUBIC)` 旋转灰度图 + Otsu + floodFill 失败 | 降级到 `warpAffine(INTER_NEAREST)` 旋转二值图 + 纯形态学 |
+| 旋转回退 | `warpAffine(INTER_LINEAR)` 旋转灰度图 + Otsu + floodFill 失败 | 降级到 `warpAffine(INTER_NEAREST)` 旋转二值图 + 纯形态学 |
 | 角点数不精确 | `approxPolyDP` 8 次二分搜索未命中目标角点数 | 取 `best_diff` 最近似的多边形 |
 | 左右模板匹配容差 | 左图匹配角度在右图搜索 | 15° 容差范围搜索 |
 
@@ -1486,6 +1524,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
    │  │  │  │    │
    TT BC AKAZE  BC∥AK ──合并失败→BC-only重解──仍失败→class1链(BC→TT)──仍失败→终止
    │  │  │  │    (Tier3: DualRoi_C1BC/DualRoi_C1TT, 受 class1_fallback_enabled 控制)
+   │  │  │  │    (primary 铺满画幅 ≥ primary_span_ratio → 短路 Tier1/2, 直接 class1 链)
    │  │  │
    │  │  ├─RatioTest<4→失败
    │  │  ├─CrossCheck<4→失败
@@ -1509,7 +1548,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 特征 | 说明 |
 |------|------|
 | **退化方向** | 始终单向：AKAZE → BC → TT，不可逆 |
-| **Dual-ROI 隔离** | State 4 不参与 AKAZE→BC→TT 链；有自身三级链：合并解算 → BC-only 重解（`DualRoi_BC`）→ class1 链 BC→TT（`DualRoi_C1BC/C1TT`），均失败才终止 |
+| **Dual-ROI 隔离** | State 4 不参与 AKAZE→BC→TT 链；有自身三级链：合并解算 → BC-only 重解（`DualRoi_BC`）→ class1 链 BC→TT（`DualRoi_C1BC/C1TT`），均失败才终止；primary 铺满画幅（≥ `primary_span_ratio`）时短路 Tier1/2 直接进 class1 链 |
 | **YOLO vs 特征退化分离** | YOLO 无检测 = skip 帧（不触发策略链）；特征提取失败 = 策略退化；两者互不触发 |
 | **单目退化面窄** | 单目无光流、无立体投影、无 MAD、无 warm-start — 比双目退化面缩窄约 5 类 |
 | **子退化不跨模块** | BC 内部旋转回退不影响策略链选择；AKAZE 匹配阶段回退不改变策略 |
@@ -1670,6 +1709,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `tiny_max_area` | 800 | config/代码 | State 1/2 分界 |
 | `akaze_min_area` | 40001 | config/代码 | State 2/3 分界 |
 | `dual_trigger_area` | 490000 | config/代码 | State 3/4 分界 (700×700) |
+| `primary_span_ratio` | 0.99 | strategies.dual_roi | 巨型 primary 短路阈值: 边长覆盖画幅 ≥ 该比例 → 跳过 Tier1/2 直接 class1 链 (≤0 关闭) |
 | 最低特征点数 (PnP) | 4 (单目), 3 (双目) | 代码 | — |
 | Lowe's ratio | 0.75 | TemplateMatcher | AKAZE 匹配 |
 | Homography 阈值 | 5.0 px | TemplateMatcher | RANSAC 内点 |

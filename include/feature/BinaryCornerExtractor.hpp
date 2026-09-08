@@ -81,6 +81,9 @@ public:
 
     void setUseClass1(bool v) override;
 
+    /// 关闭后跳过 last_*_ 调试快照 clone (可视化/单测需要时置 true, 默认 true 保持原行为)
+    void setDebugCapture(bool v) { debug_capture_ = v; }
+
     // ---- 提取后状态 ----
 
     const TemplateData* lastMatchedTemplate() const { return last_matched_template_; }
@@ -182,6 +185,7 @@ private:
     Config config_;
     cv::Mat kernel_;
     bool use_class1_ = false;                    ///< 当前使用 class1 尺寸
+    bool debug_capture_ = true;                  ///< last_*_ 调试快照开关
     std::vector<TemplateData> templates_;       ///< 来自 NewMuBan 的角点模板
     TemplateData template_data_;                 ///< 存储用于 PnP 的 pts_3d
 

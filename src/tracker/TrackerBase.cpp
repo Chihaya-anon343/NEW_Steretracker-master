@@ -56,7 +56,7 @@ void TrackerBase::initExtractors(const std::string& template_path,
 
     if (verbose_console_)
         std::cout << "[TrackerBase] Pre-initialized 3 extractors: AkazeGpnp, BinaryCorner, TinyTarget"
-                  << std::endl;
+                  << "\n";
 }
 
 // ============================================================
@@ -73,7 +73,7 @@ void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
     if (tc.enabled && has_prev_c1_ && prev_use_c1_ != is_class1) {
         resetStickiness();
         if (verbose_console_)
-            std::cout << "[Temporal] class1 regime flipped, stickiness reset" << std::endl;
+            std::cout << "[Temporal] class1 regime flipped, stickiness reset" << "\n";
     }
     prev_use_c1_ = is_class1;
     has_prev_c1_ = true;
@@ -114,7 +114,7 @@ void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
                   << " ema_area=" << static_cast<int>(ema_area_)
                   << " raw_area=" << roi_area
                   << " reason=" << sticky_switch_reason_
-                  << (sticky_hold_ ? " [HOLD]" : "") << std::endl;
+                  << (sticky_hold_ ? " [HOLD]" : "") << "\n";
 }
 
 void TrackerBase::effectiveThresholds(bool is_class1, int& akaze_t, int& tiny_t) const {
@@ -163,19 +163,19 @@ void TrackerBase::applyBandChain(int band, bool is_class1) {
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: AkazeGpnp → BinaryCorner → TinyTarget"
                       << " (akaze_thresh=" << akaze_t
-                      << " is_class1=" << is_class1 << ")" << std::endl;
+                      << " is_class1=" << is_class1 << ")" << "\n";
     } else if (band == 2) {
         extractor_ = binary_extractor_.get();
         fallback_extractors_.push_back(tiny_extractor_.get());
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: BinaryCorner → TinyTarget"
                       << " (tiny_thresh=" << tiny_t
-                      << " is_class1=" << is_class1 << ")" << std::endl;
+                      << " is_class1=" << is_class1 << ")" << "\n";
     } else {
         extractor_ = tiny_extractor_.get();
         if (verbose_console_)
             std::cout << "[TrackerBase] Strategy chain: TinyTarget only"
-                      << " (is_class1=" << is_class1 << ")" << std::endl;
+                      << " (is_class1=" << is_class1 << ")" << "\n";
     }
 }
 
@@ -304,7 +304,7 @@ bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
                               << ", scale=" << scale << " > " << tc.max_scale_ratio * margin
                               << " (|t_seed|=" << t_ref << "mm, |t_new|=" << t_new
                               << "mm, margin=" << margin
-                              << ", " << (ext ? ext->name() : "?") << ")" << std::endl;
+                              << ", " << (ext ? ext->name() : "?") << ")" << "\n";
                 return false;
             }
         }
@@ -316,7 +316,7 @@ bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
             if (verbose_console_)
                 std::cout << "[Gate] Δθ=" << ang * 180.0 / CV_PI << "° > "
                           << tc.max_rot_deg * margin << "° (margin=" << margin
-                          << ", " << (ext ? ext->name() : "?") << ")" << std::endl;
+                          << ", " << (ext ? ext->name() : "?") << ")" << "\n";
             return false;
         }
     }
@@ -349,14 +349,14 @@ RoiRect TrackerBase::validateRoi(const RoiRect* roi, const cv::Size& img_size,
 // loadImage
 // ============================================================
 
-std::pair<cv::Mat, cv::Mat> TrackerBase::loadImage(const cv::Mat& img) {
+std::pair<cv::Mat, cv::Mat> TrackerBase::loadImage(const cv::Mat& img, bool need_color) {
     cv::Mat gray, color;
     if (img.channels() == 3) {
-        color = img.clone();
+        if (need_color) color = img;   // 引用共享 (调用方只读; 可视化处自行 clone)
         cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
     } else {
-        gray = img.clone();
-        cv::cvtColor(img, color, cv::COLOR_GRAY2BGR);
+        gray = img;
+        if (need_color) cv::cvtColor(img, color, cv::COLOR_GRAY2BGR);
     }
     return {color, gray};
 }
@@ -382,7 +382,7 @@ void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose)
             std::cout << "  Pose: rvec=[" << rvec.at<double>(0) << ", "
                       << rvec.at<double>(1) << ", " << rvec.at<double>(2) << "]"
                       << "  tvec=[" << pose.t(0) << ", " << pose.t(1) << ", "
-                      << pose.t(2) << "] mm  n_pts=" << pose.num_points << std::endl;
+                      << pose.t(2) << "] mm  n_pts=" << pose.num_points << "\n";
         }
         state_.R_prev = pose.R;
         state_.t_prev = pose.t;
@@ -445,7 +445,7 @@ void TrackerBase::addLogEntry(const PipelineResult& result, bool is_first, bool 
 void TrackerBase::printLogs() const {
     const auto& logs = state_.logs;
     if (logs.empty()) {
-        if (verbose_console_) std::cout << "[Log is empty]" << std::endl;
+        if (verbose_console_) std::cout << "[Log is empty]" << "\n";
         return;
     }
 
@@ -475,13 +475,13 @@ void TrackerBase::printLogs() const {
     auto print_sep = [&](char c) {
         std::cout << "+";
         for (auto w : widths) std::cout << std::string(w, c) << "+";
-        std::cout << std::endl;
+        std::cout << "\n";
     };
     auto print_row = [&](const std::vector<std::string>& cols) {
         std::cout << "|";
         for (size_t i = 0; i < cols.size() && i < widths.size(); ++i)
             std::cout << std::setw(static_cast<int>(widths[i])) << cols[i] << "|";
-        std::cout << std::endl;
+        std::cout << "\n";
     };
 
     print_sep('-');
