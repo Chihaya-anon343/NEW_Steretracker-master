@@ -54,7 +54,7 @@ except ImportError as e:
 # ============================================================================
 # 输入配置 (硬编码, 与 scripts/annotate_points.py / generate_assets.py 对齐)
 # ============================================================================
-TARGET_IMG = r"data/big/img_1.png"                  # 目标图 (即 class0)
+TARGET_IMG = r"data/clean_target.png"                  # 目标图 (即 class0)
 BACKGROUND_IMG = r"data/small/gj06_image_0317.jpg"  # 背景图
 CLASS0_POINTS = r"scripts/class0_points.txt"        # class0 特征点 (10 点)
 CLASS1_POINTS = r"scripts/class1_points.txt"        # class1 特征点 (10 点)

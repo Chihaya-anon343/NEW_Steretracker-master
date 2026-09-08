@@ -168,7 +168,7 @@ def _parse_args(argv=None):
         description="交互式标注目标图上的 class 0 / class 1 特征点, 按 "
                     "0_degrees.txt 格式输出两个 txt",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--image", default="data/big/img_1.png",
+    ap.add_argument("--image", default="data/clean_target.png",
                     help="要标注的目标图像路径")
     ap.add_argument("--out-dir", default="scripts",
                     help="输出目录 (自动创建)")

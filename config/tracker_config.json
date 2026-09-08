@@ -78,7 +78,7 @@
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
-    "visualize": true,
+    "visualize": false,
     "log_file": true
   },
 
