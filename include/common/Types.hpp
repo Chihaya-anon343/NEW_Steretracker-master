@@ -255,6 +255,8 @@ struct LogEntry {
 
     double total_time_ms{0.0};
     std::map<std::string, double> timing; ///< 各阶段耗时 (ms)
+    double extract_ms{0.0}; ///< 特征提取总耗时 (ms)
+    double pnp_ms{0.0};     ///< 位姿解算总耗时 (ms)
 
     std::string strategy_name;            ///< 使用的提取器策略
     bool is_class1{false};                ///< 是否 class1 回退帧
@@ -310,6 +312,8 @@ struct PipelineResult {
 
     // --- 耗时统计 ---
     std::map<std::string, double> timing; ///< 阶段 → 毫秒
+    double extract_ms{0.0}; ///< 特征提取总耗时 (ms, 含退化链多次尝试 / Dual-ROI 并行两路)
+    double pnp_ms{0.0};     ///< 位姿解算总耗时 (ms, 含 InitialPnP/GPnP/TinyPnP/MonoPnP 及退化重解)
 
     // --- 帧元数据 ---
     cv::Mat left_color;

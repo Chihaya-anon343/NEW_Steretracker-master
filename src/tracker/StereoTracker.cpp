@@ -240,8 +240,10 @@ std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(
         match_res.good_matches = result.good_matches;
         match_res.pts_left_match = result.pts_left_match;
         match_res.pts_template_match = result.pts_template_match;
+        auto t_init_pnp = std::chrono::high_resolution_clock::now();
         PoseEstimate init_pose = initial_pnp_.solve(match_res, pnp_pts_3d, camera_.K);
-        result.timing["initial_pnp"] = 0.0;
+        result.timing["initial_pnp"] = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_init_pnp).count();
 
         if (init_pose.success) {
             // Warm-start GPNP with InitialPnP result
@@ -294,8 +296,10 @@ std::pair<bool, PoseEstimate> StereoTracker::solveBcPnpChain(
         match_res.good_matches       = result.good_matches;
         match_res.pts_left_match     = result.pts_left_match;
         match_res.pts_template_match = result.pts_template_match;
+        auto t_init_pnp = std::chrono::high_resolution_clock::now();
         PoseEstimate init_pose = initial_pnp_.solve(match_res, pnp_pts_3d, camera_.K);
-        result.timing["initial_pnp"] = 0.0;
+        result.timing["initial_pnp"] = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_init_pnp).count();
 
         if (init_pose.success) {
             pose = gpnp_solver_.solve(result, pnp_pts_3d, &init_pose.R, &init_pose.t, gpnp_timing);
@@ -370,8 +374,11 @@ std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(
         K_cv.at<double>(r, c) = camera_.K(r, c);
 
     cv::Mat rvec, tvec;
+    auto t_tiny_pnp = std::chrono::high_resolution_clock::now();
     bool pnp_ok = cv::solvePnP(obj_pts, img_pts, K_cv, cv::Mat(),
                                 rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
+    result.timing["tiny_pnp"] = std::chrono::duration<double, std::milli>(
+        std::chrono::high_resolution_clock::now() - t_tiny_pnp).count();
 
     if (pnp_ok) {
         cv::Mat R_cv;
@@ -393,7 +400,6 @@ std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(
     } else {
         std::cerr << "  [TinyTarget] solvePnP FAILED" << std::endl;
     }
-    result.timing["tiny_pnp"] = 0.0;
 
     return {pose.success, pose};
 }
@@ -498,6 +504,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     bool fallback_used = false;
     bool pose_ok = false;
     PoseEstimate final_pose;
+    double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算 (跨退化链累加)
 
     // ========================================================================
     // Build the degradation chain dynamically
@@ -530,10 +537,13 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
             if (verbose_console_) std::cout << "[Degradation] " << from << " failed → " << strategy_name << std::endl;
         }
 
+        auto t_extract = std::chrono::steady_clock::now();
         bool extract_ok = runExtraction(*ext, left_cropped, right_cropped,
                                         left_color_cropped, right_color_cropped,
                                         left_offset, right_offset,
                                         left_color_orig, right_color_orig, result);
+        extract_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_extract).count();
 
         if (!extract_ok) {
             if (is_primary) {
@@ -547,7 +557,10 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
             continue;
         }
 
+        auto t_pnp = std::chrono::steady_clock::now();
         auto [ok, pose] = dispatchPnP(ext, result);
+        pnp_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_pnp).count();
         if (ok) {
             pose_ok = true;
             final_pose = pose;
@@ -958,6 +971,8 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     result.is_class1 = use_c1;
     result.n_matched = static_cast<int>(result.pts_left_good.size());
     result.n_projected = static_cast<int>(result.pts_right_projected.size());
+    result.extract_ms = extract_ms;
+    result.pnp_ms = pnp_ms;
     addLogEntry(result, is_first, fallback_used);
     return result;
 }
@@ -1059,6 +1074,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                                                const RoiGroup& right_group,
                                                bool visualize) {
     auto t_dual_start = std::chrono::steady_clock::now();
+    double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算
 
     // 0. Ensure template preprocessing is done
     prepareDualBcTemplate();
@@ -1121,6 +1137,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     cv::Mat right_c1_color = right_color(cv::Rect(right_sec.x, right_sec.y, right_sec.width, right_sec.height)).clone();
 
     // 3+4. BC + AK extraction in parallel (independent extractors, distinct image regions)
+    auto t_extract = std::chrono::steady_clock::now();
     auto fut_bc = std::async(std::launch::async, [&]() {
         return binary_extractor_->extract(
             left_c0_gray, right_c0_gray, left_c0_color, right_c0_color);
@@ -1141,6 +1158,9 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                   << " (kp=" << result_ak.n_kp_left
                   << ", flow=" << result_ak.pts_left_good.size() << ")"
                   << std::endl;
+    // 两路并行, 计墙钟时间
+    extract_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_extract).count();
 
     // 5. Coordinate transform: class-1-ROI-local → class-0-ROI-local
     auto offsetPoints = [](std::vector<cv::Point2f>& pts, double dx, double dy) {
@@ -1373,6 +1393,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     auto t_pnp_end = std::chrono::high_resolution_clock::now();
     result.timing["gpnp"] = std::chrono::duration<double, std::milli>(t_pnp_end - t_pnp_start).count();
+    pnp_ms += result.timing["gpnp"];
 
     // 9b. 回退：合并解算失败 → 仅用外层 BC 角点重解（复用 BC 策略的 PnP 链）。
     // BC 点位于合并数组前缀 [0, bc_total)，与 dual_bc_tmpl_pts3d_ 一一对应，
@@ -1404,7 +1425,10 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             bc_try.good_matches[i] = cv::DMatch(i, i, 0.0f);
         bc_try.is_first_frame = is_first;
 
+        auto t_bc_pnp = std::chrono::high_resolution_clock::now();
         auto [ok, bc_pose] = solveBcPnpChain(bc_try, dual_bc_tmpl_pts3d_);
+        pnp_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_bc_pnp).count();
         if (ok) {
             pose = bc_pose;
             bc_fallback_used = true;
@@ -1426,7 +1450,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         std::vector<Eigen::Vector3d> c1_pts3d;
         auto [ok, c1_pose] = runDualRoiClass1Chain(
             left_c1_gray, right_c1_gray, left_c1_color, right_c1_color,
-            left_sec, right_sec, is_first, c1_result, c1_pts3d, c1_strategy);
+            left_sec, right_sec, is_first, c1_result, c1_pts3d, c1_strategy,
+            extract_ms, pnp_ms);
         if (ok) {
             pose = c1_pose;
             c1_result.left_color = left_color_orig;
@@ -1632,6 +1657,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     result.n_matched = total_use;
     result.n_projected = total_use;
+    result.extract_ms = extract_ms;
+    result.pnp_ms = pnp_ms;
     addLogEntry(result, is_first, bc_fallback_used || c1_fallback_used);
 
     result.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
@@ -1660,7 +1687,8 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
         bool is_first,
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
-        std::string& out_strategy) {
+        std::string& out_strategy,
+        double& extract_ms_acc, double& pnp_ms_acc) {
     out_strategy.clear();
     out_pts3d.clear();
     if (left_gray.empty() || right_gray.empty()) return {false, PoseEstimate{}};
@@ -1682,11 +1710,14 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
                       << " on secondary ROI" << std::endl;
 
         PipelineResult r;
+        auto t_ext = std::chrono::steady_clock::now();
         const bool extract_ok = runExtraction(
             *ext, left_gray, right_gray, left_color, right_color,
             cv::Point2d(static_cast<double>(left_sec.x), static_cast<double>(left_sec.y)),
             cv::Point2d(static_cast<double>(right_sec.x), static_cast<double>(right_sec.y)),
             left_color, right_color, r);
+        extract_ms_acc += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_ext).count();
         if (!extract_ok || !(r.success && r.n_kp_left >= 3)) {
             if (verbose_console_)
                 std::cout << "  [DualRoi] class1 " << ext->name()
@@ -1695,8 +1726,11 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
         }
 
         const auto& pts3d = ext->templateData().pts_3d;
+        auto t_c1_pnp = std::chrono::steady_clock::now();
         auto [ok, c1_pose] = is_bc ? solveBcPnpChain(r, pts3d)
                                    : runTinyTargetPnP(r, pts3d);
+        pnp_ms_acc += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_c1_pnp).count();
         if (!ok) {
             if (verbose_console_)
                 std::cout << "  [DualRoi] class1 " << ext->name()
@@ -1829,6 +1863,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
 
     FeatureExtractor* winning_ext = nullptr;
     PoseEstimate pose;
+    double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算 (跨退化链累加)
 
     for (auto* ext : chain) {
         if (!ext) continue;
@@ -1836,7 +1871,10 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
         if (verbose_console_)
             std::cout << "[StereoMono] Trying extractor: " << ext->name() << std::endl;
 
+        auto t_extract = std::chrono::steady_clock::now();
         PipelineResult local = ext->extractMono(gray_roi, color_roi);
+        extract_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_extract).count();
 
         if (!local.pts_left_match.empty()) {
             for (auto& p : local.pts_left_match) {
@@ -1879,6 +1917,7 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
         // 单目 PnP: 有 seed 走位姿链候选 + 运动门控；门控拒绝 → 冷启动重解一次
         PoseEstimate p;
         GateStatus gate_st = GateStatus::NotApplicable;
+        auto t_pnp = std::chrono::steady_clock::now();
         if (use_seed) {
             p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, &seed,
                                 config_.temporal.tie_epsilon_px);
@@ -1906,6 +1945,8 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
         } else {
             p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
         }
+        pnp_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_pnp).count();
 
         result = std::move(local);
         result.left_color = color;
@@ -1932,6 +1973,8 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
     if (!winning_ext) {
         std::cerr << "[StereoMono] All extractors failed" << std::endl;
         result.is_class1 = use_c1;
+        result.extract_ms = extract_ms;
+        result.pnp_ms = pnp_ms;
         addLogEntry(result, is_first, true);
         return result;
     }
@@ -1941,6 +1984,8 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
     result.strategy_name = winning_ext->name();
     result.success = pose.success;
     result.is_class1 = use_c1;
+    result.extract_ms = extract_ms;
+    result.pnp_ms = pnp_ms;
     updateStickinessFromWinner(winning_ext->name());
     fillTemporalMeta(result);   // 胜者反馈后重取，switch_reason 反映本帧 realign
     addLogEntry(result, is_first, winning_ext != chain.front());

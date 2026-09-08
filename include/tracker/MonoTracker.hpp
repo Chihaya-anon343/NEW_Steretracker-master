@@ -48,7 +48,8 @@ private:
         bool is_first,
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
-        std::string& out_strategy);
+        std::string& out_strategy,
+        double& extract_ms_acc, double& pnp_ms_acc);
 
     MonoPnPSolver mono_pnp_;
 

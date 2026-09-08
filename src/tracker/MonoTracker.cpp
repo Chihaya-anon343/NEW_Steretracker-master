@@ -145,6 +145,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                                                   const RoiGroup& left_group,
                                                   bool visualize) {
     auto t_dual_start = std::chrono::steady_clock::now();
+    double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算
 
     // 0. Ensure template preprocessing is done
     prepareDualBcTemplate();
@@ -192,6 +193,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     cv::Mat left_c1_color = left_color(cv::Rect(left_sec.x, left_sec.y, left_sec.width, left_sec.height)).clone();
 
     // 3+4. BC + AK extraction in parallel (mono, independent extractors, distinct image regions)
+    auto t_extract = std::chrono::steady_clock::now();
     auto fut_bc = std::async(std::launch::async, [&]() {
         return binary_extractor_->extractMono(left_c0_gray, left_c0_color);
     });
@@ -209,6 +211,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         std::cout << "[DualRoi][Mono] AKAZE on class 1: " << m_ak_match << " template matches"
                   << " (kp=" << result_ak.n_kp_left << ")"
                   << std::endl;
+    // 两路并行, 计墙钟时间
+    extract_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_extract).count();
 
     // 5. Coordinate transform: class-1-local → class-0-local
     auto offsetPoints = [](std::vector<cv::Point2f>& pts, const cv::Point2d& offset) {
@@ -263,6 +268,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         PipelineResult empty;
         empty.is_first_frame = is_first;
         empty.gpnp_success = false;
+        empty.extract_ms = extract_ms;
+        empty.pnp_ms = 0.0;
         empty.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_dual_start).count();
         return empty;
@@ -280,10 +287,13 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     PoseSeed seed;
     const bool use_seed = seedActive();
     if (use_seed) { seed.R = state_.R_prev; seed.t = state_.t_prev; }
+    auto t_pnp = std::chrono::steady_clock::now();
     PoseEstimate pose = use_seed
         ? mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K, &seed,
                           config_.temporal.tie_epsilon_px)
         : mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K);
+    pnp_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_pnp).count();
 
     // 8b. 回退：合并解算失败 → 仅用外层 BC 角点重解（与单目 BC 策略同为
     // MonoPnP 多候选择优）。BC 点位于合并数组前缀 [0, n_bc_use)，
@@ -297,10 +307,13 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                                        merged_pts_2d.begin() + n_bc_use);
         std::vector<Eigen::Vector3d> bc_3d(dual_bc_tmpl_pts3d_.begin(),
                                            dual_bc_tmpl_pts3d_.begin() + n_bc_use);
+        auto t_bc_pnp = std::chrono::steady_clock::now();
         pose = use_seed
             ? mono_pnp_.solve(bc_2d, bc_3d, camera_.K, &seed,
                               config_.temporal.tie_epsilon_px)
             : mono_pnp_.solve(bc_2d, bc_3d, camera_.K);
+        pnp_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_bc_pnp).count();
         if (pose.success) {
             bc_fallback_used = true;
             total_use = n_bc_use;
@@ -322,7 +335,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                       << std::endl;
         auto [ok, c1_pose] = runDualRoiClass1Chain(left_c1_gray, left_c1_color,
                                                    left_sec, is_first,
-                                                   c1_result, c1_pts3d, c1_strategy);
+                                                   c1_result, c1_pts3d, c1_strategy,
+                                                   extract_ms, pnp_ms);
         if (ok) {
             pose = c1_pose;
             c1_result.left_color = left_color_orig;
@@ -360,6 +374,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
 
     result.n_matched   = total_use;
     result.n_projected = 0;
+    result.extract_ms = extract_ms;
+    result.pnp_ms = pnp_ms;
     addLogEntry(result, is_first, bc_fallback_used || c1_fallback_used);
 
     // ---- Visualization (simplified, left-only) ----
@@ -561,7 +577,8 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         bool is_first,
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
-        std::string& out_strategy) {
+        std::string& out_strategy,
+        double& extract_ms_acc, double& pnp_ms_acc) {
     out_strategy.clear();
     out_pts3d.clear();
     if (left_gray.empty()) return {false, PoseEstimate{}};
@@ -582,7 +599,10 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
             std::cout << "[DualRoi][Mono] class1 chain: " << ext->name()
                       << " on secondary ROI" << std::endl;
 
+        auto t_ext = std::chrono::steady_clock::now();
         PipelineResult local = ext->extractMono(left_gray, left_color);
+        extract_ms_acc += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_ext).count();
         if (!(local.success && local.n_kp_left >= 3)) {
             if (verbose_console_)
                 std::cout << "  [DualRoi][Mono] class1 " << ext->name()
@@ -618,7 +638,10 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         }
 
         // 冷启动 MonoPnP (多候选择优); 不用板系 seed
+        auto t_c1_pnp = std::chrono::steady_clock::now();
         PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        pnp_ms_acc += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_c1_pnp).count();
         if (!p.success) {
             if (verbose_console_)
                 std::cout << "  [DualRoi][Mono] class1 " << ext->name()
@@ -720,6 +743,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
 
     FeatureExtractor* winning_ext = nullptr;
     PoseEstimate pose;
+    double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算 (跨退化链累加)
 
     for (auto* ext : chain) {
         if (!ext) continue;
@@ -727,7 +751,10 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
         if (verbose_console_) std::cout << "[Mono] Trying extractor: " << ext->name() << std::endl;
 
         // 单目提取（仅左图，2 参数）
+        auto t_extract = std::chrono::steady_clock::now();
         PipelineResult local = ext->extractMono(left_gray_roi, left_color_roi);
+        extract_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_extract).count();
 
         // 将 ROI 局部坐标恢复到全图坐标系
         if (!local.pts_left_match.empty()) {
@@ -771,6 +798,7 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
         // （纯重投影择优，成功即采纳），冷重解也失败则本策略判失败继续退化链
         PoseEstimate p;
         GateStatus gate_st = GateStatus::NotApplicable;
+        auto t_pnp = std::chrono::steady_clock::now();
         if (use_seed) {
             p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, &seed,
                                 config_.temporal.tie_epsilon_px);
@@ -798,6 +826,8 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
         } else {
             p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
         }
+        pnp_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_pnp).count();
 
         result = std::move(local);
         result.left_color = left_color;
@@ -824,6 +854,8 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     if (!winning_ext) {
         std::cerr << "[Mono] All extractors failed" << std::endl;
         result.is_class1 = use_c1;
+        result.extract_ms = extract_ms;
+        result.pnp_ms = pnp_ms;
         addLogEntry(result, is_first, true);
         return result;
     }
@@ -833,6 +865,8 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
     result.strategy_name = winning_ext->name();
     result.success = pose.success;
     result.is_class1 = use_c1;
+    result.extract_ms = extract_ms;
+    result.pnp_ms = pnp_ms;
     updateStickinessFromWinner(winning_ext->name());
     fillTemporalMeta(result);   // 胜者反馈后重取，switch_reason 反映本帧 realign
     addLogEntry(result, is_first, winning_ext != chain.front());

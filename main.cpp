@@ -558,9 +558,11 @@ int main(int argc, char** argv) {
         // Phase 3.2: 位姿成功帧计数 (汇总统计用)
         int processed_ok = 0;
 
-        // 阶段计时累加 (运行汇总: YOLO / 位姿估计平均用时)
+        // 阶段计时累加 (运行汇总: YOLO / 单帧跟踪 / 特征提取 / 位姿解算平均用时)
         double yolo_ms_total = 0.0;  int yolo_calls = 0;
         double pose_ms_total = 0.0;  int pose_calls = 0;
+        double extract_ms_total = 0.0;  int extract_calls = 0;
+        double pnp_solve_ms_total = 0.0;  int pnp_solve_calls = 0;
         auto steadyNow = []() { return std::chrono::steady_clock::now(); };
         auto elapsedMs = [](std::chrono::steady_clock::time_point t0) {
             return std::chrono::duration<double, std::milli>(
@@ -665,6 +667,10 @@ int main(int argc, char** argv) {
                 }
                 std::cout << std::endl;
             }
+
+            // 提取/解算两相耗时 (tracker 内部计时, 跨退化链累加)
+            extract_ms_total += result.extract_ms;   ++extract_calls;
+            pnp_solve_ms_total += result.pnp_ms;     ++pnp_solve_calls;
 
             return result;
         };
@@ -787,8 +793,16 @@ int main(int argc, char** argv) {
                             + " ms/帧  (共 " + std::to_string(yolo_calls) + " 帧)\n");
                 }
                 if (pose_calls > 0) {
-                    termOut("位姿估计平均用时: " + std::to_string(pose_ms_total / pose_calls)
+                    termOut("单帧跟踪平均用时 (提取+解算+ROI等): " + std::to_string(pose_ms_total / pose_calls)
                             + " ms/帧  (共 " + std::to_string(pose_calls) + " 帧)\n");
+                }
+                if (extract_calls > 0) {
+                    termOut("特征提取平均用时: " + std::to_string(extract_ms_total / extract_calls)
+                            + " ms/帧  (共 " + std::to_string(extract_calls) + " 帧)\n");
+                }
+                if (pnp_solve_calls > 0) {
+                    termOut("位姿解算平均用时: " + std::to_string(pnp_solve_ms_total / pnp_solve_calls)
+                            + " ms/帧  (共 " + std::to_string(pnp_solve_calls) + " 帧)\n");
                 }
                 if (ist.captured > 0) {
                     termOut("输入统计 (线程化采集): 采集 " + std::to_string(ist.captured)

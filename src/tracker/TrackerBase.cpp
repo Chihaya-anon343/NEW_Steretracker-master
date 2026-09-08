@@ -419,6 +419,8 @@ void TrackerBase::addLogEntry(const PipelineResult& result, bool is_first, bool 
     entry.disparity_median = disp_median;
     entry.total_time_ms = total_time;
     entry.timing = result.timing;
+    entry.extract_ms = result.extract_ms;
+    entry.pnp_ms = result.pnp_ms;
     entry.strategy_name = result.strategy_name;
     entry.is_class1 = result.is_class1;
     entry.warm_start_used = result.warm_start_used;
@@ -461,6 +463,15 @@ void TrackerBase::printLogs() const {
     std::vector<size_t> widths = {5, 12, 8, 8, 8, 10, 8, 10, 10};
     for (const auto& k : used_keys) widths.push_back(10);
 
+    // 提取/解算两相总耗时列 (有数据才显示)
+    bool show_extract = false, show_pnp = false;
+    for (const auto& log : logs) {
+        if (log.extract_ms > 0.0) show_extract = true;
+        if (log.pnp_ms > 0.0) show_pnp = true;
+    }
+    if (show_extract) widths.push_back(10);
+    if (show_pnp) widths.push_back(10);
+
     auto print_sep = [&](char c) {
         std::cout << "+";
         for (auto w : widths) std::cout << std::string(w, c) << "+";
@@ -480,6 +491,8 @@ void TrackerBase::printLogs() const {
         auto it = timing_labels.find(k);
         header.push_back(it != timing_labels.end() ? it->second : k);
     }
+    if (show_extract) header.push_back("Extract");
+    if (show_pnp) header.push_back("Solve");
     print_row(header);
     print_sep('-');
 
@@ -500,6 +513,10 @@ void TrackerBase::printLogs() const {
             auto it = log.timing.find(k);
             row.push_back(it != log.timing.end() ? std::to_string(static_cast<int>(it->second)) + "ms" : "-");
         }
+        if (show_extract)
+            row.push_back(std::to_string(static_cast<int>(log.extract_ms)) + "ms");
+        if (show_pnp)
+            row.push_back(std::to_string(static_cast<int>(log.pnp_ms)) + "ms");
         print_row(row);
     }
     print_sep('=');
