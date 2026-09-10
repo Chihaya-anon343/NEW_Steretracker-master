@@ -1099,6 +1099,9 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     int pad = config_.dual_roi_secondary_expand;
 
     bool is_first = !state_.has_cache;
+    PoseSeed seed;
+    const bool use_seed = seedActive();
+    if (use_seed) { seed.R = state_.R_prev; seed.t = state_.t_prev; }
 
     // 1. Expand secondary ROI
     auto expandRoi = [](const RoiRect& roi, int p, int img_w, int img_h) -> RoiRect {
@@ -1429,6 +1432,15 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing);
     }
 
+    // 运动门控 (与 MonoTracker::processDualRoi 同语义, 含陈旧放宽):
+    // 解通过重投影校验但相对 seed 跳变超阈值 → 判失败, 交由退化链 (Tier2/3) 接管
+    if (pose.success && use_seed &&
+        !motionGatePass(pose, seed, nullptr, false, "DualRoi-T1", true)) {
+        if (verbose_console_)
+            std::cout << "  [DualRoi] Tier1 pose rejected by motion gate" << "\n";
+        pose = PoseEstimate{};
+    }
+
     auto t_pnp_end = std::chrono::high_resolution_clock::now();
     result.timing["gpnp"] = std::chrono::duration<double, std::milli>(t_pnp_end - t_pnp_start).count();
     pnp_ms += result.timing["gpnp"];
@@ -1468,6 +1480,16 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             std::chrono::high_resolution_clock::now() - t_bc_pnp).count();
         if (ok) {
             pose = bc_pose;
+            // 9b-gate: BC-only 解同样过运动门控 (含陈旧放宽), 误锁跳变被拒后落入 9c class1 链
+            if (use_seed &&
+                !motionGatePass(pose, seed, nullptr, false, "DualRoi-T2", true)) {
+                if (verbose_console_)
+                    std::cout << "  [DualRoi] Tier2 BC-only pose rejected by motion gate"
+                              << "\n";
+                pose = PoseEstimate{};
+            }
+        }
+        if (pose.success) {
             bc_fallback_used = true;
             total_use = bc_total;
             merged_pts3d.resize(bc_total);   // 前缀即 BC 3D，保持可视化面板索引一致

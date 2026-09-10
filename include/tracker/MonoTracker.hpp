@@ -39,7 +39,8 @@ private:
                                    bool visualize);
     void prepareDualBcTemplate();
     /// Dual-ROI 第 3 级退化: 合并与 BC-only 均失败后, 在 secondary ROI (class1) 上
-    /// 依次尝试 BC → TT (class1 3D 尺寸, State 5 同机制; MonoPnP 冷启动)。
+    /// 依次尝试 BC → TT (class1 3D 尺寸, State 5 同机制; seed 非 null 时注入 MonoPnP
+    /// —— class1 图案与板共面无相对旋转, 板系 R seed 直接有效, 仅 t 差同心偏移)。
     /// 成功时 out_result 已截断为 2D/3D 严格 1:1 的配对子集 (全图坐标)，
     /// out_strategy 为 "DualRoi_C1BC"/"DualRoi_C1TT"。
     std::pair<bool, PoseEstimate> runDualRoiClass1Chain(
@@ -49,7 +50,8 @@ private:
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
         std::string& out_strategy,
-        double& extract_ms_acc, double& pnp_ms_acc);
+        double& extract_ms_acc, double& pnp_ms_acc,
+        const PoseSeed* seed = nullptr);
 
     MonoPnPSolver mono_pnp_;
 

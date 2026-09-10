@@ -325,6 +325,18 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     pnp_ms += std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t_pnp).count();
 
+    // 8a. 运动门控 (方案C): Tier1 解通过重投影校验但相对 seed 跳变超阈值
+    //     (典型: 近距离 BC 角点误锁 class1 内图案, ~43px 跨度配 class0 尺度 3D,
+    //      15x 尺度偏差仍能过 8px 平坦重投影) → 判失败, 交由退化链 (Tier2/3) 接管。
+    //     无冷重启: 退化链本身就是恢复路径。陈旧 seed (class1 帧不解入缓存时
+    //     连续多帧不刷新) 放宽阈值, 让恢复帧的合理解通过。
+    if (pose.success && use_seed &&
+        !motionGatePass(pose, seed, nullptr, false, "DualRoi-T1", true)) {
+        if (verbose_console_)
+            std::cout << "  [DualRoi][Mono] Tier1 pose rejected by motion gate" << "\n";
+        pose = PoseEstimate{};
+    }
+
     // 8b. 回退：合并解算失败 → 仅用外层 BC 角点重解（与单目 BC 策略同为
     // MonoPnP 多候选择优）。BC 点位于合并数组前缀 [0, n_bc_use)，
     // 与 dual_bc_tmpl_pts3d_ 一一对应，切片即得 BC-only 子集。
@@ -343,6 +355,14 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             : mono_pnp_.solve(bc_2d, bc_3d, camera_.K);
         pnp_ms += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_bc_pnp).count();
+        // 8b-gate: BC-only 解同样过运动门控 (含陈旧放宽), 误锁跳变被拒后落入 8c class1 链
+        if (pose.success && use_seed &&
+            !motionGatePass(pose, seed, nullptr, false, "DualRoi-T2", true)) {
+            if (verbose_console_)
+                std::cout << "  [DualRoi][Mono] Tier2 BC-only pose rejected by motion gate"
+                          << "\n";
+            pose = PoseEstimate{};
+        }
         if (pose.success) {
             bc_fallback_used = true;
             total_use = n_bc_use;
@@ -355,7 +375,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     } // !primary_spans_frame（短路时 pose 保持失败, 8c 直接成为唯一路径）
 
     // 8c. 第 3 级退化: 合并与 BC-only 均失败 → 在 secondary ROI (class1) 上跑 BC→TT 链
-    //     (class1 3D 尺寸, State 5 同机制; MonoPnP 冷启动 — 板系 seed 对 class1 系可能失锚)
+    //     (class1 3D 尺寸, State 5 同机制; 注入板系 seed —— class1 图案与板共面无
+    //      相对旋转, R seed 直接有效, 仅 t 差同心偏移, IPPE 二义性由 ε-平票偏 seed 消解)
     bool c1_fallback_used = false;
     std::string c1_strategy;
     PipelineResult c1_result;
@@ -367,7 +388,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         auto [ok, c1_pose] = runDualRoiClass1Chain(left_c1_gray, left_c1_color,
                                                    left_sec, is_first,
                                                    c1_result, c1_pts3d, c1_strategy,
-                                                   extract_ms, pnp_ms);
+                                                   extract_ms, pnp_ms,
+                                                   use_seed ? &seed : nullptr);
         if (ok) {
             pose = c1_pose;
             c1_result.left_color = left_color_orig;
@@ -609,7 +631,8 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
         std::string& out_strategy,
-        double& extract_ms_acc, double& pnp_ms_acc) {
+        double& extract_ms_acc, double& pnp_ms_acc,
+        const PoseSeed* seed) {
     out_strategy.clear();
     out_pts3d.clear();
     if (left_gray.empty()) return {false, PoseEstimate{}};
@@ -668,9 +691,13 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
             continue;
         }
 
-        // 冷启动 MonoPnP (多候选择优); 不用板系 seed
+        // MonoPnP 多候选择优; class1 与板共面无相对旋转, 板系 R seed 直接有效
+        // (ε-平票偏 seed 消解 IPPE 二义性), 仅 t 差同心偏移
         auto t_c1_pnp = std::chrono::steady_clock::now();
-        PoseEstimate p = mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+        PoseEstimate p = seed
+            ? mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, seed,
+                              config_.temporal.tie_epsilon_px)
+            : mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
         pnp_ms_acc += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_c1_pnp).count();
         if (!p.success) {

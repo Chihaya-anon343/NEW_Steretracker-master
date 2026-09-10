@@ -669,7 +669,8 @@ int main(int argc, char** argv) {
                           << "  耗时: " << result.total_time_ms() << "ms";
                 if (result.success) {
                     std::cout << "  PnP t(mm)=[" << result.t.x() << ", "
-                              << result.t.y() << ", " << result.t.z() << "]";
+                              << result.t.y() << ", " << result.t.z() << "]"
+                              << "  rot_unwrap=" << result.rot_deg_unwrapped << "deg";
                 }
                 std::cout << std::endl;
             }

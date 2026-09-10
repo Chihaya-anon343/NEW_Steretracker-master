@@ -49,7 +49,7 @@
 
   "temporal": {
     "_comment": "序列时序连贯性: 位姿链热启动 + 策略粘滞 + 运动门控 (所有阈值以帧为单位, 不依赖时间戳)",
-    "enabled": false,
+    "enabled": true,
 
     "pose_chain": {
       "_comment": "位姿链: 上帧成功位姿作为本帧 PnP 候选初值",
@@ -78,7 +78,7 @@
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
-    "visualize": false,
+    "visualize": true,
     "log_file": true
   },
 
@@ -151,7 +151,7 @@
       "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭)",
       "secondary_expand_pixels": 50,
       "class1_fallback_enabled": true,
-      "primary_span_ratio": 0.99,
+      "primary_span_ratio": 0.98,
       "akaze": {
         "scale": 1
       }

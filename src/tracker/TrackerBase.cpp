@@ -24,6 +24,12 @@
 
 namespace gpnp {
 
+// 陈旧 seed 放宽: seed 帧龄超过该值时运动门控阈值 ×kStaleSeedMargin。
+// class1 退化帧不解入缓存时 seed 可连续多帧不刷新，原始门限会把恢复帧的
+// 合理解（Δθ 略超阈值）一并拒掉形成锁死；放宽让恢复解通过。
+constexpr int kStaleSeedAgeFrames = 3;
+constexpr double kStaleSeedMargin = 2.0;
+
 // ============================================================
 // initExtractors
 // ============================================================
@@ -267,15 +273,21 @@ void TrackerBase::updateStickinessFromWinner(const std::string& winner_name) {
     }
 }
 
+int TrackerBase::cacheAgeFrames() const {
+    return std::max(cache_age_,
+                    state_.has_cache ? state_.frame_count - state_.cache_frame : 0);
+}
+
 bool TrackerBase::seedActive() const {
     const TemporalConfig& tc = config_.temporal;
     if (!tc.enabled || !state_.has_cache) return false;
-    if (tc.max_cache_age_frames > 0 && cache_age_ > tc.max_cache_age_frames) return false;
+    if (tc.max_cache_age_frames > 0 && cacheAgeFrames() > tc.max_cache_age_frames) return false;
     return true;
 }
 
 bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
-                                 const FeatureExtractor* ext, bool widened) const {
+                                 const FeatureExtractor* ext, bool widened,
+                                 const char* label, bool stale_relax) const {
     const TemporalConfig& tc = config_.temporal;
 
     double margin = 1.0;
@@ -285,6 +297,9 @@ bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
         if (band != 0 && band != sticky_locked_)   // 策略切换帧：放宽吸收策略间系统偏差
             margin *= tc.switch_margin;
     }
+    if (stale_relax && cacheAgeFrames() > kStaleSeedAgeFrames)
+        margin *= kStaleSeedMargin;
+    const std::string who = label ? label : (ext ? ext->name() : "?");
 
     if (tc.max_trans_ratio > 0.0) {
         double t_ref = seed.t.norm();
@@ -304,7 +319,7 @@ bool TrackerBase::motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
                               << ", scale=" << scale << " > " << tc.max_scale_ratio * margin
                               << " (|t_seed|=" << t_ref << "mm, |t_new|=" << t_new
                               << "mm, margin=" << margin
-                              << ", " << (ext ? ext->name() : "?") << ")" << "\n";
+                              << ", " << who << ")" << "\n";
                 return false;
             }
         }
@@ -378,16 +393,58 @@ void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose)
             R_cv.at<double>(r, c) = pose.R(r, c);
         cv::Mat rvec;
         cv::Rodrigues(R_cv, rvec);
+
+        // 连续姿态输出: rvec(θ∈[0,π]) 在物理旋转越过 ±180° 时三分量同时翻号, 属表示层跳变。
+        // 这里额外输出 (a) 符号连续化四元数 (b) 相对首帧的 unwrapped 累计旋转角。
+        if (!state_.has_cache) {
+            Eigen::AngleAxisd aa0(pose.R);
+            state_.rot_deg_unwrapped = 0.0;
+            state_.axis_acc = aa0.angle() > 1e-9 ? aa0.axis() : Eigen::Vector3d::UnitZ();
+        } else {
+            Eigen::AngleAxisd aa(pose.R * state_.R_prev.transpose());
+            double s = aa.axis().dot(state_.axis_acc) >= 0.0 ? 1.0 : -1.0;
+            state_.rot_deg_unwrapped += s * aa.angle() * 180.0 / CV_PI;
+            if (aa.angle() > 1e-9)
+                state_.axis_acc = (state_.axis_acc + s * aa.axis()).normalized();
+        }
+        Eigen::Quaterniond q(pose.R);
+        if (state_.has_quat_cache && q.dot(state_.q_prev) < 0.0)
+            q.coeffs() *= -1.0;
+        result.quat_w = q.w(); result.quat_x = q.x();
+        result.quat_y = q.y(); result.quat_z = q.z();
+        result.rot_deg_unwrapped = state_.rot_deg_unwrapped;
+
         if (verbose_console_) {
             std::cout << "  Pose: rvec=[" << rvec.at<double>(0) << ", "
                       << rvec.at<double>(1) << ", " << rvec.at<double>(2) << "]"
                       << "  tvec=[" << pose.t(0) << ", " << pose.t(1) << ", "
-                      << pose.t(2) << "] mm  n_pts=" << pose.num_points << "\n";
+                      << pose.t(2) << "] mm  n_pts=" << pose.num_points
+                      << "  rot_unwrap=" << result.rot_deg_unwrapped << "deg"
+                      << "  q=[" << result.quat_w << ", " << result.quat_x << ", "
+                      << result.quat_y << ", " << result.quat_z << "]" << "\n";
         }
-        state_.R_prev = pose.R;
-        state_.t_prev = pose.t;
-        state_.has_cache = true;
-        cache_age_ = 0;
+        state_.q_prev = q;
+        state_.has_quat_cache = true;
+        // class1 退化解（DualRoi Tier3 / State 5）位于 class1 模板系，误锁跳变
+        // 会毒化帧间缓存 → 后续板系好解被门控拒掉。板系解无条件入缓存；class1 解
+        // 需过原始门控（不吃陈旧放宽）才允许刷新，被拒时保留旧 seed。
+        bool accept_into_cache = true;
+        if (result.is_class1 && state_.has_cache) {
+            PoseSeed c1_seed;
+            c1_seed.R = state_.R_prev;
+            c1_seed.t = state_.t_prev;
+            accept_into_cache = motionGatePass(pose, c1_seed, nullptr, false, "C1-cache");
+            if (!accept_into_cache && verbose_console_)
+                std::cout << "  [Cache] class1 pose rejected by motion gate, keep previous seed"
+                          << "\n";
+        }
+        if (accept_into_cache) {
+            state_.R_prev = pose.R;
+            state_.t_prev = pose.t;
+            state_.has_cache = true;
+            cache_age_ = 0;
+            state_.cache_frame = state_.frame_count;
+        }
     }
 }
 
@@ -434,6 +491,9 @@ void TrackerBase::addLogEntry(const PipelineResult& result, bool is_first, bool 
         Eigen::AngleAxisd aa(result.R);
         Eigen::Vector3d rv = aa.angle() * aa.axis();
         entry.rvec_x = rv.x(); entry.rvec_y = rv.y(); entry.rvec_z = rv.z();
+        entry.quat_w = result.quat_w; entry.quat_x = result.quat_x;
+        entry.quat_y = result.quat_y; entry.quat_z = result.quat_z;
+        entry.rot_deg_unwrapped = result.rot_deg_unwrapped;
     }
     state_.logs.push_back(std::move(entry));
 }
@@ -460,7 +520,7 @@ void TrackerBase::printLogs() const {
             if (auto it = log.timing.find(k); it != log.timing.end() && it->second > 0.0)
                 { used_keys.push_back(k); break; }
 
-    std::vector<size_t> widths = {5, 12, 8, 8, 8, 10, 8, 10, 10};
+    std::vector<size_t> widths = {5, 12, 8, 8, 8, 10, 8, 10, 10, 10};
     for (const auto& k : used_keys) widths.push_back(10);
 
     // 提取/解算两相总耗时列 (有数据才显示)
@@ -486,7 +546,7 @@ void TrackerBase::printLogs() const {
 
     print_sep('-');
     std::vector<std::string> header = {"Fr#", "Timestamp", "1st", "FB", "nKp", "nMatch",
-                                        "nProj", "nTmpl", "Disp(px)", "PnP"};
+                                        "nProj", "nTmpl", "Disp(px)", "RotU(deg)", "PnP"};
     for (const auto& k : used_keys) {
         auto it = timing_labels.find(k);
         header.push_back(it != timing_labels.end() ? it->second : k);
@@ -508,6 +568,11 @@ void TrackerBase::printLogs() const {
         row.push_back(std::to_string(log.n_projected));
         row.push_back(std::to_string(log.n_template_match));
         row.push_back(std::to_string(static_cast<int>(log.disparity_median)));
+        {
+            std::ostringstream ru;
+            ru << std::fixed << std::setprecision(1) << log.rot_deg_unwrapped;
+            row.push_back(ru.str());
+        }
         row.push_back(log.gpnp_success ? "OK" : "FAIL");
         for (const auto& k : used_keys) {
             auto it = log.timing.find(k);

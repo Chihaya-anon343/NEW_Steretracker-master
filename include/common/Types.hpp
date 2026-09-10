@@ -262,7 +262,9 @@ struct LogEntry {
     std::string strategy_name;            ///< 使用的提取器策略
     bool is_class1{false};                ///< 是否 class1 回退帧
     double t_x{0.0}, t_y{0.0}, t_z{0.0};        ///< 平移 (mm)
-    double rvec_x{0.0}, rvec_y{0.0}, rvec_z{0.0};///< 旋转向量 (angle*axis)
+    double rvec_x{0.0}, rvec_y{0.0}, rvec_z{0.0};///< 旋转向量 (angle*axis, θ∈[0,π] 有 ±180° 跳变)
+    double quat_w{1.0}, quat_x{0.0}, quat_y{0.0}, quat_z{0.0};///< 符号连续化四元数 (w,x,y,z)
+    double rot_deg_unwrapped{0.0};              ///< 累计 unwrapped 旋转角 (度, 相对首个成功帧)
 
     // --- 时序连贯性观测 (temporal) ---
     bool warm_start_used{false};          ///< 本帧位姿解算是否使用了上帧 seed
@@ -310,6 +312,8 @@ struct PipelineResult {
     int gpnp_n_pts{0};
     bool success{false};  ///< 流水线整体成功标志（提取 + PnP，单目/双目通用）
     std::string strategy_name; ///< 本帧胜出的策略名（如 "BinaryCorner", "TinyTarget"）
+    double quat_w{1.0}, quat_x{0.0}, quat_y{0.0}, quat_z{0.0};///< 符号连续化四元数 (w,x,y,z, 由 finalizePose 填充)
+    double rot_deg_unwrapped{0.0};  ///< 累计 unwrapped 旋转角 (度, 由 finalizePose 填充)
 
     // --- 耗时统计 ---
     std::map<std::string, double> timing; ///< 阶段 → 毫秒
@@ -408,7 +412,13 @@ struct TrackingState {
     bool has_cache{false};
     Eigen::Matrix3d R_prev{Eigen::Matrix3d::Identity()};
     Eigen::Vector3d t_prev{0.0, 0.0, 500.0};  ///< 默认：500mm 深度
+    // --- 连续姿态输出基准 (finalizePose 维护) ---
+    Eigen::Quaterniond q_prev{1.0, 0.0, 0.0, 0.0}; ///< 上帧输出四元数 (符号连续化基准)
+    bool has_quat_cache{false};
+    double rot_deg_unwrapped{0.0};            ///< 累计 unwrapped 旋转角 (度)
+    Eigen::Vector3d axis_acc{0.0, 0.0, 1.0};  ///< 平滑累计旋转轴 (Δ角符号判定基准)
     int frame_count{0};
+    int cache_frame{-1};               ///< 写入缓存时的 frame_count（DualRoi 路径 cache_age_ 不自增，用帧号差补齐 seed 年龄）
     std::vector<LogEntry> logs;
     GPNPMonitor last_gpnp_monitor;             ///< 最近的 GPNP 诊断数据
 };

@@ -78,10 +78,15 @@ protected:
     void updateStickinessFromWinner(const std::string& winner_name);
     /// 位姿 seed 是否可用 (temporal.enabled && 有缓存 && 未超龄)
     bool seedActive() const;
+    /// seed 等效帧龄: max(cache_age_, frame_count - cache_frame)。DualRoi 帧
+    /// EARLY RETURN 不经过 configureStrategyChain (cache_age_ 不自增)，帧号差补齐
+    int cacheAgeFrames() const;
     /// 运动一致性门控: Δt ≤ max_trans_ratio×|t_seed| 且 Δθ ≤ max_rot_deg；
-    /// ext 档位 ≠ 锁定档位（策略切换帧）或 widened=true（冷重解二道门）时阈值 ×switch_margin
+    /// ext 档位 ≠ 锁定档位（策略切换帧）或 widened=true（冷重解二道门）时阈值 ×switch_margin；
+    /// stale_relax=true 且 seed 超龄 (cacheAgeFrames > 3) 时阈值再 ×2（容忍陈旧 seed 更大位移）
     bool motionGatePass(const PoseEstimate& pose, const PoseSeed& seed,
-                        const FeatureExtractor* ext, bool widened) const;
+                        const FeatureExtractor* ext, bool widened,
+                        const char* label = nullptr, bool stale_relax = false) const;
     /// 将时序观测字段填入 PipelineResult（日志用）
     void fillTemporalMeta(PipelineResult& result) const;
 
