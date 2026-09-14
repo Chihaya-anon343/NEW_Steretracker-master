@@ -31,9 +31,13 @@ public:
      * @brief Construct template matcher.
      * @param ratio_threshold  Lowe's ratio test threshold (default 0.75)
      * @param ransac_threshold Homography RANSAC reprojection error (default 5.0 px)
+     * @param norm_type        Descriptor distance norm: cv::NORM_HAMMING for binary
+     *                         descriptors (AKAZE, default), cv::NORM_L2 for float
+     *                         descriptors (SIFT/ORB-float)
      */
     explicit TemplateMatcher(double ratio_threshold = 0.75,
-                             double ransac_threshold = 5.0);
+                             double ransac_threshold = 5.0,
+                             int norm_type = cv::NORM_HAMMING);
 
     ~TemplateMatcher() = default;
 

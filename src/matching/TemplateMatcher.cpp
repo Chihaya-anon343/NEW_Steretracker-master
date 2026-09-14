@@ -6,12 +6,13 @@
 
 namespace gpnp {
 
-TemplateMatcher::TemplateMatcher(double ratio_threshold, double ransac_threshold)
+TemplateMatcher::TemplateMatcher(double ratio_threshold, double ransac_threshold,
+                                 int norm_type)
     : ratio_threshold_(ratio_threshold)
     , ransac_threshold_(ransac_threshold)
 {
-    // NORM_HAMMING 是 AKAZE 二进制描述符必需的
-    bf_matcher_ = cv::BFMatcher::create(cv::NORM_HAMMING, false); // crossCheck=false
+    // 默认 NORM_HAMMING 是 AKAZE 二进制描述符必需的; SIFT 等浮点描述子用 NORM_L2
+    bf_matcher_ = cv::BFMatcher::create(norm_type, false); // crossCheck=false
 }
 
 // ============================================================================

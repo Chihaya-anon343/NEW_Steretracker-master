@@ -1,0 +1,43 @@
+{
+    "// 说明": "对比 pipeline (pose_compare) 配置 —— 仅 input.directory_path 必填, 其余均可缺省",
+
+    "input": {
+        "directory_path": "data/big"
+    },
+
+    "camera": {
+        "fx": 1370.1815888598676,
+        "fy": 1373.0103114278359,
+        "cx": 516.4761400598917,
+        "cy": 856.0291167973786,
+        "baseline_mm": 60.0
+    },
+
+    "yolo": {
+        "_comment": "与主 pipeline 共用同一 YOLO 模型",
+        "model_path": "yolo_onnx/yolov8n.onnx",
+        "conf_threshold": 0.5,
+        "iou_threshold": 0.45,
+        "intra_op_threads": 4
+    },
+
+    "extractor": {
+        "_comment": "method: sift | orb (特征匹配模板, 真实实现) | network (关键点网络, 占位)",
+        "method": "sift",
+        "template_path": "data/big/img_1.png",
+        "template_real_width_mm": 500.0,
+        "template_real_height_mm": 500.0,
+        "scale": 1.0,
+        "nfeatures": 2000,
+        "ratio_threshold": 0.75,
+        "min_pts": 4,
+
+        "model_path": "",
+        "num_keypoints": 0
+    },
+
+    "output": {
+        "visualize": true,
+        "log_file": true
+    }
+}

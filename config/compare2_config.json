@@ -1,0 +1,37 @@
+{
+    "// 说明": "对比 pipeline 2 (pose_compare2) 配置 —— 仅 input.directory_path 必填; 特征提取+PnP = AprilTag Python sidecar (占位标签参数, 实物确定后修改)",
+
+    "input": {
+        "directory_path": "data/big"
+    },
+
+    "camera": {
+        "fx": 1370.1815888598676,
+        "fy": 1373.0103114278359,
+        "cx": 516.4761400598917,
+        "cy": 856.0291167973786,
+        "baseline_mm": 60.0
+    },
+
+    "yolo": {
+        "_comment": "与主 pipeline / pose_compare 共用同一 YOLO 模型",
+        "model_path": "yolo_onnx/yolov8n.onnx",
+        "conf_threshold": 0.5,
+        "iou_threshold": 0.45,
+        "intra_op_threads": 4
+    },
+
+    "extractor": {
+        "_comment": "AprilTag (Python sidecar, pupil-apriltags 自带位姿): class0/class1 各用独立标签模板; tag_size_mm 为黑边外沿物理边长, 占位值待替换",
+        "python_cmd": "python3",
+        "worker_script": "scripts/apriltag_worker.py",
+        "nthreads": 4,
+        "class0": { "family": "tag36h11", "tag_ids": [0], "tag_size_mm": 200.0 },
+        "class1": { "family": "tag36h11", "tag_ids": [1], "tag_size_mm": 50.0 }
+    },
+
+    "output": {
+        "visualize": true,
+        "log_file": true
+    }
+}

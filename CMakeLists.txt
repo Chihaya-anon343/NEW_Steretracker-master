@@ -116,35 +116,101 @@ target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime)
 target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 
 # ============================================================================
+# Executable: pose_compare —— 对比 pipeline (YOLO框 → SIFT特征匹配 → PnP)
+#
+# 不依赖 tracker 体系 (无策略链/退化链):
+#   main_compare.cpp + SiftKeypointExtractor + TemplateMatcher + MonoPnPSolver
+#   (+ NetworkKeypointExtractor 占位, method="network" 时启用)
+# ============================================================================
+
+add_executable(pose_compare
+    main_compare.cpp
+    src/feature/SiftKeypointExtractor.cpp
+    src/feature/NetworkKeypointExtractor.cpp
+    src/matching/TemplateMatcher.cpp
+    src/pose/MonoPnPSolver.cpp
+)
+
+target_include_directories(pose_compare PRIVATE
+    ${PROJECT_INCLUDE_DIR}
+)
+
+if(OpenCV_FOUND)
+    target_include_directories(pose_compare PRIVATE ${OpenCV_INCLUDE_DIRS})
+endif()
+target_link_libraries(pose_compare PRIVATE ${OpenCV_LIBS})
+
+if(TARGET Eigen3::Eigen)
+    target_link_libraries(pose_compare PRIVATE Eigen3::Eigen)
+else()
+    target_include_directories(pose_compare PRIVATE ${EIGEN3_INCLUDE_DIR})
+endif()
+
+target_link_libraries(pose_compare PRIVATE onnxruntime Threads::Threads)
+
+# ============================================================================
+# Executable: pose_compare2 —— 对比 pipeline 2 (YOLO框 → 特征提取+PnP 占位)
+#
+# 输入输出与 pose_compare 一致; 特征提取+PnP = AprilTag Python sidecar
+# (scripts/apriltag_worker.py, pupil-apriltags, 需容器内 pip 安装)
+# ============================================================================
+
+add_executable(pose_compare2
+    main_compare2.cpp
+    src/feature/AprilTagExtractor.cpp
+)
+
+target_include_directories(pose_compare2 PRIVATE
+    ${PROJECT_INCLUDE_DIR}
+)
+
+if(OpenCV_FOUND)
+    target_include_directories(pose_compare2 PRIVATE ${OpenCV_INCLUDE_DIRS})
+endif()
+target_link_libraries(pose_compare2 PRIVATE ${OpenCV_LIBS})
+
+if(TARGET Eigen3::Eigen)
+    target_link_libraries(pose_compare2 PRIVATE Eigen3::Eigen)
+else()
+    target_include_directories(pose_compare2 PRIVATE ${EIGEN3_INCLUDE_DIR})
+endif()
+
+target_link_libraries(pose_compare2 PRIVATE onnxruntime Threads::Threads)
+
+# ============================================================================
 # Compiler Options
 # ============================================================================
 
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        /W4
-        /EHsc
-        /O2
-        /bigobj
-    )
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-        _CRT_SECURE_NO_WARNINGS
-        NOMINMAX
-    )
+    foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2)
+        target_compile_options(${tgt} PRIVATE
+            /W4
+            /EHsc
+            /O2
+            /bigobj
+        )
+        target_compile_definitions(${tgt} PRIVATE
+            _CRT_SECURE_NO_WARNINGS
+            NOMINMAX
+        )
+    endforeach()
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-        -O3
-        -march=native
-    )
+    foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2)
+        target_compile_options(${tgt} PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -O3
+            -march=native
+        )
+    endforeach()
 endif()
 
 # ============================================================================
 # Install
 # ============================================================================
 
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} pose_compare pose_compare2 DESTINATION bin)
 
 # ============================================================================
 # Tests (可选, 默认关闭)
