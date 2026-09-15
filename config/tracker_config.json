@@ -1,5 +1,5 @@
 {
-  "mode": "debug",
+  "mode": "normal",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {

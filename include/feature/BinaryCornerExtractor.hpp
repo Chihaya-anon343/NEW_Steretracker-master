@@ -12,7 +12,7 @@
  *   3. 填充空洞
  *   4. 形态学平滑（闭运算 → 开运算）
  *   5. 模板匹配（基于 IoU，24 个模板 0°~345°）
- *   6. 旋转回正（如果匹配到模板）
+ *   6. 旋转回正（旋转 Otsu 二值图 + 1px 隔离带 + 框外白填充，再选域）
  *   7. 提取最大轮廓
  *   8. approxPolyDP 二分搜索 → N 个角点
  *   9. 将角点旋转回原坐标系（如果曾旋转）
@@ -152,11 +152,9 @@ private:
 
     /// 从二值图像 (0/255) 提取角点的核心函数。
     /// @param binary_img      Otsu 二值化后的 ROI
-    /// @param gray_roi        原始灰度 ROI（用于先旋转再二值化，提高精度）
     /// @param out_corners     输出的角点（ROI 局部坐标）
     /// @param preset_template 可选：预设模板，非空时跳过 findBestMatch() 直接使用
     Status extractFromBinary(const cv::Mat& binary_img,
-                              const cv::Mat& gray_roi,
                               std::vector<cv::Point2f>& out_corners,
                               const TemplateData* preset_template = nullptr);
 

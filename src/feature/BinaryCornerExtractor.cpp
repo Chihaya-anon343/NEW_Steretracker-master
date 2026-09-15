@@ -15,56 +15,7 @@ namespace gpnp {
 
 namespace {
 
-// ============================================================================
-// rotate_and_clean_image —— 自由函数（非成员，与旧版保持一致）
-//
-// 将二值图像旋转 `angle` 度，然后进行形态学开+闭+阈值操作
-// 以清理旋转造成的边缘模糊。
-// 返回 (旋转+清理后的图像, 原始中心点, 旋转后中心点)。
-// ============================================================================
 constexpr double CPSAGL = 20.0;  // 角点重排序角度容差
-
-std::tuple<cv::Mat, cv::Point2f, cv::Point2f>
-rotate_and_clean_image(const cv::Mat& binary_image, double angle) {
-    int h = binary_image.rows;
-    int w = binary_image.cols;
-
-    // 计算旋转后的图像尺寸
-    double rad = std::abs(angle) * CV_PI / 180.0;
-    double cos_a = std::abs(std::cos(rad));
-    double sin_a = std::abs(std::sin(rad));
-    int new_w = static_cast<int>(h * sin_a + w * cos_a);
-    int new_h = static_cast<int>(h * cos_a + w * sin_a);
-
-    // 绕图像中心构建旋转矩阵
-    cv::Point2f center(w / 2.0f, h / 2.0f);
-    cv::Mat M = cv::getRotationMatrix2D(center, -angle, 1.0);
-
-    // 调整平移量使旋转后的图像居中
-    M.at<double>(0, 2) += (new_w - w) / 2.0;
-    M.at<double>(1, 2) += (new_h - h) / 2.0;
-
-    cv::Mat rotated;
-    cv::warpAffine(binary_image, rotated, M, cv::Size(new_w, new_h),
-                   cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-
-    cv::Point2f rotation_center_original = center;
-    cv::Point2f rotation_center_rotated(new_w / 2.0f, new_h / 2.0f);
-
-    // 清理旋转造成的模糊边缘
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-
-    cv::Mat opened;
-    cv::morphologyEx(rotated, opened, cv::MORPH_OPEN, kernel, cv::Point(-1, -1), 1);
-
-    cv::Mat closed;
-    cv::morphologyEx(opened, closed, cv::MORPH_CLOSE, kernel, cv::Point(-1, -1), 1);
-
-    cv::Mat cleaned;
-    cv::threshold(closed, cleaned, 50, 255, cv::THRESH_BINARY);
-
-    return {cleaned, rotation_center_original, rotation_center_rotated};
-}
 
 } // anonymous namespace
 
@@ -206,7 +157,7 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
 
     // ---- 第2步: 从左图提取角点 ----
     std::vector<cv::Point2f> left_corners;
-    Status s_left = extractFromBinary(left_binary, left_gray, left_corners);
+    Status s_left = extractFromBinary(left_binary, left_corners);
     if (s_left != Status::Success || left_corners.empty()) {
         std::cerr << "[BinaryCorner] Left extraction failed (status="
                   << static_cast<int>(s_left) << ")" << std::endl;
@@ -222,7 +173,7 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
     if (has_right) {
         // 右目复用左目的模板，避免独立 findBestMatch 导致左右匹配不同模板
         stage_prefix_ = "R|";
-        Status s_right = extractFromBinary(right_binary, right_gray, right_corners,
+        Status s_right = extractFromBinary(right_binary, right_corners,
                                            matched_tmpl);
         if (s_right != Status::Success || right_corners.empty()) {
             std::cerr << "[BinaryCorner] Right extraction failed (status="
@@ -335,7 +286,6 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
 // ============================================================================
 
 Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
-                                                 const cv::Mat& gray_roi,
                                                  std::vector<cv::Point2f>& out_corners,
                                                  const TemplateData* preset_template) {
     process_log_.clear();
@@ -406,9 +356,13 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
         }
     }
 
-    // ---- Step 4.5: 旋转回正 ----
-    // 优先用灰度图旋转(INTER_CUBIC)再Otsu → 边缘平滑无锯齿
-    // 无灰度图时回退到二值图旋转(INTER_NEAREST) + 形态学清理
+    // ---- Step 4.5: 旋转回正 (Otsu 前置 + 二值空间白填充) ----
+    // 旋转 L1 的原始 Otsu 二值图 (与 L2 选域同源同阈值), 旋转框外填充白色。
+    // 填充不参与任何 Otsu 直方图, 不再发生灰度填充污染阈值导致的选域翻转。
+    // 填充必须与图内内容隔离: 紧框下 ROI 边界处是白色靶板像素, 若与白色填充
+    // 直接相邻则粘连成一个高贴边覆盖的巨型边界域, 靶板随填充一起被剔除
+    // (class1 误锁复发)。故先加 1px 黑色隔离带再旋转填充; 填充域全程贴满
+    // 画幅边界, 被 keepLargestRegion 的高覆盖守卫稳定剔除。
     cv::Mat cleaned;
     cv::Point2f center_orig, center_rot;
     double rot_angle = 0.0;
@@ -417,49 +371,39 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
     if (last_matched_template_ != nullptr) {
         rot_angle = static_cast<double>(last_matched_template_->angle);
 
-        if (!gray_roi.empty()) {
-            // ★ 新方法：旋转灰度图 → Otsu → 干净的正位二值图
-            int h = gray_roi.rows, w = gray_roi.cols;
-            double rad = std::abs(rot_angle) * CV_PI / 180.0;
-            double cos_a = std::abs(std::cos(rad));
-            double sin_a = std::abs(std::sin(rad));
-            int new_w = static_cast<int>(h * sin_a + w * cos_a);
-            int new_h = static_cast<int>(h * cos_a + w * sin_a);
+        cv::Mat padded;
+        cv::copyMakeBorder(work_img, padded, 1, 1, 1, 1, cv::BORDER_CONSTANT, cv::Scalar(0));
 
-            center_orig = cv::Point2f(w / 2.0f, h / 2.0f);
-            cv::Mat M = cv::getRotationMatrix2D(center_orig, -rot_angle, 1.0);
-            M.at<double>(0, 2) += (new_w - w) / 2.0;
-            M.at<double>(1, 2) += (new_h - h) / 2.0;
-            center_rot = cv::Point2f(new_w / 2.0f, new_h / 2.0f);
+        int h = padded.rows, w = padded.cols;
+        double rad = std::abs(rot_angle) * CV_PI / 180.0;
+        double cos_a = std::abs(std::cos(rad));
+        double sin_a = std::abs(std::sin(rad));
+        int new_w = static_cast<int>(h * sin_a + w * cos_a);
+        int new_h = static_cast<int>(h * cos_a + w * sin_a);
 
-            cv::Mat gray_rotated;
-            cv::warpAffine(gray_roi, gray_rotated, M, cv::Size(new_w, new_h),
-                           cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0));
-            // Otsu 自动阈值 × 系数（>1 提高阈值，减少背景被误判为白色）
-            // ratio==1 时首遍 Otsu 输出即最终结果, 跳过第二遍全图扫描
-            double otsu_val = cv::threshold(gray_rotated, cleaned, 0, 255,
-                                             cv::THRESH_BINARY + cv::THRESH_OTSU);
-            if (std::abs(config_.otsu_ratio - 1.0) > 1e-9) {
-                cv::threshold(gray_rotated, cleaned, otsu_val * config_.otsu_ratio,
-                              255, cv::THRESH_BINARY);
-            }
-            snap("5.rot-otsu(" + std::to_string(static_cast<int>(rot_angle)) + "deg)", cleaned);
-            // 过滤：从中心蔓延找目标 → 填洞 → 平滑
-            cleaned = keepRegionFromCenter(cleaned);
-            snap("6.from-center", cleaned);
-            cleaned = fillHoles(cleaned);
-            cleaned = smoothBoundary(cleaned);
-            snap("7.rot-cleaned", cleaned);
-            did_rotate = true;
-        } else {
-            // 回退：二值图旋转 + 形态学清理（旧方法）
-            auto [cl, co, cr] = rotate_and_clean_image(smoothed, rot_angle);
-            cleaned = std::move(cl);
-            center_orig = co;
-            center_rot = cr;
-            snap("5.rot-binary-fb", cleaned);
-            did_rotate = true;
-        }
+        // center_orig 取原始图中心 (padded 中心 - 1px pad): 第6.5步逆旋转
+        // 公式无需感知 pad, 角点直接落回原始 ROI 坐标
+        center_orig = cv::Point2f((w - 2) / 2.0f, (h - 2) / 2.0f);
+        cv::Mat M = cv::getRotationMatrix2D(cv::Point2f(w / 2.0f, h / 2.0f), -rot_angle, 1.0);
+        M.at<double>(0, 2) += (new_w - w) / 2.0;
+        M.at<double>(1, 2) += (new_h - h) / 2.0;
+        center_rot = cv::Point2f(new_w / 2.0f, new_h / 2.0f);
+
+        cv::Mat bin_rotated;
+        cv::warpAffine(padded, bin_rotated, M, cv::Size(new_w, new_h),
+                       cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(255));
+        snap("5.rot-binary-fill255(" + std::to_string(static_cast<int>(rot_angle)) + "deg)",
+             bin_rotated);
+
+        // 选域: keepLargestRegion 修复版 (触边面积占优 + 高贴边覆盖守卫)。
+        // 填充域贴满画幅边界被守卫剔除; 靶板/背景/class1 在填充内侧均为
+        // 独立内部域, 面积最大者 (靶板) 胜出。
+        cleaned = keepLargestRegion(bin_rotated);
+        snap("6.rot-largest", cleaned);
+        cleaned = fillHoles(cleaned);
+        cleaned = smoothBoundary(cleaned);
+        snap("7.rot-cleaned", cleaned);
+        did_rotate = true;
         if (debug_capture_) last_upright_binary_ = cleaned.clone();
     } else {
         cleaned = smoothed;
@@ -1311,7 +1255,7 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
 
     // 从二值图像提取角点
     std::vector<cv::Point2f> corners;
-    Status s = extractFromBinary(binary, gray, corners);
+    Status s = extractFromBinary(binary, corners);
     if (s != Status::Success || corners.empty()) {
         std::cerr << "[BinaryCorner::extractMono] extraction failed (status="
                   << static_cast<int>(s) << ")" << std::endl;
