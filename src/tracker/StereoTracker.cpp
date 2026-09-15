@@ -1081,6 +1081,47 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     auto t_dual_start = std::chrono::steady_clock::now();
     double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算
 
+    // 链路追踪: 逐级记录 Tier1/2/3 的结果与降级原因, 帧末输出 Route 汇总
+    std::string route;
+    auto routeStep = [&route](const std::string& s) {
+        if (!route.empty()) route += " -> ";
+        route += s;
+    };
+    std::string t1_reason, t2_reason;
+
+    // 消融开关: true = 屏蔽 Tier2(BC-only)/Tier3(class1 链)/巨型 primary 短路,
+    // 仅保留原始 Dual-ROI (Tier1: BC+AK 提取 + 合并解算)。恢复退化链改回 false。
+    const bool kDualRoiTier1Only = true;
+
+    // BC 二值化过程条图 (成功/失败路径共用 —— 失败帧也要可视化, 排查主证据)
+    auto saveBcProcessPanel = [&]() {
+        const auto& stages = binary_extractor_->lastBinaryProcess();
+        if (stages.empty()) return;
+        const int panel_h = 240;   // 每面板统一高度, 宽度按纵横比
+        std::vector<cv::Mat> panels;
+        panels.reserve(stages.size());
+        for (const auto& kv : stages) {
+            cv::Mat m;
+            if (kv.second.channels() == 1)
+                cv::cvtColor(kv.second, m, cv::COLOR_GRAY2BGR);
+            else
+                m = kv.second.clone();
+            double s = static_cast<double>(panel_h) / m.rows;
+            cv::resize(m, m, cv::Size(), s, s, cv::INTER_NEAREST);
+            cv::copyMakeBorder(m, m, 22, 0, 0, 0, cv::BORDER_CONSTANT,
+                               cv::Scalar(40, 40, 40));
+            cv::putText(m, kv.first, cv::Point(4, 16),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.45,
+                        cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
+            panels.push_back(m);
+        }
+        cv::Mat strip;
+        cv::hconcat(panels, strip);
+        utils::AsyncImageSaver::write(
+            output_dir_ + "/dual_roi_bc_process_f" + std::to_string(current_frame_) + ".png",
+            strip);
+    };
+
     // 0. Ensure template preprocessing is done
     prepareDualBcTemplate();
 
@@ -1137,6 +1178,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     // primary_span_ratio 时目标外角点已出视野, BC 角点必败 (Tier1/2 的 PnP 必失败)
     // 且全图级 BC 提取极耗时 → 跳过 Tier1/2 直接走 9c class1 链。Tier3 关闭时保持旧路径。
     const bool primary_spans_frame =
+        !kDualRoiTier1Only &&   // 消融: 关闭短路, 巨型 primary 也走 Tier1
         config_.dual_roi_primary_span_ratio > 0.0 &&
         config_.dual_roi_class1_fallback &&
         left_pri.width  >= left_img.cols * config_.dual_roi_primary_span_ratio &&
@@ -1147,6 +1189,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                   << left_pri.width << "x" << left_pri.height << " vs "
                   << left_img.cols << "x" << left_img.rows
                   << "), skip Tier1/2 -> class1 chain" << "\n";
+    if (primary_spans_frame)
+        routeStep("SHORT-CIRCUIT(primary spans frame, skip Tier1/2)");
 
     // 2. Crop images
     cv::Mat left_c0_gray, right_c0_gray, left_c0_color, right_c0_color;
@@ -1401,6 +1445,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         // 合并点数不足: 跳过合并解算, 由下方 BC-only / class1 退化链兜底
         if (verbose_console_)
             std::cout << "  [DualRoi] Skip merged PnP (" << total_use << " pts < 4)" << "\n";
+        t1_reason = "pts<4";
     } else if (config_.use_initial_pnp) {
         // 每帧始终运行 InitialPnP（几何一致初值），避免 GPnP HYBRID 路径复用上帧缓存旋转
         MatchResult match_res;
@@ -1438,8 +1483,14 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
         !motionGatePass(pose, seed, nullptr, false, "DualRoi-T1", true)) {
         if (verbose_console_)
             std::cout << "  [DualRoi] Tier1 pose rejected by motion gate" << "\n";
+        t1_reason = "motion-gate";
         pose = PoseEstimate{};
     }
+    if (t1_reason.empty() && !pose.success) t1_reason = "pnp";
+    routeStep(pose.success
+        ? "Tier1(merged BC=" + std::to_string(bc_total) + "+AK=" + std::to_string(m_ak_match) + ") OK"
+        : "Tier1(merged BC=" + std::to_string(bc_total) + "+AK=" + std::to_string(m_ak_match)
+          + ") FAIL[" + t1_reason + "]");
 
     auto t_pnp_end = std::chrono::high_resolution_clock::now();
     result.timing["gpnp"] = std::chrono::duration<double, std::milli>(t_pnp_end - t_pnp_start).count();
@@ -1448,7 +1499,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     // 9b. 回退：合并解算失败 → 仅用外层 BC 角点重解（复用 BC 策略的 PnP 链）。
     // BC 点位于合并数组前缀 [0, bc_total)，与 dual_bc_tmpl_pts3d_ 一一对应，
     // 切片即得 BC-only 子集；AK 占位右点（视差=0 毒化 GPnP）随之被剔除。
-    if (!pose.success && bc_total >= 4 &&
+    if (!kDualRoiTier1Only && !pose.success && bc_total >= 4 &&
         static_cast<int>(dual_bc_tmpl_pts3d_.size()) >= bc_total) {
         if (verbose_console_)
             std::cout << "  [DualRoi] Merged solve failed, falling back to BC-only ("
@@ -1486,6 +1537,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                 if (verbose_console_)
                     std::cout << "  [DualRoi] Tier2 BC-only pose rejected by motion gate"
                               << "\n";
+                t2_reason = "motion-gate";
                 pose = PoseEstimate{};
             }
         }
@@ -1494,7 +1546,15 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             total_use = bc_total;
             merged_pts3d.resize(bc_total);   // 前缀即 BC 3D，保持可视化面板索引一致
             result = std::move(bc_try);
+            routeStep("Tier2(BC-only) OK");
+        } else {
+            if (t2_reason.empty()) t2_reason = "pnp";
+            routeStep("Tier2(BC-only) FAIL[" + t2_reason + "]");
         }
+    } else if (!pose.success && !kDualRoiTier1Only) {
+        routeStep("Tier2 SKIP[BC pts=" + std::to_string(bc_total) + " <4]");
+    } else if (!pose.success) {
+        routeStep("Tier2 SKIP[ablation]");
     }
 
     } // !primary_spans_frame（短路时 pose 保持失败, 9c 直接成为唯一路径）
@@ -1503,16 +1563,17 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     //     (class1 3D 尺寸, State 5 同机制; 冷启动, 不依赖板系位姿缓存)
     bool c1_fallback_used = false;
     std::string c1_strategy;
-    if (!pose.success && config_.dual_roi_class1_fallback) {
+    if (!kDualRoiTier1Only && !pose.success && config_.dual_roi_class1_fallback) {
         if (verbose_console_)
             std::cout << "  [DualRoi] BC-only fallback failed, trying class1 chain (BC→TT)"
                       << "\n";
         PipelineResult c1_result;
         std::vector<Eigen::Vector3d> c1_pts3d;
+        std::string c1_legs;
         auto [ok, c1_pose] = runDualRoiClass1Chain(
             left_c1_gray, right_c1_gray, left_c1_color, right_c1_color,
             left_sec, right_sec, is_first, c1_result, c1_pts3d, c1_strategy,
-            extract_ms, pnp_ms);
+            extract_ms, pnp_ms, &c1_legs);
         if (ok) {
             pose = c1_pose;
             c1_result.left_color = left_color_orig;
@@ -1522,7 +1583,14 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             total_use = static_cast<int>(result.pts_left_match.size());
             bc_total = 0;   // 可视化分色: 链胜出点全部来自 class1
             c1_fallback_used = true;
+            routeStep("Tier3(class1 " + c1_legs + ") OK");
+        } else {
+            routeStep("Tier3(class1) FAIL[" + (c1_legs.empty() ? "no leg" : c1_legs) + "]");
         }
+    } else if (!pose.success && !kDualRoiTier1Only) {
+        routeStep("Tier3 SKIP[class1_fallback disabled]");
+    } else if (!pose.success) {
+        routeStep("Tier3 SKIP[ablation]");
     }
 
     if (pose.success) {
@@ -1530,6 +1598,10 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     }
     result.strategy_name = c1_fallback_used ? c1_strategy
                          : (bc_fallback_used ? "DualRoi_BC" : "DualRoi");
+
+    // BC 二值化过程面板: 不依赖位姿成功, 失败帧也输出 (排查主证据)
+    if (visualize && visualize_detailed_ && !output_dir_.empty())
+        saveBcProcessPanel();
 
     // ---- Visualization (dual-ROI) ----
     if (visualize && pose.success) {
@@ -1725,6 +1797,10 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     result.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t_dual_start).count();
 
+    routeStep(pose.success ? "FRAME-OK" : "FRAME-FAIL");
+    if (verbose_console_)
+        std::cout << "[DualRoi] Route: " << route << "\n";
+
     if (verbose_console_)
         std::cout << "[DualRoi] Frame done: n_pts=" << total_use
                   << "  GPNP=" << (pose.success ? "OK" : "FAIL")
@@ -1749,10 +1825,20 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
         std::string& out_strategy,
-        double& extract_ms_acc, double& pnp_ms_acc) {
+        double& extract_ms_acc, double& pnp_ms_acc,
+        std::string* out_route_detail) {
     out_strategy.clear();
     out_pts3d.clear();
+    if (out_route_detail) out_route_detail->clear();
     if (left_gray.empty() || right_gray.empty()) return {false, PoseEstimate{}};
+
+    // 链内腿级明细: 失败时累计 "BC:原因; TT:原因", 成功时记录胜出腿 ("BC"/"TT")
+    std::string fail_detail;
+    auto legFail = [&](const char* leg, const char* reason) {
+        if (!fail_detail.empty()) fail_detail += "; ";
+        fail_detail += std::string(leg) + ":" + reason;
+        if (out_route_detail) *out_route_detail = fail_detail;
+    };
 
     // BC/TT 切到 class1 3D 尺寸; RAII 恢复, 避免 Dual-ROI 早退路径残留提取器状态
     struct Class1ScaleGuard {
@@ -1783,6 +1869,7 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
             if (verbose_console_)
                 std::cout << "  [DualRoi] class1 " << ext->name()
                           << " extraction failed" << "\n";
+            legFail(is_bc ? "BC" : "TT", "extract");
             continue;
         }
 
@@ -1796,6 +1883,7 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
             if (verbose_console_)
                 std::cout << "  [DualRoi] class1 " << ext->name()
                           << " PnP failed" << "\n";
+            legFail(is_bc ? "BC" : "TT", "pnp");
             continue;
         }
 
@@ -1804,6 +1892,7 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
         out_result = std::move(r);
         out_pts3d = pts3d;   // 与 out_result.pts_left_match 前缀 1:1 (BC/TT 规范序)
         out_strategy = is_bc ? "DualRoi_C1BC" : "DualRoi_C1TT";
+        if (out_route_detail) *out_route_detail = is_bc ? "BC" : "TT";
         return {ok, c1_pose};
     }
     return {false, PoseEstimate{}};

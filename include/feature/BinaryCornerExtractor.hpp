@@ -107,6 +107,14 @@ public:
     /// 返回第5步提取的最大轮廓（approxPolyDP 的直接输入，cleaned 坐标系）
     const std::vector<cv::Point>& lastContour() const { return last_contour_; }
 
+    /// 返回最近一次 extract() 的二值化全阶段快照 (label → 图像)。
+    /// 阶段: otsu → largest → filled → smoothed → (rot-otsu → from-center →
+    /// rot-cleaned | rot-binary 回退); 双目时左/右前缀 "L|"/"R|"，单目 "L|"。
+    /// debug_capture_=false 时为空。注意: 每次 extract()/extractMono() 覆盖。
+    const std::vector<std::pair<std::string, cv::Mat>>& lastBinaryProcess() const {
+        return last_binary_process_;
+    }
+
     // ---- 诊断信息 ----
 
     const std::vector<std::pair<std::string, std::string>>& processLog() const {
@@ -202,6 +210,10 @@ private:
     cv::Mat last_largest_region_;    // 第1步最大连通域筛选结果
     cv::Mat last_contour_binary_;    // 第5步轮廓提取时的二值图（角点输入）
     std::vector<cv::Point> last_contour_;  // approxPolyDP 的输入轮廓
+
+    // 二值化全阶段快照 (label → 图像), 供 Dual-ROI 可视化拼条图
+    std::vector<std::pair<std::string, cv::Mat>> last_binary_process_;
+    std::string stage_prefix_;       // 双目 "L|"/"R|" 左右目标签前缀
 };
 
 } // namespace gpnp

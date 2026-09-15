@@ -1,5 +1,5 @@
 {
-  "mode": "normal",
+  "mode": "debug",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
@@ -9,7 +9,7 @@
       "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "tests/data/approach_seq",
+      "directory_path": "data/image_00",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "tests/data/approach_seq/frame_000102.png",
-    "right": "tests/data/approach_seq/frame_000102.png"
+    "left": "data/image_00/frame_001221.png",
+    "right": "data/image_00/frame_001221.png"
   },
 
   "manual_roi": {
@@ -117,8 +117,8 @@
 
     "akaze_gpnp": {
       "template_path": "data/big/img_1.png",
-      "template_real_width_mm": 133,
-      "template_real_height_mm": 130.9975,
+      "template_real_width_mm": 400,
+      "template_real_height_mm": 400,
       "scale": 1,
       "gpnp_min_pts": 4,
       "use_initial_pnp": true
@@ -131,8 +131,8 @@
       "corner_scale": 3.0,
       "target_width": 100,
       "target_height": 100,
-      "pixel_to_meter_scale_class0": 0.00174,
-      "pixel_to_meter_scale_class1": 0.00014,
+      "pixel_to_meter_scale_class0": 0.0059,
+      "pixel_to_meter_scale_class1": 0.00046,
       "roi_pad_pixels": 3,
       "otsu_ratio": 1
     },
@@ -142,15 +142,15 @@
       "target_width": 50,
       "target_height": 50,
       "scale_factor": 4,
-      "square_size_m_class0": 0.087,
-      "square_size_m_class1": 0.007,
+      "square_size_m_class0": 0.295,
+      "square_size_m_class1": 0.017,
       "roi_pad_pixels": 5
     },
 
     "dual_roi": {
       "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭)",
-      "secondary_expand_pixels": 50,
-      "class1_fallback_enabled": true,
+      "secondary_expand_pixels": 3,
+      "class1_fallback_enabled": false,
       "primary_span_ratio": 0.98,
       "akaze": {
         "scale": 1

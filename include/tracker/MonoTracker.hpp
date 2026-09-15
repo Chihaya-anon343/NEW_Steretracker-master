@@ -51,7 +51,8 @@ private:
         std::vector<Eigen::Vector3d>& out_pts3d,
         std::string& out_strategy,
         double& extract_ms_acc, double& pnp_ms_acc,
-        const PoseSeed* seed = nullptr);
+        const PoseSeed* seed = nullptr,
+        std::string* out_route_detail = nullptr);
 
     MonoPnPSolver mono_pnp_;
 

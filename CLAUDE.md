@@ -1564,7 +1564,9 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 文件 | 行数 | 关键内容 |
 |------|------|---------|
 | `main.cpp` | ~272 | 完整程序入口：配置解析、模式分发、帧循环 |
-| `CMakeLists.txt` | — | 构建配置，依赖 OpenCV/Eigen/ONNX Runtime |
+| `main_compare.cpp` | — | 对比 pipeline 1 入口 (目标 pose_compare)：YOLO框 → SIFT 特征匹配 → MonoPnP |
+| `main_compare2.cpp` | — | 对比 pipeline 2 入口 (目标 pose_compare2)：YOLO框 → AprilTag sidecar 检测+位姿 (详见 §10.15) |
+| `CMakeLists.txt` | — | 构建配置 (可执行目标 GPNP / pose_compare / pose_compare2)，依赖 OpenCV/Eigen/ONNX Runtime |
 
 ### 10.2 核心类型与配置
 
@@ -1595,6 +1597,8 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | `include/feature/TinyTargetExtractor.hpp` + `.cpp` | extract(), extractMono(), extract4Corners(), matchTemplate(), selectBestComponent(), refineCorners(), orderPoints() |
 | `include/feature/OpticalFlowTracker.hpp` + `.cpp` | track() — LK光流+FB校验 |
 | `include/feature/MadDisparityFilter.hpp` + `.cpp` | filter() — MAD离群值剔除 |
+| `include/feature/AprilTagExtractor.hpp` + `.cpp` | **AprilTag Python sidecar 客户端** (pose_compare2 专用): fork/execvp+pipe 子进程管理、握手、请求/回包协议、位姿有效性校验 (见 §10.15) |
+| `include/feature/SiftKeypointExtractor.hpp` + `.cpp` | SIFT 特征提取 (pose_compare 专用) |
 
 ### 10.5 位姿解算
 
@@ -1666,6 +1670,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 文件 | 用途 |
 |------|------|
 | `config/tracker_config.json` | 默认配置文件 |
+| `config/compare2_config.json` | pose_compare2 配置 (仅 input.directory_path 必填; extractor 节 AprilTag 模板为占位值, 见 §10.15) |
 | `yolo_onnx/yolov8n.onnx` | YOLO ONNX 模型 (原始 YOLOv8 导出, 2 类; 旧 `best.onnx` 已弃用) |
 | `data/` | 测试图像与模板数据 |
 | `sysml/` | SysML 需求模型 (sysrequire.puml, softwarerequire.puml, flow.puml) |
@@ -1690,6 +1695,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 文件 | 关键内容 |
 |------|---------|
 | `scripts/camera_capture.py` | 摄像头预览/抓拍/连拍/流式导出 |
+| `scripts/apriltag_worker.py` | **AprilTag Python sidecar worker** (pose_compare2): pupil-apriltags 检测+位姿解算, 管道协议见 §10.15; 容器内需 `pip install pupil-apriltags` (st_build 已装) |
 | `scripts/calibrate_camera.py` | **相机内参标定 (棋盘格)**: 读 `data/calib/` 多张图 → `calibrateCamera` → 打印 K/dist + 各图 RMS, 输出 `scripts/camera_intrinsics.json` (含 board_corners/square_size_mm 规格校验字段)。硬编码 7格x10格 → 内角点 9x6, 单格 18mm; **objp 点序必须 `np.mgrid[0:cols, 0:rows].T`** (cols 在前, 与 findChessboardCorners 行优先展开对应) |
 | `scripts/solve_chessboard_pose.py` | **棋盘格位姿解算 (PnP, 批量)**: 遍历 `IMAGE_DIR` 下所有图片 (自动跳过 `*_pose.png`), 每张 `findChessboardCorners` → `solvePnP(IPPE)`, 平移向量 T (mm) 双描边写在 `*_pose.png` 左上角 (角点 + 坐标轴叠加), 终端输出各图 RMS/T/|T| + 汇总。内参优先读 `camera_intrinsics.json`, 缺失时用硬编码兜底值。⚠️ T 原点 = **第一个检测到的内角点** (非棋盘外角, 内缩一格); 坐标系 Z 前/X 右/Y 下, 单位 mm |
 | `scripts/annotate_points.py` | **交互式特征点标注**: 在目标图上点 2×N 个点 (前 N=class0 整体, 后 N=class1 中心), 输出 `Corner_N: X, Y` txt (与 `readCorners()` 兼容) |
@@ -1699,6 +1705,53 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 > **合成数据核心几何**: 目标为平面贴图, 其上所有点共享单应 `H = K·[r1 r2 t]·T_center` (针孔内参 `f=FOCAL_LEN=1000`, `R=Rz(yaw)·Rx(pitch)·Ry(roll)` (yaw 0-360° 全覆盖, pitch/roll 默认 ±10°), `tz=f·short/S` 控制尺度, 右图 `H_right=T_disp·H_left` 产生视差); 特征点 = `project(H, pts)`, 故目标缩放/旋转/平移时特征点**同步变化**。任意位置不截断由"目标 4 角投影 AABB + 右图视差并集落在画布内"的可行中心区间保证。
 > **特征点 txt 格式**: `#` 表头 + `Corner_N: x.xx, y.yy` (画布像素坐标), 与 `PoseUtils::readCorners()` (`src/utils/PoseUtils.cpp:176`) 正则 `Corner_\d+:\s*([-\d.]+),\s*([-\d.]+)` 完全兼容。
 > **运行**: Windows 主机 Python 3.8 + OpenCV 直接运行, 无需 Docker。`python scripts/annotate_points.py` (标注) → `python scripts/generate_synthetic_dataset.py --out tests/data/fixtures_rich --n 50` (生成; 输出目录已被 .gitignore 忽略)。
+
+### 10.15 对比 pipeline: pose_compare2 (AprilTag Python sidecar, 2026-09)
+
+> **背景**: 对比方法 2 —— 靶标将**整体替换为 AprilTag**, YOLO 后续重训为直接检测 AprilTag 本身。现架构 (YOLO ROI → ROI 内 AprilTag 检测+位姿) 即最终形态; config 中 `family/tag_ids/tag_size_mm` 当前为**占位值**, 实物确定后只改 JSON。
+> **为什么走 Python sidecar**: Docker 环境无 C++ AprilTag 库, 检测与位姿解算放在常驻 Python 子进程 (`scripts/apriltag_worker.py`, pupil-apriltags) 中完成; pupil-apriltags 自带位姿解算, C++ 端不做 PnP。
+
+**组件与数据流**:
+
+```
+main_compare2.cpp:  图像目录 → YOLO (class0/class1)
+  → 主 ROI = class0 优先, 无则 class1; roi_class 决定标签模板
+  → AprilTagExtractor::detect(img(roi), roi_class, fx, fy, cx-roi.x, cy-roi.y)
+  → 位姿由 worker 解算, C++ 仅搬运 → 可视化/日志 (输出结构与 pose_compare 一致)
+```
+
+| 文件 | 内容 |
+|------|------|
+| `main_compare2.cpp` | 主 pipeline; 逐帧日志 `OK|APRILTAG_FAIL n_kp=4 roi=classN tag=idN ham=H t(mm)=[...]`; 可视化 = class0 蓝框/class1 绿框 + 角点十字 + Rodrigues+projectPoints 三维轴 (100mm) |
+| `include/feature/AprilTagExtractor.hpp` + `src/feature/AprilTagExtractor.cpp` | C++ 端: `fork`+`dup2`+`execvp`+`pipe` 启动 worker (stderr 继承); IO 失败本帧失败并停 worker, 下次 `detect()` 自动重启一次; `poll` 读回包超时 10s (`kReplyTimeoutMs`); 位姿有效性判据与 MonoPnPSolver 对齐 (有限 + t.z>0 + 10<\|t\|<100000 mm) |
+| `scripts/apriltag_worker.py` | Python worker: class0/class1 各一套 `Detector(family, nthreads)`; 白名单过滤后取**角点四边形面积最大**者 (平手取 hamming 低); `pose_t` (米) ×1000 → mm; 检测异常回 `{"ok":false,"error":...}` 不杀 worker |
+| `config/compare2_config.json` | extractor 节: `python_cmd/worker_script/nthreads` + `class0/class1{family,tag_ids,tag_size_mm}` |
+
+**管道协议** (C++ 与 worker 严格对应; stdout 只走协议, 日志一律 stderr):
+
+```
+握手: 配置 JSON 行 {"nthreads":4,"class0":{family,tag_ids,tag_size_mm},"class1":{...}}  →  "READY"
+请求: JSON 头行 {"class","w","h","fx","fy","cx","cy","img_len"} + img_len 字节 uint8 灰度 (行优先)
+回复: 一行 JSON {"ok":true,"n_tags":K,"tag":{id,hamming,family,corners[4],center,
+      decision_margin,R[3][3],t_mm[3],pose_err}}
+      无标签 → 省略 "tag" 键; 位姿缺失 → 省略 R/t_mm 对应键
+```
+
+**陷阱**:
+1. ⚠️ **回包任何位置不可含 JSON `null`** — C++ 端用 `cv::FileStorage(READ|MEMORY)` 解析, 遇 null 直接抛 Parsing error 崩溃 (2026-09-14 实证修复); 无值字段一律**省略键**, 不可回 null
+2. ⚠️ **cx/cy 必须是 ROI 局部主点** = 全图主点 − ROI 偏移 (worker 在 ROI 坐标系内解算)
+3. ⚠️ `tag_size_mm` = **黑边外沿**物理边长 (位姿尺度来源; apriltag-imgs 的 10×10 位图中黑边 = 8/10 边长, 白 quiet zone 占 2/10); pupil-apriltags 内部 tag_size 单位为**米**
+4. ⚠️ AprilTag 必须**完整落在 YOLO ROI 内** (含 quiet zone) 才能检出 — 依赖 "YOLO 重训后框住 AprilTag" 前提; 标签出框/被裁边 → `n_tags=0` → 该帧 APRILTAG_FAIL (优雅降级, 不崩溃)
+5. 角点顺序 (pupil-apriltags) = [左下, 右下, 右上, 左上] (图像坐标); 容器 Python 环境见 memory: pip + pupil-apriltags 1.0.4.post11 + numpy 已装于 st_build
+
+**构建/运行** (容器 st_build):
+
+```bash
+docker exec st_build bash -c "cd /work && cmake --build build-pose --target pose_compare2 -j4"
+docker exec st_build bash -c "cd /work && ./build-pose/pose_compare2 config/compare2_config.json"
+```
+
+输出: `output/compare2_<输入目录名>/compare2_f<N>.png` + `compare2_log.txt`; 汇总打印 YOLO/提取/PnP 平均用时 (PnP 一栏≈0 属预期, 位姿由 worker 解算)。E2E 冒烟已验证: 贴标帧位姿与理论值吻合 (t.z = f×tag_size/黑边px), 无标签帧优雅 APRILTAG_FAIL。
 
 ---
 
@@ -1766,3 +1819,12 @@ Phase 3 已完成（`CameraSource`）。扩展新视频源（如 USB 双目、RT
 3. 调优方向: `noise.cam_pos_noise/cam_rot_noise` (相机观测信任度), `noise.sigma_acc/sigma_gyro` (IMU 信任度), `noise.radar_alt_noise` (雷达), `init_std.*` (首帧协方差), `max_cam_gap_s` (视觉丢失容忍)
 4. 接入真实硬件 (Phase 2): 串口/CAN 源以"带时间戳样本流"模式产出, 直接喂 `feedImu/feedRadar` 即可, 对齐逻辑在适配层内
 5. ⚠️ 融合输出为主输出; 需保留原始 PnP 时看 verbose 日志 `PnP t(mm)=[...]`
+
+### B.6 更换 AprilTag 实物参数 (pose_compare2)
+
+实物标签确定后只改 `config/compare2_config.json` 的 `extractor.class0/class1`:
+- `family` — 标签家族 (tag36h11 / tag25h9 / ...)
+- `tag_ids` — ID 白名单 (空 = 接受任意 ID)
+- `tag_size_mm` — **黑边外沿**物理边长 (位姿尺度来源, 量错会整体缩放 t)
+
+YOLO 重训为检测 AprilTag 后无需改代码 (class 语义不变: 0 = 整体/主 ROI, 1 = 中心); worker 脚本与协议无参数需动。

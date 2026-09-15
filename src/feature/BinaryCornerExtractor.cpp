@@ -179,6 +179,10 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
 
     auto t_extract_start = std::chrono::steady_clock::now();
 
+    // 二值化阶段快照: 每次调用覆盖; 左/右目分别打 "L|"/"R|" 前缀
+    last_binary_process_.clear();
+    stage_prefix_ = "L|";
+
     // ---- 第1步: Otsu 二值化（两幅图像） ----
     cv::Mat left_binary, right_binary;
     cv::threshold(left_gray, left_binary, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
@@ -217,6 +221,7 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
     std::vector<cv::Point2f> right_corners;
     if (has_right) {
         // 右目复用左目的模板，避免独立 findBestMatch 导致左右匹配不同模板
+        stage_prefix_ = "R|";
         Status s_right = extractFromBinary(right_binary, right_gray, right_corners,
                                            matched_tmpl);
         if (s_right != Status::Success || right_corners.empty()) {
@@ -347,6 +352,12 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
     logStep("Input",
             "Size: " + std::to_string(binary_img.cols) + "x" + std::to_string(binary_img.rows));
 
+    // 二值化阶段快照 (label = stage_prefix_ + 阶段名, Dual-ROI 可视化拼条图用)
+    auto snap = [&](const std::string& key, const cv::Mat& mat) {
+        if (debug_capture_ && !mat.empty())
+            last_binary_process_.emplace_back(stage_prefix_ + key, mat.clone());
+    };
+
     // ---- 预处理：确保单通道二值图像 ----
     cv::Mat work_img;
     if (binary_img.channels() == 3) {
@@ -360,16 +371,20 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
         logStep("Preprocess", "Invalid channel count");
         return Status::InvalidSize;
     }
+    snap("1.otsu", work_img);
 
     // ---- 第1步: 保留最大连通域 ----
     cv::Mat largest_region = keepLargestRegion(work_img);
     if (debug_capture_) last_largest_region_ = largest_region.clone();
+    snap("2.largest", largest_region);
 
     // ---- 第2步: 填充孔洞 ----
     cv::Mat filled = fillHoles(largest_region);
+    snap("3.filled", filled);
 
     // ---- 第3步: 形态学平滑 ----
     cv::Mat smoothed = smoothBoundary(filled);
+    snap("4.smoothed", smoothed);
 
     // ---- 第4步: 模板匹配 ----
     if (preset_template != nullptr) {
@@ -428,10 +443,13 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
                 cv::threshold(gray_rotated, cleaned, otsu_val * config_.otsu_ratio,
                               255, cv::THRESH_BINARY);
             }
+            snap("5.rot-otsu(" + std::to_string(static_cast<int>(rot_angle)) + "deg)", cleaned);
             // 过滤：从中心蔓延找目标 → 填洞 → 平滑
             cleaned = keepRegionFromCenter(cleaned);
+            snap("6.from-center", cleaned);
             cleaned = fillHoles(cleaned);
             cleaned = smoothBoundary(cleaned);
+            snap("7.rot-cleaned", cleaned);
             did_rotate = true;
         } else {
             // 回退：二值图旋转 + 形态学清理（旧方法）
@@ -439,11 +457,13 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
             cleaned = std::move(cl);
             center_orig = co;
             center_rot = cr;
+            snap("5.rot-binary-fb", cleaned);
             did_rotate = true;
         }
         if (debug_capture_) last_upright_binary_ = cleaned.clone();
     } else {
         cleaned = smoothed;
+        snap("5.no-rot", cleaned);
         if (debug_capture_) last_upright_binary_ = cleaned.clone();
     }
     if (debug_capture_) last_contour_binary_ = cleaned.clone();
@@ -542,19 +562,59 @@ cv::Mat BinaryCornerExtractor::keepLargestRegion(const cv::Mat& binary_img) {
         return left <= 0 || top <= 0 || left + w >= img_w || top + h >= img_h;
     };
 
-    // 第1步: 遍历所有白色连通域（跳过背景标签0），排除接触四条边的区域
-    // 第2步: 在剩余内部区域中查找面积最大的标签
-    int best_label = -1;
+    // 第1步: 遍历所有白色连通域（跳过背景标签0），分别记录最大内部区域与最大触边区域
+    int best_label = -1;    // 最大内部(不触边)区域
     int best_area = 0;
+    int touch_label = -1;   // 最大触边区域
+    int touch_area = 0;
     int n_interior = 0;
     for (int i = 1; i < num_labels; ++i) {
-        if (touchesBorder(i)) continue;
-        ++n_interior;
         int area = stats.at<int>(i, cv::CC_STAT_AREA);
+        if (touchesBorder(i)) {
+            if (area > touch_area) {
+                touch_area = area;
+                touch_label = i;
+            }
+            continue;
+        }
+        ++n_interior;
         if (area > best_area) {
             best_area = area;
             best_label = i;
         }
+    }
+
+    // 贴边覆盖率: 区域在画幅四条边界上的像素占比。真目标紧框下仅在外扩画幅的
+    // 极值点少量贴边 (个位数像素); 背景/填充沿整条边界延伸 (占比高)。
+    auto borderCoverage = [&](int label) {
+        long cnt = 0;
+        for (int x = 0; x < img_w; ++x) {
+            if (labels.at<int>(0, x) == label) ++cnt;
+            if (labels.at<int>(img_h - 1, x) == label) ++cnt;
+        }
+        for (int y = 0; y < img_h; ++y) {
+            if (labels.at<int>(y, 0) == label) ++cnt;
+            if (labels.at<int>(y, img_w - 1) == label) ++cnt;
+        }
+        const long total = 2L * (img_w + img_h) - 4;
+        return total > 0 ? static_cast<double>(cnt) / static_cast<double>(total) : 0.0;
+    };
+
+    // 面积占优规则: touchesBorder 按 bbox 判定, YOLO 紧框下目标本体 bbox 顶到
+    // ROI 边界即被判"触边"而遭排除, 最大内部区域变成中心小图案 (class1 与靶板
+    // 同形, IoU 匹配自洽通过 → BC 误锁 class1)。触边区域面积占优 (≥ N 倍最大
+    // 内部区域) 且贴边覆盖率低 (非背景) 时选触边区域 —— 目标本体远大于内部
+    // 图案 (实测 ~200×); 高贴边覆盖 (≥5%) 的触边域是背景/填充, 不参与翻案。
+    constexpr int kTouchDominanceRatio = 4;
+    constexpr double kBgBorderCover = 0.05;
+    if (best_label >= 0 && touch_label >= 0 &&
+        touch_area >= kTouchDominanceRatio * best_area &&
+        borderCoverage(touch_label) < kBgBorderCover) {
+        logStep("LargestRegion",
+                "Touching region dominates by area (" + std::to_string(touch_area) +
+                " vs interior " + std::to_string(best_area) + "), selected touching");
+        best_label = touch_label;
+        best_area = touch_area;
     }
 
     // 回退：所有白色区域都接触边界时，退回原逻辑取全局最大面积
@@ -612,6 +672,52 @@ cv::Mat BinaryCornerExtractor::keepRegionFromCenter(const cv::Mat& binary_img) {
     if (seed.x < 0) {
         logStep("FromCenter", "No white pixel found");
         return binary_img.clone();
+    }
+
+    // 面积占优检查: 中心先验的盲区 —— class1 图案位于靶板正中心, 螺旋搜索
+    // 第一个命中的白域必是它而非靶板本体。若存在面积 ≥ 4× 中心域的全局最大
+    // 域, 以全局最大域为准 (与 keepLargestRegion 的触边占优规则同阈值语义)。
+    // 贴边覆盖 guard: 旋转外扩画幅填白后, 白背景+填充连成整圈贴边大域 (面积
+    // 必占优), 属背景而非目标 —— 贴边覆盖 ≥5% (沿边界像素占比) 的域不翻案;
+    // 真目标仅在外扩画幅极值点上少量贴边。
+    {
+        cv::Mat labels, stats, centroids;
+        int num = cv::connectedComponentsWithStats(binary_img, labels, stats, centroids, 8);
+        if (num > 1) {
+            int max_label = -1, max_area = 0;
+            for (int i = 1; i < num; ++i) {
+                int area = stats.at<int>(i, cv::CC_STAT_AREA);
+                if (area > max_area) { max_area = area; max_label = i; }
+            }
+            auto borderCoverage = [&](int label) {
+                long cnt = 0;
+                for (int x = 0; x < binary_img.cols; ++x) {
+                    if (labels.at<int>(0, x) == label) ++cnt;
+                    if (labels.at<int>(binary_img.rows - 1, x) == label) ++cnt;
+                }
+                for (int y = 0; y < binary_img.rows; ++y) {
+                    if (labels.at<int>(y, 0) == label) ++cnt;
+                    if (labels.at<int>(y, binary_img.cols - 1) == label) ++cnt;
+                }
+                const long total = 2L * (binary_img.cols + binary_img.rows) - 4;
+                return total > 0 ? static_cast<double>(cnt) / static_cast<double>(total) : 0.0;
+            };
+            const int seed_label = labels.at<int>(seed.y, seed.x);
+            const int seed_area  = stats.at<int>(seed_label, cv::CC_STAT_AREA);
+            constexpr int kDominanceRatio = 4;
+            constexpr double kBgBorderCover = 0.05;
+            if (seed_label > 0 && max_label != seed_label &&
+                max_area >= kDominanceRatio * seed_area &&
+                borderCoverage(max_label) < kBgBorderCover) {
+                logStep("FromCenter",
+                        "Center region (area=" + std::to_string(seed_area) +
+                        ") dominated by largest region (area=" + std::to_string(max_area) +
+                        "), selected largest");
+                cv::Mat dominant = cv::Mat::zeros(binary_img.size(), CV_8UC1);
+                dominant.setTo(255, labels == max_label);
+                return dominant;
+            }
+        }
     }
 
     // Flood fill：将命中的连通域染成灰色(128)，其余像素不变
@@ -1193,6 +1299,10 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
     }
 
     auto t_extract_start = std::chrono::steady_clock::now();
+
+    // 二值化阶段快照: 每次调用覆盖; 单目 = 左相机
+    last_binary_process_.clear();
+    stage_prefix_ = "L|";
 
     // Otsu 二值化
     cv::Mat binary;

@@ -69,7 +69,8 @@ private:
         PipelineResult& out_result,
         std::vector<Eigen::Vector3d>& out_pts3d,
         std::string& out_strategy,
-        double& extract_ms_acc, double& pnp_ms_acc);
+        double& extract_ms_acc, double& pnp_ms_acc,
+        std::string* out_route_detail = nullptr);
     void applyRoiPadding(RoiRect& rl, RoiRect& rr, int roi_area,
                          int left_cols, int left_rows,
                          int right_cols, int right_rows) const;

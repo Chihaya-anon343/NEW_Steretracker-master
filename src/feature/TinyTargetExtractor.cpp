@@ -242,10 +242,25 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
 
     int best_label = -1;
     int best_area = 0;
+    int touch_label = -1;
+    int touch_area = 0;
     for (int i = 1; i < num_labels; ++i) {
-        if (touchesBorder(i)) continue;
         int area = stats.at<int>(i, cv::CC_STAT_AREA);
+        if (touchesBorder(i)) {
+            if (area > touch_area) { touch_area = area; touch_label = i; }
+            continue;
+        }
         if (area > best_area) { best_area = area; best_label = i; }
+    }
+
+    // 面积占优规则 (BC keepLargestRegion 同款): 触边区域面积 ≥ 4× 最大内部区域
+    // 时选触边区域 —— YOLO 紧框下目标本体 bbox 顶到 ROI 边界即被判触边,
+    // 不该因此让内部小图案夺走选择权
+    constexpr int kTouchDominanceRatio = 4;
+    if (best_label >= 0 && touch_label >= 0 &&
+        touch_area >= kTouchDominanceRatio * best_area) {
+        best_label = touch_label;
+        best_area = touch_area;
     }
 
     // 全部白域都贴边（小目标被 ROI 截断的常态）→ 回退全局最大，不劣于旧行为
