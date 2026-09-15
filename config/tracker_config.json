@@ -9,7 +9,7 @@
       "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/image_00",
+      "directory_path": "data/新建文件夹/pura70_white_v2_0p45_static",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -150,7 +150,7 @@
     "dual_roi": {
       "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭)",
       "secondary_expand_pixels": 3,
-      "class1_fallback_enabled": false,
+      "class1_fallback_enabled": true,
       "primary_span_ratio": 0.98,
       "akaze": {
         "scale": 1

@@ -154,6 +154,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         route += s;
     };
     std::string t1_reason, t2_reason;
+    bool t1_cold_recovered = false;
 
     // 消融开关: true = 屏蔽 Tier2(BC-only)/Tier3(class1 链)/巨型 primary 短路,
     // 仅保留原始 Dual-ROI (Tier1: BC+AK 提取 + 合并解算)。恢复退化链改回 false。
@@ -383,10 +384,27 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     //     连续多帧不刷新) 放宽阈值, 让恢复帧的合理解通过。
     if (pose.success && use_seed &&
         !motionGatePass(pose, seed, nullptr, false, "DualRoi-T1", true)) {
-        if (verbose_console_)
-            std::cout << "  [DualRoi][Mono] Tier1 pose rejected by motion gate" << "\n";
-        t1_reason = "motion-gate";
-        pose = PoseEstimate{};
+        // 冷启动复核（与普通链 processMono 同语义）: 陈旧 seed 误伤恢复帧时，
+        // 无 seed 重解一次；冷解成功 = 纯重投影择优的可信路径，按「seed 过期」
+        // 采纳，不再被陈旧 seed 锚定的门控二次审查。冷解也失败才真正判
+        // motion-gate 交由退化链 (Tier2/3) 接管
+        auto t_cold = std::chrono::steady_clock::now();
+        PoseEstimate pc = mono_pnp_.solve(merged_pts_2d, merged_pts_3d,
+                                          camera_.K, nullptr, 0.0);
+        pnp_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_cold).count();
+        if (pc.success) {
+            pose = pc;
+            t1_cold_recovered = true;
+            if (verbose_console_)
+                std::cout << "  [DualRoi][Mono] Tier1 warm pose rejected, "
+                             "cold re-solve accepted" << "\n";
+        } else {
+            if (verbose_console_)
+                std::cout << "  [DualRoi][Mono] Tier1 pose rejected by motion gate" << "\n";
+            t1_reason = "motion-gate";
+            pose = PoseEstimate{};
+        }
     }
     if (t1_reason.empty() && !pose.success) t1_reason = "mono-pnp";
     routeStep(pose.success
@@ -497,6 +515,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         finalizePose(result, pose);
     }
     result.warm_start_used = use_seed && pose.success && !c1_fallback_used;
+    if (t1_cold_recovered) result.gate_status = GateStatus::Recovered;
     result.strategy_name = c1_fallback_used ? c1_strategy
                          : (bc_fallback_used ? "DualRoi_BC" : "DualRoi");
 
