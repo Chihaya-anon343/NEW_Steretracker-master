@@ -113,7 +113,6 @@ int main(int argc, char** argv) {
     binary_cfg.pixel_to_meter_scale_class0 = fs["strategies"]["binary_corner"]["pixel_to_meter_scale_class0"];
     binary_cfg.pixel_to_meter_scale_class1 = fs["strategies"]["binary_corner"]["pixel_to_meter_scale_class1"];
     binary_cfg.roi_pad_pixels = fs["strategies"]["binary_corner"]["roi_pad_pixels"];
-    binary_cfg.otsu_ratio     = fs["strategies"]["binary_corner"]["otsu_ratio"];
     std::string binary_template_dir = fs["strategies"]["binary_corner"]["template_dir"];
 
     // TinyTarget 策略参数
@@ -161,6 +160,7 @@ int main(int argc, char** argv) {
     double dual_akaze_scale = 0.5;
     bool dual_class1_fallback = true;
     double dual_primary_span_ratio = 0.99;
+    bool dual_tier1_only = false;
     cv::FileNode dual_node = fs["strategies"]["dual_roi"];
     if (!dual_node.empty()) {
         dual_expand = dual_node["secondary_expand_pixels"];
@@ -171,6 +171,10 @@ int main(int argc, char** argv) {
         {
             cv::FileNode span = dual_node["primary_span_ratio"];
             if (!span.empty()) dual_primary_span_ratio = static_cast<double>(span);
+        }
+        {
+            cv::FileNode t1only = dual_node["tier1_only"];
+            if (!t1only.empty()) dual_tier1_only = static_cast<int>(t1only) != 0;
         }
         cv::FileNode ak_node = dual_node["akaze"];
         if (!ak_node.empty()) {
@@ -474,6 +478,7 @@ int main(int argc, char** argv) {
                                                   dual_expand, dual_akaze_scale);
     tracker_cfg.dual_roi_class1_fallback = dual_class1_fallback;
     tracker_cfg.dual_roi_primary_span_ratio = dual_primary_span_ratio;
+    tracker_cfg.dual_roi_tier1_only = dual_tier1_only;
     tracker_cfg.temporal = temporal_cfg;
 
     try {

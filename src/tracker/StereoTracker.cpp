@@ -1089,9 +1089,9 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     };
     std::string t1_reason, t2_reason;
 
-    // 消融开关: true = 屏蔽 Tier2(BC-only)/Tier3(class1 链)/巨型 primary 短路,
-    // 仅保留原始 Dual-ROI (Tier1: BC+AK 提取 + 合并解算)。恢复退化链改回 false。
-    const bool kDualRoiTier1Only = true;
+    // 消融开关 (config: strategies.dual_roi.tier1_only): true = 屏蔽 Tier2(BC-only)/
+    // Tier3(class1 链)/巨型 primary 短路, 仅保留原始 Dual-ROI (Tier1: BC+AK 合并解算)
+    const bool kDualRoiTier1Only = config_.dual_roi_tier1_only;
 
     // BC 二值化过程条图 (成功/失败路径共用 —— 失败帧也要可视化, 排查主证据)
     auto saveBcProcessPanel = [&]() {
@@ -1295,8 +1295,16 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     // --- AK contribution (M matched feature points) ---
     m_ak = static_cast<int>(result_ak.pts_left_match.size());
+    // 门槛: <4 个模板匹配未过 TemplateMatcher Homography RANSAC 验证 (零验证
+    // Ratio-Test 结果, 离群概率高), 整段跳过 AK 贡献; BC 角点独挑 (与 AK=0 帧同路径)
+    const int kAkMergeMinMatches = 4;
+    const bool ak_merge_ok = m_ak >= kAkMergeMinMatches;
+    if (!ak_merge_ok && m_ak > 0 && verbose_console_)
+        std::cout << "  [DualRoi] AK matches=" << m_ak << " < " << kAkMergeMinMatches
+                  << " (unverified), skip AK merge" << "\n";
     const auto& ak_pts3d = dual_akaze_extractor_->templateData().pts_3d;
 
+    if (ak_merge_ok) {
     // For AK, pts_left_match has template match; try to find right-image match
     // Use optical-flow-tracked pts_right_good that correspond to kp_left (with template match)
     std::vector<int> ak_good_indices; // indices in kp_left that have both template AND stereo
@@ -1368,6 +1376,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             }
         }
     }
+    } // ak_merge_ok (AK 贡献仅在模板匹配数足够时并入)
 
     int total_pts = static_cast<int>(merged_pts_left.size());
     int total_right = static_cast<int>(merged_pts_right.size());

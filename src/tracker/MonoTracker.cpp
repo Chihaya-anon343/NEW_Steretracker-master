@@ -156,9 +156,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     std::string t1_reason, t2_reason;
     bool t1_cold_recovered = false;
 
-    // 消融开关: true = 屏蔽 Tier2(BC-only)/Tier3(class1 链)/巨型 primary 短路,
-    // 仅保留原始 Dual-ROI (Tier1: BC+AK 提取 + 合并解算)。恢复退化链改回 false。
-    const bool kDualRoiTier1Only = true;
+    // 消融开关 (config: strategies.dual_roi.tier1_only): true = 屏蔽 Tier2(BC-only)/
+    // Tier3(class1 链)/巨型 primary 短路, 仅保留原始 Dual-ROI (Tier1: BC+AK 合并解算)
+    const bool kDualRoiTier1Only = config_.dual_roi_tier1_only;
 
     // BC 二值化过程条图 (成功/失败路径共用 —— 失败帧也要可视化, 排查主证据)
     auto saveBcProcessPanel = [&]() {
@@ -326,8 +326,18 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     }
 
     // --- AK contribution: matches[i] ↔ template_.pts_3d[good_matches[i].trainIdx] ---
+    // 门槛: <4 个模板匹配未过 TemplateMatcher Homography RANSAC 验证 (零验证
+    // Ratio-Test 结果, 离群概率高) — 1-2 个 AK 离群点抬高全点平均重投影, 会否决
+    // 本来正确的候选; 此时由 BC 角点独挑 (与 AK=0 帧同路径)
+    const int kAkMergeMinMatches = 4;
+    const bool ak_merge_ok =
+        static_cast<int>(result_ak.good_matches.size()) >= kAkMergeMinMatches;
+    if (!ak_merge_ok && m_ak_match > 0 && verbose_console_)
+        std::cout << "[DualRoi][Mono] AK matches=" << m_ak_match
+                  << " < " << kAkMergeMinMatches << " (unverified), skip AK merge"
+                  << "\n";
     const auto& ak_pts3d = dual_akaze_extractor_->templateData().pts_3d;
-    for (size_t i = 0; i < result_ak.good_matches.size(); ++i) {
+    for (size_t i = 0; ak_merge_ok && i < result_ak.good_matches.size(); ++i) {
         int idx = result_ak.good_matches[i].trainIdx;
         if (idx >= 0 && idx < static_cast<int>(ak_pts3d.size())) {
             merged_pts_2d.push_back(result_ak.pts_left_match[i]);
@@ -342,24 +352,18 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                   << ", AK=" << m_ak_match << ")"
                   << "  pts3d=" << merged_pts_3d.size() << "\n";
 
+    // 6b. 合并点不足 → 不再早退整帧, 跳过 Tier1/2, 落入 Tier3 class1 链
+    //     (与 StereoTracker::processDualRoi 的 fall-through 语义对齐;
+    //      BC 面板/Route 输出由函数尾部统一处理)
     if (total_use < 4) {
-        std::cerr << "[DualRoi][Mono] Too few merged points (" << total_use << "), aborting" << "\n";
+        std::cerr << "[DualRoi][Mono] Too few merged points (" << total_use
+                  << "), skipping Tier1/2, trying class1 chain" << "\n";
         routeStep("Tier1 SKIP[merged pts=" + std::to_string(total_use) + " <4]");
-        routeStep("FRAME-FAIL (mono 合并点不足直接早退, Tier2/3 未尝试)");
-        if (verbose_console_)
-            std::cout << "[DualRoi][Mono] Route: " << route << "\n";
-        // 失败早退也输出 BC 二值化过程面板 (提取失败排查的主证据)
-        if (visualize && visualize_detailed_ && !output_dir_.empty())
-            saveBcProcessPanel();
-        PipelineResult empty;
-        empty.is_first_frame = is_first;
-        empty.gpnp_success = false;
-        empty.extract_ms = extract_ms;
-        empty.pnp_ms = 0.0;
-        empty.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - t_dual_start).count();
-        return empty;
     }
+
+    // 7~8b. 仅合并可解时执行: 坐标还原 + Tier1 解算 + 门控 + Tier2 BC-only
+    // (merged<4 或短路时 pose 保持失败 → 8c class1 链成为唯一路径)
+    if (total_use >= 4) {
 
     // 7. Restore full-image coordinates
     offsetPoints(merged_pts_2d, left_off);
@@ -456,7 +460,8 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         routeStep("Tier2 SKIP[ablation]");
     }
 
-    } // !primary_spans_frame（短路时 pose 保持失败, 8c 直接成为唯一路径）
+    } // total_use >= 4 (合并可解才执行 Tier1/2)
+    } // !primary_spans_frame（短路或合并不足时 pose 保持失败, 8c 直接成为唯一路径）
 
     // 8c. 第 3 级退化: 合并与 BC-only 均失败 → 在 secondary ROI (class1) 上跑 BC→TT 链
     //     (class1 3D 尺寸, State 5 同机制; 注入板系 seed —— class1 图案与板共面无

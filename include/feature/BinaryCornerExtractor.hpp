@@ -42,7 +42,6 @@ public:
         double pixel_to_meter_scale_class0 = 0.0;  ///< class0 比例：1 模板像素 = ? 米
         double pixel_to_meter_scale_class1 = 0.0;  ///< class1 比例（0 则回退 class0）
         int roi_pad_pixels = 0;               ///< 在所有方向上扩展 ROI N 个像素
-        double otsu_ratio = 1.3;              ///< Otsu 阈值乘数（>1 = 更严格）
     };
 
     /// 用配置和模板目录构造。

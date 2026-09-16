@@ -147,7 +147,6 @@ BinaryCornerExtractor::Config makeBinaryCfg() {
     c.pixel_to_meter_scale_class0 = 0.0072;
     c.pixel_to_meter_scale_class1 = 0.00072;
     c.roi_pad_pixels = 3;
-    c.otsu_ratio = 1.0;
     return c;
 }
 

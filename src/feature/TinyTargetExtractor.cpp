@@ -253,12 +253,31 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
         if (area > best_area) { best_area = area; best_label = i; }
     }
 
+    // 贴边覆盖率 (BC keepLargestRegion 同款): 真目标紧框下仅在外扩画幅的
+    // 极值点少量贴边; 沿整条边界延伸的高覆盖域是背景, 不参与翻案
+    auto borderCoverage = [&](int label) {
+        long cnt = 0;
+        for (int x = 0; x < img_w; ++x) {
+            if (labels.at<int>(0, x) == label) ++cnt;
+            if (labels.at<int>(img_h - 1, x) == label) ++cnt;
+        }
+        for (int y = 0; y < img_h; ++y) {
+            if (labels.at<int>(y, 0) == label) ++cnt;
+            if (labels.at<int>(y, img_w - 1) == label) ++cnt;
+        }
+        const long total = 2L * (img_w + img_h) - 4;
+        return total > 0 ? static_cast<double>(cnt) / static_cast<double>(total) : 0.0;
+    };
+
     // 面积占优规则 (BC keepLargestRegion 同款): 触边区域面积 ≥ 4× 最大内部区域
-    // 时选触边区域 —— YOLO 紧框下目标本体 bbox 顶到 ROI 边界即被判触边,
-    // 不该因此让内部小图案夺走选择权
+    // 且贴边覆盖率低 (非背景) 时选触边区域 —— YOLO 紧框下目标本体 bbox 顶到
+    // ROI 边界即被判触边, 不该因此让内部小图案夺走选择权; 高贴边覆盖 (≥5%)
+    // 的触边域是背景, 不参与翻案
     constexpr int kTouchDominanceRatio = 4;
+    constexpr double kBgBorderCover = 0.05;
     if (best_label >= 0 && touch_label >= 0 &&
-        touch_area >= kTouchDominanceRatio * best_area) {
+        touch_area >= kTouchDominanceRatio * best_area &&
+        borderCoverage(touch_label) < kBgBorderCover) {
         best_label = touch_label;
         best_area = touch_area;
     }

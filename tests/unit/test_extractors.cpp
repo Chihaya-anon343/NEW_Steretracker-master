@@ -133,7 +133,6 @@ void test_binary_corner_synthetic_rectangle() {
     BinaryCornerExtractor::Config cfg;
     cfg.corners = 4;
     cfg.kernel_size = 3;
-    cfg.otsu_ratio = 1.0;
     // 像素→米：模板 100px 宽对应 0.2m → 0.002 m/px
     cfg.pixel_to_meter_scale_class0 = 0.002;
     BinaryCornerExtractor ext(cfg, kMuBanDir);

@@ -9,7 +9,7 @@
       "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/新建文件夹/pura70_white_v2_0p45_static",
+      "directory_path": "tests/data/approach_seq",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -32,8 +32,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/image_00/frame_001221.png",
-    "right": "data/image_00/frame_001221.png"
+    "left": "tests/data/approach_seq/frame_000096.png",
+    "right": "tests/data/approach_seq/frame_000096.png"
   },
 
   "manual_roi": {
@@ -91,7 +91,7 @@
   },
 
   "yolo": {
-    "model_path": "yolo_onnx/yolov8n.onnx",
+    "model_path": "yolo_onnx/yolov8n_p2.onnx",
     "conf_threshold": 0.2,
     "target_class_id": 0,
     "roi_expand_ratio": 0.0,
@@ -133,8 +133,7 @@
       "target_height": 100,
       "pixel_to_meter_scale_class0": 0.0059,
       "pixel_to_meter_scale_class1": 0.00046,
-      "roi_pad_pixels": 3,
-      "otsu_ratio": 1
+      "roi_pad_pixels": 3
     },
 
     "tiny_target": {
@@ -148,10 +147,11 @@
     },
 
     "dual_roi": {
-      "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭)",
+      "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭); tier1_only=消融开关, true=屏蔽Tier2/Tier3/短路仅保留合并解算",
       "secondary_expand_pixels": 3,
       "class1_fallback_enabled": true,
       "primary_span_ratio": 0.98,
+      "tier1_only": false,
       "akaze": {
         "scale": 1
       }

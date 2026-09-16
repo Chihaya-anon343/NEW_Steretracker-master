@@ -135,7 +135,6 @@ BinaryCornerExtractor::Config makeBinaryCfg() {
     c.target_size = cv::Size(100, 100);
     c.pixel_to_meter_scale_class0 = 0.5f;
     c.roi_pad_pixels = 0;
-    c.otsu_ratio = 1.3f;
     return c;
 }
 

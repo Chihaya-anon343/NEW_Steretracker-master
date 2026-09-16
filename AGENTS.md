@@ -527,7 +527,6 @@ struct Config {
     int target_size = 100;         // 模板匹配标准化尺寸
     float pixel_to_meter_scale;    // 像素→毫米换算
     int roi_pad_pixels = 0;        // ROI外扩像素
-    float otsu_ratio = 1.3;        // Otsu阈值乘数
 };
 ```
 
@@ -558,13 +557,14 @@ struct Config {
         IoU = countNonZero(A & B) / countNonZero(A | B)
       取最高IoU角度 → last_matched_template_
 
-  1.6 旋转回正:
-      优选: warpAffine(INTER_LINEAR)旋转灰度图 (2026-09 由 CUBIC 降为 LINEAR, 提速 2-3×)
-        → Otsu 首遍即写结果; 仅 otsu_ratio≠1 时按 otsu_val×ratio 二遍重写
-          (ratio==1 时跳过第二遍全图扫描, 输出与旧双遍等价)
-        → keepRegionFromCenter(): 从中心螺旋搜索→floodFill
-        → fillHoles + smoothBoundary
-      回退: warpAffine(INTER_NEAREST)旋转二值图 + 形态学
+  1.6 旋转回正 (旋转原始 Otsu 二值图, 阈值只算一次):
+      → copyMakeBorder 加 1px 黑色隔离带 (防白色填充与贴边白色靶板粘连)
+      → warpAffine(INTER_NEAREST) 旋转 + 旋转框外白色填充
+        (填充在二值空间进行, 不参与 Otsu 直方图 —— 不再发生灰度填充
+         污染阈值导致的选域翻转)
+      → keepLargestRegion (触边面积占优 + 高贴边覆盖守卫剔除填充域)
+      → fillHoles + smoothBoundary
+      (无匹配模板时不旋转, 直接用 smoothed; keepRegionFromCenter 已不在主链)
 
   1.7 extractLargestContour():
       findContours(RETR_EXTERNAL) → 取最大面积
@@ -637,8 +637,9 @@ struct Config {
   Otsu 二值化
 
 [Step 2] BC 品质清理链 (2026-09 升级, 超分空间统一):
-  最大连通域 (BC keepLargestRegion 同款触边排除 + 全贴边回退全局最大——
-    小目标被 ROI 截断时所有白域贴边, 回退保证不劣于旧行为)
+  最大连通域 (BC keepLargestRegion 同款: 触边排除 + 面积占优翻案带高贴边
+    覆盖率守卫 + 全贴边回退全局最大——小目标被 ROI 截断时所有白域贴边,
+    回退保证不劣于旧行为)
   → fillHoles (RETR_EXTERNAL 外轮廓实心化)
   → MORPH_CLOSE(3×3) → MORPH_OPEN(3×3) (与 BC smoothBoundary 同序同核)
   → 清理后二值图 = 角度匹配与角点提取的共用输入 (单域实心)
@@ -1147,8 +1148,7 @@ struct SensorPacket {
             "scale": 1.0,              // 提取前放大
             "target_size": 100,        // 标准化尺寸
             "pixel_to_meter_scale": 0.5,
-            "roi_pad_pixels": 0,
-            "otsu_ratio": 1.3
+            "roi_pad_pixels": 0
         },
 
         // TinyTarget 策略
