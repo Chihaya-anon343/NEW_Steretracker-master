@@ -4,7 +4,9 @@
  *          YOLO-OBB 检测 → OBB 四边形角点提取 → MonoPnP 位姿解算
  *
  * 不含五状态分级 / 退化链 / warm-start / ESKF 等鲁棒性设计；
- * 输入为图像目录，逐帧输出位姿与可视化，末尾打印汇总统计。
+ * 输入为图像目录，逐帧输出位姿与可视化。
+ * 详细输出（启动信息 + 逐帧行 + PnP 候选日志）写入 <out_dir>/obb_log.txt，
+ * 终端仅打印末尾汇总。
  *
  * 用法（容器内）:
  *   ./cmake-build-debug/obb_pipeline config/obb_pipeline.json
@@ -24,7 +26,9 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -114,6 +118,16 @@ int main(int argc, char** argv) {
     const bool visualize = (int)fs_cfg["output"]["visualize"] != 0;
     fs_cfg.release();
 
+    // ---- 日志重定向: 详细输出 → <out_dir>/obb_log.txt, 终端只留汇总 ----
+    // (含 MonoPnP 每候选 verbose 行; YoloDetector 的 cerr 初始化诊断不走 cout, 保持终端可见)
+    fs::create_directories(out_dir);
+    std::ofstream log_file(out_dir + "/obb_log.txt", std::ios::trunc);
+    if (!log_file.is_open()) {
+        std::cerr << "[obb_pipeline] 无法创建日志: " << out_dir << "/obb_log.txt" << std::endl;
+        return 1;
+    }
+    std::streambuf* const old_cout_buf = std::cout.rdbuf(log_file.rdbuf());
+
     std::cout << "[obb_pipeline] model=" << ycfg.model_path
               << " templates=" << ecfg.template_dir
               << " real_size_mm=" << ecfg.template_real_size_mm
@@ -136,11 +150,10 @@ int main(int argc, char** argv) {
     }
     std::sort(images.begin(), images.end());
     if (images.empty()) {
+        std::cout << "[obb_pipeline] 目录无图像: " << in_dir << std::endl;
+        std::cout.rdbuf(old_cout_buf);   // 恢复后再走终端报错
         std::cerr << "[obb_pipeline] 目录无图像: " << in_dir << std::endl;
         return 1;
-    }
-    if (visualize) {
-        fs::create_directories(out_dir);
     }
 
     // ---- 帧循环 ----
@@ -153,7 +166,7 @@ int main(int argc, char** argv) {
         const auto& path = images[fi];
         cv::Mat img = cv::imread(path.string());
         if (img.empty()) {
-            std::cerr << "[Frame " << fi << "] 读取失败: " << path.string() << std::endl;
+            std::cout << "[Frame " << fi << "] 读取失败: " << path.string() << "\n";
             continue;
         }
         ++n_frames;
@@ -311,17 +324,23 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---- 汇总 ----
-    std::cout << "\n===== obb_pipeline 汇总 =====\n"
-              << "帧数: " << n_frames
-              << " | 检出: " << n_detected
-              << " | 靶标: " << n_target
-              << " | 输出位姿帧: " << n_pose << "\n"
-              << "平均耗时(ms/帧): 检测 " << (n_frames ? t_det / n_frames : 0.0)
-              << " + 提取 " << (n_frames ? t_ext / n_frames : 0.0)
-              << " + PnP " << (n_frames ? t_pnp / n_frames : 0.0) << "\n"
-              << "平均重投影误差: "
-              << (reproj_n ? reproj_sum / reproj_n : -1.0) << " px"
-              << " (" << reproj_n << " 帧)\n";
+    // ---- 汇总（终端 + 日志双写）----
+    std::cout.rdbuf(old_cout_buf);   // 恢复终端输出
+    std::ostringstream sum;
+    sum << "\n===== obb_pipeline 汇总 =====\n"
+        << "帧数: " << n_frames
+        << " | 检出: " << n_detected
+        << " | 靶标: " << n_target
+        << " | 输出位姿帧: " << n_pose << "\n"
+        << "平均耗时(ms/帧): 检测 " << (n_frames ? t_det / n_frames : 0.0)
+        << " + 提取 " << (n_frames ? t_ext / n_frames : 0.0)
+        << " + PnP " << (n_frames ? t_pnp / n_frames : 0.0) << "\n"
+        << "平均重投影误差: "
+        << (reproj_n ? reproj_sum / reproj_n : -1.0) << " px"
+        << " (" << reproj_n << " 帧)\n"
+        << "明细日志: " << out_dir << "/obb_log.txt\n";
+    std::cout << sum.str();
+    log_file << sum.str();
+    log_file.close();
     return 0;
 }
