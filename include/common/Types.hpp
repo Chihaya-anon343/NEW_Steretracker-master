@@ -464,6 +464,7 @@ struct YoloConfig {
     float iou_threshold{0.45f};
     cv::Size input_size{640, 640};
     int intra_op_threads{4};
+    bool is_obb{false};             ///< true: OBB 模型（输出 [1, 4+nc+1, N]，末通道为角度）
 
     // ROI 生成参数
     int target_class_id{0};         ///< 目标物体的 class ID

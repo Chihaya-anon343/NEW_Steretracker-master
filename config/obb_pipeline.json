@@ -1,0 +1,42 @@
+{
+    "yolo": {
+        "model_path": "yolo_onnx/obb_best.onnx",
+        "device_type": "CPU",
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45,
+        "intra_op_threads": 4
+    },
+
+    "extractor": {
+        "template_dir": "data/obb_templates",
+        "norm_size": 224,
+        "morph": 5,
+        "denoise": 3,
+        "poly_eps": 0.02,
+        "tmpl_score": 0.93,
+        "corner_tau": 6.0,
+        "snap_r": 24.0,
+        "min_area_frac": 0.0001,
+        "min_side": 8.0,
+
+        "_comment": "!! 占位值: 靶标外接方形物理边长, 直接决定 PnP 平移的绝对尺度, 必须实测后替换 !!",
+        "template_real_size_mm": 500.0
+    },
+
+    "_comment_camera": "!! 占位内参: 合成图 f=1000 / 主点=画布中心(1744x1744 -> 872,872); 实测内参须替换 !!",
+    "camera": {
+        "fx": 1000.0,
+        "fy": 1000.0,
+        "cx": 872.0,
+        "cy": 872.0
+    },
+
+    "input": {
+        "directory": "data/obb_test"
+    },
+
+    "output": {
+        "directory": "output/obb_pipeline",
+        "visualize": true
+    }
+}

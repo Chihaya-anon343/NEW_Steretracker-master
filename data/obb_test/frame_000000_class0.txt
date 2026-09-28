@@ -1,0 +1,13 @@
+# Class 0 Feature Points (synthetic)
+# Format: Corner_Index: X, Y
+# Image Size: 1744x1744
+Corner_0: 869.46, 865.00
+Corner_1: 878.86, 865.02
+Corner_2: 878.86, 868.81
+Corner_3: 874.37, 868.76
+Corner_4: 874.37, 875.22
+Corner_5: 878.86, 875.19
+Corner_6: 878.86, 879.00
+Corner_7: 864.94, 878.95
+Corner_8: 864.96, 875.22
+Corner_9: 869.46, 875.19

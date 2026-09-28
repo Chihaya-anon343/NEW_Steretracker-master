@@ -14,6 +14,7 @@
 #include <opencv2/opencv.hpp>
 #include "common/Types.hpp"
 #include "detection/YoloDecode.hpp"
+#include "detection/YoloObbDecode.hpp"
 
 #include <algorithm>
 #include <array>
@@ -45,6 +46,9 @@ public:
     /// 对图像运行检测。成功时将填充 `detections`。
     Status detect(const cv::Mat& image, std::vector<Detection>& detections);
 
+    /// 对图像运行 OBB 检测（需 config_.is_obb == true）。成功时将填充 `detections`。
+    Status detectObb(const cv::Mat& image, std::vector<ObbDetection>& detections);
+
 private:
     // --- 预处理辅助函数 ---
 
@@ -65,6 +69,17 @@ private:
                        const cv::Mat& img0,
                        float ratio, float dw, float dh,
                        std::vector<Detection>& detections) const;
+
+    /// OBB 后处理：输出 [1, 4+nc+1, N]，末通道为旋转角（弧度）。
+    Status postprocessObb(const std::vector<Ort::Value>& preds,
+                          const cv::Mat& img0,
+                          float ratio, float dw, float dh,
+                          std::vector<ObbDetection>& detections) const;
+
+    /// 共享推理（letterbox → blob → ONNX Run），detect/detectObb 复用。
+    Status runInference(const cv::Mat& image,
+                        std::vector<Ort::Value>& outputs,
+                        float& ratio, float& dw, float& dh);
 
     // --- 成员变量 ---
 
@@ -168,10 +183,9 @@ inline YoloDetector::~YoloDetector() = default;
 
 // --- 主检测入口点 ---
 
-inline Status YoloDetector::detect(const cv::Mat& image,
-                                    std::vector<Detection>& detections) {
-    detections.clear();
-
+inline Status YoloDetector::runInference(const cv::Mat& image,
+                                         std::vector<Ort::Value>& outputs,
+                                         float& ratio, float& dw, float& dh) {
     if (!session_) {
         return Status::ModelLoadFailed;
     }
@@ -179,29 +193,68 @@ inline Status YoloDetector::detect(const cv::Mat& image,
         return Status::EmptyInput;
     }
 
+    cv::Mat bgr = ensureBGR(image);
+
+    cv::Mat input_tensor_img;
+    preprocess(bgr, input_tensor_img, ratio, dw, dh);
+
+    std::array<int64_t, 4> tensor_shape{};
+    auto input_tensor_values = blobFromImage(input_tensor_img, tensor_shape);
+
+    Ort::MemoryInfo memory_info =
+        Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+        memory_info, input_tensor_values.data(), input_tensor_values.size(),
+        tensor_shape.data(), tensor_shape.size());
+
+    const char* input_names[] = {input_name_.c_str()};
+
+    outputs = session_->Run(Ort::RunOptions{nullptr},
+                            input_names, &input_tensor, 1,
+                            output_names_.data(), output_names_.size());
+    return Status::Success;
+}
+
+inline Status YoloDetector::detect(const cv::Mat& image,
+                                    std::vector<Detection>& detections) {
+    detections.clear();
+
     try {
-        cv::Mat bgr = ensureBGR(image);
-
         float ratio = 1.0f, dw = 0.0f, dh = 0.0f;
-        cv::Mat input_tensor_img;
-        preprocess(bgr, input_tensor_img, ratio, dw, dh);
+        std::vector<Ort::Value> outputs;
+        Status st = runInference(image, outputs, ratio, dw, dh);
+        if (st != Status::Success) {
+            return st;
+        }
 
-        std::array<int64_t, 4> tensor_shape{};
-        auto input_tensor_values = blobFromImage(input_tensor_img, tensor_shape);
-
-        Ort::MemoryInfo memory_info =
-            Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
-            memory_info, input_tensor_values.data(), input_tensor_values.size(),
-            tensor_shape.data(), tensor_shape.size());
-
-        const char* input_names[] = {input_name_.c_str()};
-
-        auto outputs = session_->Run(Ort::RunOptions{nullptr},
-                                     input_names, &input_tensor, 1,
-                                     output_names_.data(), output_names_.size());
-
+        cv::Mat bgr = ensureBGR(image);
         return postprocess(outputs, bgr, ratio, dw, dh, detections);
+
+    } catch (const Ort::Exception& e) {
+        return Status::InferenceFailed;
+    } catch (const std::exception&) {
+        return Status::UnknownError;
+    }
+}
+
+inline Status YoloDetector::detectObb(const cv::Mat& image,
+                                       std::vector<ObbDetection>& detections) {
+    detections.clear();
+
+    if (!config_.is_obb) {
+        return Status::UnknownError;   // OBB 解码需 is_obb 配置
+    }
+
+    try {
+        float ratio = 1.0f, dw = 0.0f, dh = 0.0f;
+        std::vector<Ort::Value> outputs;
+        Status st = runInference(image, outputs, ratio, dw, dh);
+        if (st != Status::Success) {
+            return st;
+        }
+
+        cv::Mat bgr = ensureBGR(image);
+        return postprocessObb(outputs, bgr, ratio, dw, dh, detections);
 
     } catch (const Ort::Exception& e) {
         return Status::InferenceFailed;
@@ -376,6 +429,62 @@ inline Status YoloDetector::postprocess(const std::vector<Ort::Value>& preds,
                                   config_.conf_threshold, config_.iou_threshold);
 
     // 空结果并非错误
+    return Status::Success;
+}
+
+// --- 后处理（OBB）：解码 [1, 4+nc+1, N] + 旋转 NMS ---
+
+inline Status YoloDetector::postprocessObb(const std::vector<Ort::Value>& preds,
+                                           const cv::Mat& img0,
+                                           float ratio, float dw, float dh,
+                                           std::vector<ObbDetection>& detections) const {
+    if (preds.empty()) {
+        return Status::InferenceFailed;
+    }
+    if (img0.empty()) {
+        return Status::EmptyInput;
+    }
+
+    const auto& output = preds[0];
+    auto tensor_info = output.GetTensorTypeAndShapeInfo();
+    auto shape = tensor_info.GetShape();
+
+    if (shape.size() != 2 && shape.size() != 3) {
+        return Status::InferenceFailed;
+    }
+
+    // OBB 输出：[1, 4+nc+1, N] (BCN) 或 [1, N, 4+nc+1] (BNC)
+    size_t dim1 = 0, dim2 = 0;
+    if (shape.size() == 3) {
+        dim1 = static_cast<size_t>(shape[1]);
+        dim2 = static_cast<size_t>(shape[2]);
+    } else {
+        dim1 = static_cast<size_t>(shape[0]);
+        dim2 = static_cast<size_t>(shape[1]);
+    }
+
+    const bool shape_is_bcn = (dim1 < dim2);
+    const size_t num_attrs  = shape_is_bcn ? dim1 : dim2;   // 4 + nc + 1
+    const size_t num_preds  = shape_is_bcn ? dim2 : dim1;
+    const size_t num_classes = num_attrs - 5;               // 多出的 1 通道为角度
+
+    if (num_attrs < 6 || num_classes == 0 || num_preds == 0) {
+        return Status::InferenceFailed;
+    }
+
+    const float* data = output.GetTensorData<float>();
+    const size_t total = tensor_info.GetElementCount();
+    if (!data || total < dim1 * dim2) {
+        return Status::InferenceFailed;
+    }
+
+    const int img_h = img0.rows;
+    const int img_w = img0.cols;
+
+    detections = decodeYoloObbOutput(data, shape_is_bcn, num_preds, num_classes,
+                                     ratio, dw, dh, img_w, img_h,
+                                     config_.conf_threshold, config_.iou_threshold);
+
     return Status::Success;
 }
 

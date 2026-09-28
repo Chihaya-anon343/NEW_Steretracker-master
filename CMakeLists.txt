@@ -178,11 +178,42 @@ endif()
 target_link_libraries(pose_compare2 PRIVATE onnxruntime Threads::Threads)
 
 # ============================================================================
+# Executable: obb_pipeline —— 最小端到端 OBB 流水线 (pipeline 分支)
+#
+# YOLO-OBB 检测 → OBB 四边形角点提取 → MonoPnP 位姿解算。
+# 不依赖 tracker 体系 (无策略链/退化链):
+#   main_obb_pipeline.cpp + ObbCornerExtractor + MonoPnPSolver + YoloDetector(header-only)
+# ============================================================================
+
+add_executable(obb_pipeline
+    main_obb_pipeline.cpp
+    src/feature/ObbCornerExtractor.cpp
+    src/pose/MonoPnPSolver.cpp
+)
+
+target_include_directories(obb_pipeline PRIVATE
+    ${PROJECT_INCLUDE_DIR}
+)
+
+if(OpenCV_FOUND)
+    target_include_directories(obb_pipeline PRIVATE ${OpenCV_INCLUDE_DIRS})
+endif()
+target_link_libraries(obb_pipeline PRIVATE ${OpenCV_LIBS})
+
+if(TARGET Eigen3::Eigen)
+    target_link_libraries(obb_pipeline PRIVATE Eigen3::Eigen)
+else()
+    target_include_directories(obb_pipeline PRIVATE ${EIGEN3_INCLUDE_DIR})
+endif()
+
+target_link_libraries(obb_pipeline PRIVATE onnxruntime Threads::Threads)
+
+# ============================================================================
 # Compiler Options
 # ============================================================================
 
 if(MSVC)
-    foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2)
+    foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2 obb_pipeline)
         target_compile_options(${tgt} PRIVATE
             /W4
             /EHsc
@@ -195,7 +226,7 @@ if(MSVC)
         )
     endforeach()
 else()
-    foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2)
+    foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2 obb_pipeline)
         target_compile_options(${tgt} PRIVATE
             -Wall
             -Wextra
@@ -210,7 +241,7 @@ endif()
 # Install
 # ============================================================================
 
-install(TARGETS ${PROJECT_NAME} pose_compare pose_compare2 DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} pose_compare pose_compare2 obb_pipeline DESTINATION bin)
 
 # ============================================================================
 # Tests (可选, 默认关闭)
