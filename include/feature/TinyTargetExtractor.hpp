@@ -36,6 +36,7 @@ public:
         double square_size_m_class0 = 0.20;   ///< class0 目标物理边长（米）
         double square_size_m_class1 = 0.04;   ///< class1 目标物理边长（米，0 则回退 class0）
         int roi_pad_pixels = 0;               ///< ROI 四周扩展像素数
+        int superres_target_side = 0;         ///< 自适应超分目标短边（>0 时 sf = clamp(target/短边, 1, scale_factor)；0=固定 ×scale_factor）
     };
 
     /// 使用配置和模板目录构造。

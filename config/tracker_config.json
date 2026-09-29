@@ -70,7 +70,8 @@
       "hold_frames": 3,
       "hysteresis_up": 1.25,
       "hysteresis_down": 0.8,
-      "locked_fail_limit": 3
+      "locked_fail_limit": 3,
+      "primary_fail_skip_threshold": 2
     },
 
     "area_ema_alpha": 0.5
@@ -78,7 +79,7 @@
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
-    "visualize": true,
+    "visualize": false,
     "log_file": true
   },
 
@@ -95,7 +96,8 @@
     "conf_threshold": 0.2,
     "target_class_id": 0,
     "roi_expand_ratio": 0.0,
-    "roi_min_size": 0
+    "roi_min_size": 0,
+    "intra_op_threads": 4
   },
 
   "strategies": {
@@ -143,7 +145,8 @@
       "scale_factor": 4,
       "square_size_m_class0": 0.295,
       "square_size_m_class1": 0.017,
-      "roi_pad_pixels": 5
+      "roi_pad_pixels": 5,
+      "superres_target_side": 512
     },
 
     "dual_roi": {
@@ -152,6 +155,7 @@
       "class1_fallback_enabled": true,
       "primary_span_ratio": 0.98,
       "tier1_only": false,
+      "primary_downsample_side": 512,
       "akaze": {
         "scale": 1
       }

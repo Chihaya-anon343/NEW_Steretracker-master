@@ -61,6 +61,7 @@ struct TemporalConfig {
     double hysteresis_up{1.25};          ///< 升档迟滞余量：EMA面积需 > 边界阈值 × 该值
     double hysteresis_down{0.8};         ///< 降档迟滞余量：EMA面积需 < 边界阈值 × 该值
     int locked_fail_limit{3};            ///< 锁定策略连续被 fallback 顶掉 N 帧后跟随胜者
+    int primary_fail_skip_threshold{2};  ///< 主策略(BC) PnP 连败 N 帧后链改为 TT 优先跳过注定失败的 BC（0=关闭）
     // --- 提名平滑 ---
     double area_ema_alpha{0.5};          ///< 面积 EMA 系数（仅用于策略提名/迟滞，不影响裁剪；<=0 = 不平滑）
 };
@@ -82,6 +83,7 @@ struct TrackerConfig {
     bool dual_roi_class1_fallback{true}; ///< 双 ROI 第 3 级退化: 合并与 BC-only 均失败后在 class1 ROI 上跑 BC→TT 链
     double dual_roi_primary_span_ratio{0.99}; ///< 巨型 primary 短路: primary 边长覆盖画幅 ≥ 该比例 → 目标外角点出视野, 跳过 Tier1/2 直接 class1 链 (<=0 关闭)
     bool dual_roi_tier1_only{false};     ///< Dual-ROI 消融: true = 仅 Tier1 (屏蔽 Tier2/Tier3/巨型 primary 短路)
+    int dual_primary_target_side{0};     ///< Dual-ROI primary BC 降采样目标短边 (px, 0=不降采样; 降采样提角后全分辨率 subpix 回迁)
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
 };
 

@@ -90,6 +90,15 @@ protected:
     /// 将时序观测字段填入 PipelineResult（日志用）
     void fillTemporalMeta(PipelineResult& result) const;
 
+    // ---- DualRoi primary 降采样 BC (P1-1) ----
+    /// 短边缩到 target_side: d = max(1, short_side/target_side)，INTER_AREA 降采样；
+    /// target_side<=0 或无需缩放时 d=1 并原样返回（零拷贝）。d 即"降采样图坐标 ×d = 全图坐标"
+    static cv::Mat downscaleGray(const cv::Mat& gray, int target_side, double& d);
+    /// 全分辨率灰度上 cornerSubPix 亚像素精化（copyMakeBorder 防越界，
+    /// 仿 TinyTargetExtractor::refineCorners）；点数<4 原样返回
+    static void refineCornersSubpix(const cv::Mat& gray,
+                                    std::vector<cv::Point2f>& pts, int win = 5);
+
     // ---- 时序连贯性状态 ----
     bool has_prev_c1_{false};
     bool prev_use_c1_{false};
@@ -101,6 +110,7 @@ protected:
     int sticky_pending_{0};             ///< 待确认的提名档位
     int pending_count_{0};              ///< 提名连续确认计数
     int locked_fail_count_{0};          ///< 锁定策略被 fallback 顶掉的连续帧数
+    int primary_pnp_fail_streak_{0};    ///< 主策略(链首) PnP 连败帧数（成功清零；粘滞/class1 翻转也清零）
     int nominated_band_{0};             ///< 本帧面积提名档位（raw）
     bool sticky_hold_{false};           ///< 本帧粘滞抑制了切换
     std::string sticky_switch_reason_{"init"};

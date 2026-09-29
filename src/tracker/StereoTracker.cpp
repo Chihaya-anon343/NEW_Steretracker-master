@@ -1194,6 +1194,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
     // 2. Crop images
     cv::Mat left_c0_gray, right_c0_gray, left_c0_color, right_c0_color;
+    double bc_ds_l = 1.0, bc_ds_r = 1.0;   // P1-1: primary BC 降采样倍率 (1=未降采样)
+    cv::Mat left_c0_gray_bc, right_c0_gray_bc;   // BC 提取输入 (大 primary 时降采样, 角点 ×ds 回全图)
     if (!primary_spans_frame) {
         left_c0_gray   = left_gray(cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
         right_c0_gray  = right_gray(cv::Rect(right_pri.x, right_pri.y, right_pri.width, right_pri.height)).clone();
@@ -1201,6 +1203,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             left_c0_color = left_color(cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
         if (!right_color.empty())
             right_c0_color = right_color(cv::Rect(right_pri.x, right_pri.y, right_pri.width, right_pri.height)).clone();
+        left_c0_gray_bc  = downscaleGray(left_c0_gray,  config_.dual_primary_target_side, bc_ds_l);
+        right_c0_gray_bc = downscaleGray(right_c0_gray, config_.dual_primary_target_side, bc_ds_r);
     }
 
     cv::Mat left_c1_gray   = left_gray(cv::Rect(left_sec.x, left_sec.y, left_sec.width, left_sec.height)).clone();
@@ -1232,7 +1236,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     auto t_extract = std::chrono::steady_clock::now();
     auto fut_bc = std::async(std::launch::async, [&]() {
         return binary_extractor_->extract(
-            left_c0_gray, right_c0_gray, left_c0_color, right_c0_color);
+            left_c0_gray_bc, right_c0_gray_bc, left_c0_color, right_c0_color);
     });
     auto fut_ak = std::async(std::launch::async, [&]() {
         return dual_akaze_extractor_->extract(
@@ -1240,6 +1244,18 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     });
 
     result_bc = fut_bc.get();
+    // P1-1: 降采样 BC 角点回迁 —— 左右各自 ×ds 恢复全分辨率 crop 坐标, 再在各自
+    // 全分辨率灰度上 cornerSubPix 恢复亚像素精度 (BC 全图直提本无 subpix, 精度不劣于旧路径)
+    if (bc_ds_l > 1.0 && !result_bc.pts_left_match.empty()) {
+        for (auto& p : result_bc.pts_left_match) { p.x *= bc_ds_l; p.y *= bc_ds_l; }
+        refineCornersSubpix(left_c0_gray, result_bc.pts_left_match);
+        for (size_t k = 0; k < result_bc.kp_left.size() && k < result_bc.pts_left_match.size(); ++k)
+            result_bc.kp_left[k].pt = result_bc.pts_left_match[k];
+    }
+    if (bc_ds_r > 1.0 && !result_bc.pts_right_good.empty()) {
+        for (auto& p : result_bc.pts_right_good) { p.x *= bc_ds_r; p.y *= bc_ds_r; }
+        refineCornersSubpix(right_c0_gray, result_bc.pts_right_good);
+    }
     n_bc = static_cast<int>(result_bc.pts_left_match.size());
     if (verbose_console_) std::cout << "[DualRoi] BinaryCorner on class 0: " << n_bc << " corners" << "\n";
 
@@ -2118,12 +2134,16 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
 
         if (p.success) {
             pose = p;
+            if (ext == extractor_)
+                primary_pnp_fail_streak_ = 0;   // 链首 PnP 成功, 连败记忆清零
             if (verbose_console_)
                 std::cout << "[StereoMono] Extractor " << ext->name()
                           << " succeeded, n_kp=" << result.n_kp_left << "\n";
             break;
         }
 
+        if (ext == extractor_)
+            ++primary_pnp_fail_streak_;   // P0-2: 链首 PnP 连败记忆
         if (verbose_console_)
             std::cout << "[StereoMono] Extractor " << ext->name()
                       << " PnP failed, degrading..." << "\n";

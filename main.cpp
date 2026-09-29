@@ -124,6 +124,8 @@ int main(int argc, char** argv) {
     tiny_cfg.square_size_m_class0 = fs["strategies"]["tiny_target"]["square_size_m_class0"];
     tiny_cfg.square_size_m_class1 = fs["strategies"]["tiny_target"]["square_size_m_class1"];
     tiny_cfg.roi_pad_pixels = fs["strategies"]["tiny_target"]["roi_pad_pixels"];
+    cv::FileNode tt_node = fs["strategies"]["tiny_target"]["superres_target_side"];
+    if (!tt_node.empty()) tiny_cfg.superres_target_side = static_cast<int>(tt_node);
     std::string tiny_template_dir = fs["strategies"]["tiny_target"]["template_dir"];
 
     // YOLO 检测参数
@@ -132,6 +134,11 @@ int main(int argc, char** argv) {
     int target_cls = fs["yolo"]["target_class_id"];
     float expand = fs["yolo"]["roi_expand_ratio"];
     int min_roi = fs["yolo"]["roi_min_size"];
+    int yolo_intra_op_threads = 4;
+    {
+        cv::FileNode yth = fs["yolo"]["intra_op_threads"];
+        if (!yth.empty()) yolo_intra_op_threads = static_cast<int>(yth);
+    }
 
     // 策略选择阈值（从 JSON 读取，替代原硬编码常量）
     int akaze_min_area = fs["strategies"]["akaze_min_area"];
@@ -161,6 +168,7 @@ int main(int argc, char** argv) {
     bool dual_class1_fallback = true;
     double dual_primary_span_ratio = 0.99;
     bool dual_tier1_only = false;
+    int dual_primary_target_side = 0;
     cv::FileNode dual_node = fs["strategies"]["dual_roi"];
     if (!dual_node.empty()) {
         dual_expand = dual_node["secondary_expand_pixels"];
@@ -175,6 +183,10 @@ int main(int argc, char** argv) {
         {
             cv::FileNode t1only = dual_node["tier1_only"];
             if (!t1only.empty()) dual_tier1_only = static_cast<int>(t1only) != 0;
+        }
+        {
+            cv::FileNode pds = dual_node["primary_downsample_side"];
+            if (!pds.empty()) dual_primary_target_side = static_cast<int>(pds);
         }
         cv::FileNode ak_node = dual_node["akaze"];
         if (!ak_node.empty()) {
@@ -416,6 +428,8 @@ int main(int argc, char** argv) {
                 if (!v.empty()) temporal_cfg.hysteresis_down = static_cast<double>(v);
                 v = stn["locked_fail_limit"];
                 if (!v.empty()) temporal_cfg.locked_fail_limit = static_cast<int>(v);
+                v = stn["primary_fail_skip_threshold"];
+                if (!v.empty()) temporal_cfg.primary_fail_skip_threshold = static_cast<int>(v);
             }
 
             cv::FileNode v = tn["area_ema_alpha"];
@@ -479,6 +493,7 @@ int main(int argc, char** argv) {
     tracker_cfg.dual_roi_class1_fallback = dual_class1_fallback;
     tracker_cfg.dual_roi_primary_span_ratio = dual_primary_span_ratio;
     tracker_cfg.dual_roi_tier1_only = dual_tier1_only;
+    tracker_cfg.dual_primary_target_side = dual_primary_target_side;
     tracker_cfg.temporal = temporal_cfg;
 
     try {
@@ -512,6 +527,7 @@ int main(int argc, char** argv) {
             YoloConfig yolo_cfg = makeYoloConfig(model_path, DeviceType::CPU, conf);
             yolo_cfg.target_class_id = target_cls;
             yolo_cfg.roi_expand_ratio = expand;
+            yolo_cfg.intra_op_threads = yolo_intra_op_threads;
             RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
             yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
             if (yolo_ok) yolo.setCloseRangeConfig(close_range_cfg);

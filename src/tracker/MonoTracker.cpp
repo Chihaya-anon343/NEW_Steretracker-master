@@ -246,10 +246,13 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
 
     // 2. Crop images (left only) —— 灰度按 ROI 转换 (P3); 彩色引用共享 (画图面板均先 clone)
     cv::Mat left_c0_gray, left_c0_color;
+    double bc_ds = 1.0;                 // P1-1: primary BC 降采样倍率 (1=未降采样)
+    cv::Mat left_c0_gray_bc;            // BC 提取输入 (大 primary 时降采样, 角点坐标 ×bc_ds 回全图)
     if (!primary_spans_frame) {
         cv::Rect pri_rc(left_pri.x, left_pri.y, left_pri.width, left_pri.height);
         cv::cvtColor(left_img(pri_rc), left_c0_gray, cv::COLOR_BGR2GRAY);
         left_c0_color = left_img(pri_rc);
+        left_c0_gray_bc = downscaleGray(left_c0_gray, config_.dual_primary_target_side, bc_ds);
     }
     cv::Rect sec_rc(left_sec.x, left_sec.y, left_sec.width, left_sec.height);
     cv::Mat left_c1_gray;
@@ -277,13 +280,21 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     // 3+4. BC + AK extraction in parallel (mono, independent extractors, distinct image regions)
     auto t_extract = std::chrono::steady_clock::now();
     auto fut_bc = std::async(std::launch::async, [&]() {
-        return binary_extractor_->extractMono(left_c0_gray, left_c0_color);
+        return binary_extractor_->extractMono(left_c0_gray_bc, left_c0_color);
     });
     auto fut_ak = std::async(std::launch::async, [&]() {
         return dual_akaze_extractor_->extractMono(left_c1_gray, left_c1_color);
     });
 
     result_bc = fut_bc.get();
+    // P1-1: 降采样 BC 角点回迁 —— ×bc_ds 恢复全分辨率 crop 坐标, 再在全分辨率
+    // 灰度上 cornerSubPix 恢复亚像素精度 (BC 全图直提本无 subpix, 精度不劣于旧路径)
+    if (bc_ds > 1.0 && !result_bc.pts_left_match.empty()) {
+        for (auto& p : result_bc.pts_left_match) { p.x *= bc_ds; p.y *= bc_ds; }
+        refineCornersSubpix(left_c0_gray, result_bc.pts_left_match);
+        for (size_t k = 0; k < result_bc.kp_left.size() && k < result_bc.pts_left_match.size(); ++k)
+            result_bc.kp_left[k].pt = result_bc.pts_left_match[k];
+    }
     n_bc = static_cast<int>(result_bc.pts_left_match.size());
     if (verbose_console_) std::cout << "[DualRoi][Mono] BinaryCorner on class 0: " << n_bc << " corners" << "\n";
 
@@ -1024,12 +1035,16 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
 
         if (p.success) {
             pose = p;
+            if (ext == extractor_)
+                primary_pnp_fail_streak_ = 0;   // 链首 PnP 成功, 连败记忆清零
             if (verbose_console_)
                 std::cout << "[Mono] Extractor " << ext->name()
                           << " succeeded, n_kp=" << result.n_kp_left << "\n";
             break;
         }
 
+        if (ext == extractor_)
+            ++primary_pnp_fail_streak_;   // P0-2: 链首 PnP 连败记忆
         if (verbose_console_)
             std::cout << "[Mono] Extractor " << ext->name()
                       << " PnP failed, degrading..." << "\n";

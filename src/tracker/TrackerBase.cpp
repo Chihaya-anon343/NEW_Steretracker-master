@@ -100,6 +100,19 @@ void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
 
     applyBandChain(band_used, is_class1);
 
+    // P0-2: 主策略(链首) BC 连败记忆 —— 极近距透视畸变下 BC 提取成功但 PnP
+    // 物理性全败（重投影≥8px），连败 N 帧后跳过注定失败的 BC 尝试，链改为
+    // TT 优先（BC 移除，与 TT-only 链同构）；任一链首成功即清零恢复
+    if (tc.enabled && tc.primary_fail_skip_threshold > 0 &&
+        primary_pnp_fail_streak_ >= tc.primary_fail_skip_threshold &&
+        extractor_ == binary_extractor_.get()) {
+        extractor_ = tiny_extractor_.get();
+        fallback_extractors_.clear();
+        if (verbose_console_)
+            std::cout << "[Temporal] primary BC PnP failed " << primary_pnp_fail_streak_
+                      << " frames in a row, chain -> TinyTarget only" << "\n";
+    }
+
     // 粘滞压低档位时补齐向上的回退链：提名高档若失效仍可向上退化，避免 TT 单点终结
     if (tc.enabled && band_used < nominated_band_) {
         auto pushIfAbsent = [&](FeatureExtractor* e) {
@@ -204,6 +217,7 @@ int TrackerBase::resolveLockedStrategy(int band_raw, bool is_class1) {
         sticky_pending_ = 0;
         pending_count_ = 0;
         locked_fail_count_ = 0;
+        primary_pnp_fail_streak_ = 0;
         sticky_switch_reason_ = "hard_override";
         return sticky_locked_;
     }
@@ -233,6 +247,7 @@ int TrackerBase::resolveLockedStrategy(int band_raw, bool is_class1) {
     if (margin_ok && pending_count_ >= tc.hold_frames) {
         sticky_locked_ = band_ema;
         pending_count_ = 0;
+        primary_pnp_fail_streak_ = 0;
         sticky_switch_reason_ = "debounce";
     }
     return sticky_locked_;
@@ -244,6 +259,7 @@ void TrackerBase::resetStickiness() {
     sticky_pending_ = 0;
     pending_count_ = 0;
     locked_fail_count_ = 0;
+    primary_pnp_fail_streak_ = 0;
     sticky_switch_reason_ = "reset";
 }
 
@@ -262,6 +278,7 @@ void TrackerBase::updateStickinessFromWinner(const std::string& winner_name) {
         sticky_locked_ = wb;
         pending_count_ = 0;
         locked_fail_count_ = 0;
+        primary_pnp_fail_streak_ = 0;
         sticky_switch_reason_ = "realign";
         return;
     }
@@ -269,6 +286,7 @@ void TrackerBase::updateStickinessFromWinner(const std::string& winner_name) {
         sticky_locked_ = wb;
         pending_count_ = 0;
         locked_fail_count_ = 0;
+        primary_pnp_fail_streak_ = 0;
         sticky_switch_reason_ = "realign";
     }
 }
@@ -343,6 +361,38 @@ void TrackerBase::fillTemporalMeta(PipelineResult& result) const {
     result.sticky_hold = sticky_hold_;
     result.nominated_strategy = strategyNameFromBand(nominated_band_);
     result.switch_reason = sticky_switch_reason_;
+}
+
+// ============================================================
+// P1-1: DualRoi primary 降采样工具
+// ============================================================
+
+cv::Mat TrackerBase::downscaleGray(const cv::Mat& gray, int target_side, double& d) {
+    d = 1.0;
+    if (target_side <= 0 || gray.empty()) return gray;
+    int short_side = std::min(gray.cols, gray.rows);
+    if (short_side <= target_side) return gray;
+    d = static_cast<double>(short_side) / target_side;
+    cv::Mat out;
+    cv::resize(gray, out, cv::Size(cvRound(gray.cols / d), cvRound(gray.rows / d)),
+               0, 0, cv::INTER_AREA);
+    return out;
+}
+
+void TrackerBase::refineCornersSubpix(const cv::Mat& gray,
+                                      std::vector<cv::Point2f>& pts, int win) {
+    if (gray.empty() || pts.size() < 4) return;
+
+    const int border = win + 1;
+    cv::Mat padded;
+    cv::copyMakeBorder(gray, padded, border, border, border, border,
+                       cv::BORDER_REPLICATE);
+    for (auto& p : pts) { p.x += border; p.y += border; }
+
+    cv::cornerSubPix(padded, pts, cv::Size(win, win), cv::Size(-1, -1),
+                     cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER,
+                                      50, 0.001));
+    for (auto& p : pts) { p.x -= border; p.y -= border; }
 }
 
 // ============================================================

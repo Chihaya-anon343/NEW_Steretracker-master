@@ -211,7 +211,13 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     if (debug_capture_) last_call_debug_.roi_gray = roi_gray.clone();
 
     // ---- 1. 超分辨率（×scale_factor）+ Otsu ----
+    // 自适应超分: 大 ROI 降低 sf 使超分后短边 ≈ superres_target_side,
+    // 小 ROI 保持固定 ×scale_factor (superres_target_side<=0 时完全保持旧行为)
     int sf = config_.scale_factor;
+    if (config_.superres_target_side > 0) {
+        int short_side = std::min(roi_gray.cols, roi_gray.rows);
+        sf = std::max(1, std::min(sf, config_.superres_target_side / std::max(1, short_side)));
+    }
     int new_w = roi_gray.cols * sf;
     int new_h = roi_gray.rows * sf;
 
