@@ -1,0 +1,342 @@
+{
+  "status": "complete_for_this_targeted_review",
+  "max_depth": 2,
+  "note": "来源批次原始引文证据保留；书目引用方向from→to。",
+  "edges": [
+    {
+      "from": "10.1109/iros.2016.7759617",
+      "to": "10.1109/icra.2011.5979561",
+      "evidence": "AprilTag2 §I p1及Ref[3]末页真实核验",
+      "type": "backward_reference",
+      "depth": 1,
+      "batch": "batch_hybrid.json"
+    },
+    {
+      "from": "10.1109/iccv.2017.164",
+      "to": "10.1109/iros.2016.7759617",
+      "evidence": "ChromaTag References [33] p10",
+      "type": "backward_reference",
+      "depth": 1,
+      "batch": "batch_hybrid.json"
+    },
+    {
+      "from": "10.1109/iccv.2017.164",
+      "to": "10.2312/pe/vmv/vmv10/041-048",
+      "evidence": "ChromaTag §2 p2 and References [21] p9",
+      "type": "backward_reference",
+      "depth": 1,
+      "batch": "batch_hybrid.json"
+    },
+    {
+      "from": "10.1016/j.imavis.2019.06.007",
+      "to": "10.1109/cvpr.2011.5995544",
+      "evidence": "STag References [17] pp26–27",
+      "type": "backward_reference",
+      "depth": 1,
+      "batch": "batch_hybrid.json"
+    },
+    {
+      "from": "10.1016/j.imavis.2019.06.007",
+      "to": "10.1016/j.patcog.2014.01.005",
+      "evidence": "STag References [11] p26",
+      "type": "backward_reference",
+      "depth": 1,
+      "batch": "batch_hybrid.json"
+    },
+    {
+      "from": "10.1109/iros55552.2023.10341961",
+      "to": "arxiv:2203.05334",
+      "evidence": "ICG+ §I p1 + References [16] p8",
+      "type": "backward_reference",
+      "depth": 1,
+      "batch": "batch_hybrid.json"
+    },
+    {
+      "from": "10.1007/s11263-014-0725-5",
+      "to": "10.1007/s11263-008-0152-6",
+      "location": "References p285",
+      "evidence_url": "https://3dvar.com/Collins2014Infinitesimal.pdf",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1007/s11263-014-0725-5",
+      "to": "10.1109/tpami.2006.252",
+      "location": "References p286",
+      "evidence_url": "https://3dvar.com/Collins2014Infinitesimal.pdf",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/icra40945.2020.9196902",
+      "to": "10.1109/tpami.2006.252",
+      "location": "References[12] preprint p7",
+      "evidence_url": "https://arxiv.org/pdf/1909.11888",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/icra40945.2020.9196902",
+      "to": "10.1007/s11263-014-0725-5",
+      "location": "References[13] preprint p7",
+      "evidence_url": "https://arxiv.org/pdf/1909.11888",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/icra40945.2020.9196902",
+      "to": "10.1109/icme.2012.176",
+      "location": "References[14] preprint p7",
+      "evidence_url": "https://arxiv.org/pdf/1909.11888",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/mmsp.2014.6958793",
+      "to": "10.1109/icme.2012.176",
+      "location": "References[8] PDF p6",
+      "evidence_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/mmsp.2014.6958793",
+      "to": "10.1109/tpami.2006.252",
+      "location": "References[7] PDF p6",
+      "evidence_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/cvpr46437.2021.00463",
+      "to": "title:leveragingfeatureuncertaintyinthepnpproblem",
+      "location": "References[6] preprint p9",
+      "evidence_url": "https://arxiv.org/pdf/2107.03890",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/cvpr46437.2021.00463",
+      "to": "10.1007/s11263-008-0152-6",
+      "location": "References[20] preprint p9",
+      "evidence_url": "https://arxiv.org/pdf/2107.03890",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/cvpr46437.2021.00463",
+      "to": "10.5194/isprs-annals-iii-3-131-2016",
+      "location": "References[40] preprint p10",
+      "evidence_url": "https://arxiv.org/pdf/2107.03890",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/s23020917",
+      "to": "10.1109/tpami.2006.252",
+      "location": "References[19]",
+      "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/s23020917",
+      "to": "10.1007/s11263-014-0725-5",
+      "location": "References[20]",
+      "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/s23020917",
+      "to": "10.1109/icra40945.2020.9196902",
+      "location": "References[23]",
+      "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/",
+      "batch": "batch_pose.json",
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.2514/6.2024-0338",
+      "to": "10.1109/iros40897.2019.8967787",
+      "batch": "batch_scale.json",
+      "evidence": "references [6]",
+      "original_edge": {
+        "target": "10.1109/IROS40897.2019.8967787",
+        "location": "references [6]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.2514/6.2024-0338",
+      "to": "10.1016/j.patcog.2019.107193",
+      "batch": "batch_scale.json",
+      "evidence": "references [4]; title relation verified; DOI omitted pending primary verification",
+      "original_edge": {
+        "target_title": "UcoSLAM: Simultaneous localization and mapping by fusion of keypoints and squared planar markers",
+        "location": "references [4]; title relation verified; DOI omitted pending primary verification"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/jsan15050070",
+      "to": "10.1109/sibcon50419.2021.9438855",
+      "batch": "batch_scale.json",
+      "evidence": "references [13]",
+      "original_edge": {
+        "target": "10.1109/SIBCON50419.2021.9438855",
+        "location": "references [13]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/jsan15050070",
+      "to": "10.1109/access.2019.2951204",
+      "batch": "batch_scale.json",
+      "evidence": "references [14]",
+      "original_edge": {
+        "target": "10.1109/ACCESS.2019.2951204",
+        "location": "references [14]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/jsan15050070",
+      "to": "10.1002/rob.21780",
+      "batch": "batch_scale.json",
+      "evidence": "references [16]",
+      "original_edge": {
+        "target": "10.1002/rob.21780",
+        "location": "references [16]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/jsan15050070",
+      "to": "10.3390/drones7120703",
+      "batch": "batch_scale.json",
+      "evidence": "references [12]",
+      "original_edge": {
+        "target": "10.3390/drones7120703",
+        "location": "references [12]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.3390/jsan15050070",
+      "to": "10.3390/s17091987",
+      "batch": "batch_scale.json",
+      "evidence": "references [21]",
+      "original_edge": {
+        "target": "10.3390/s17091987",
+        "location": "references [21]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "arxiv:2403.03806",
+      "to": "10.1109/iros40897.2019.8967787",
+      "batch": "batch_scale.json",
+      "evidence": "references [2]",
+      "original_edge": {
+        "target": "10.1109/IROS40897.2019.8967787",
+        "location": "references [2]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "arxiv:2403.03806",
+      "to": "10.1109/irc55401.2022.00047",
+      "batch": "batch_scale.json",
+      "evidence": "references [23]",
+      "original_edge": {
+        "target": "10.1109/IRC55401.2022.00047",
+        "location": "references [23]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "arxiv:2403.03806",
+      "to": "10.1109/irc55401.2022.00054",
+      "batch": "batch_scale.json",
+      "evidence": "references [7]",
+      "original_edge": {
+        "target": "10.1109/IRC55401.2022.00054",
+        "location": "references [7]"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/access.2019.2951204",
+      "to": "10.1109/iros40897.2019.8967787",
+      "batch": "batch_scale.json",
+      "evidence": "references [32] AprilTag3/Flexible Layouts",
+      "original_edge": {
+        "target": "10.1109/IROS40897.2019.8967787",
+        "location": "references [32] AprilTag3/Flexible Layouts"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/access.2019.2951204",
+      "to": "10.1002/rob.21780",
+      "batch": "batch_scale.json",
+      "evidence": "references [33] HArCo; full DOI needs primary metadata crosscheck",
+      "original_edge": {
+        "target": "10.1002/rob.21780",
+        "location": "references [33] HArCo; full DOI needs primary metadata crosscheck"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.1109/access.2019.2951204",
+      "to": "10.1007/s11263-014-0725-5",
+      "batch": "batch_scale.json",
+      "evidence": "references [38] IPPE; title relationship verified",
+      "original_edge": {
+        "target": "10.1007/s11263-014-0725-5",
+        "location": "references [38] IPPE; title relationship verified"
+      },
+      "depth": 1,
+      "type": "backward_reference"
+    },
+    {
+      "from": "10.7527/s1000-6893.2018.22601",
+      "to": "10.1007/s11263-008-0152-6",
+      "type": "backward_reference",
+      "depth": 1,
+      "evidence": "原始出版页参考文献[17]"
+    },
+    {
+      "from": "10.7527/s1000-6893.2018.22601",
+      "to": "10.1109/iros.2013.6696917",
+      "type": "backward_reference",
+      "depth": 1,
+      "evidence": "原始出版页参考文献[19]"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "date": "2026-09-30",
+  "question": "已知平面靶标在无人机逼近时的跨尺度观测组织、部分可见恢复与小目标位姿验收",
+  "domain_adaptation": "research-superpowers检索与筛选流程；工程领域原始论文优先，不使用PubMed作为主库",
+  "scoring": {"task_relevance": 3, "method_relevance": 4, "comparison_value": 3, "deep_read_threshold": 7},
+  "exceptions": ["经典基础算法保留为foundation，不因缺无人机场景排除", "引文计数不是质量评分", "评分不是新颖性证明"],
+  "inclusion": ["人工靶标6DoF定位", "多尺度与嵌套标记", "轮廓纹理互补与部分可见恢复", "平面位姿歧义与候选验收", "必要的融合时序基础"],
+  "exclusion": ["无位姿联系的通用2D检测跟踪", "非技术介绍或仅转载", "无法核验元数据的条目"],
+  "pilot_status": "按主题试筛并记录；尚无人工标注测试集，不声称人工验证准确率",
+  "citation_traversal_max_depth": 2,
+  "fulltext_policy": "具体机制与性能命题只用已读全文，摘要级记录仅作发现或有限背景；出版社/作者/机构/arXiv优先",
+  "publication_version_policy": "合并预印本和正式版；两者不同则分别记录阅读版本与引用版本"
+}

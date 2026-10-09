@@ -1,0 +1,92 @@
+[
+  {
+    "key": "Fractal2019",
+    "url": "https://burjcdigital.urjc.es/bitstreams/6cc6b966-a4c5-460a-b33f-ef710eb576b6/download",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\Fractal2019.pdf",
+    "bytes": 3131804,
+    "sha256": "7ed337221d67e8d5b396412e0024d2b83a4a388fec118046cab01cee08b871dd"
+  },
+  {
+    "key": "IPPE2014",
+    "url": "https://3dvar.com/Collins2014Infinitesimal.pdf",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\IPPE2014.pdf",
+    "bytes": 2546551,
+    "sha256": "3da48d9511e98201d546ce86ebf39ee50d0122e8dd29ea6b96fd4704a75733ee"
+  },
+  {
+    "key": "Wu2012",
+    "url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/icme2012_spe/icme2012_spe.pdf",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\Wu2012.pdf",
+    "bytes": 1587773,
+    "sha256": "1b0a58daa7fd4390e8877529d3eceec3061b3f0c2fb71858b8a2daaac1a05697"
+  },
+  {
+    "key": "Wu2014",
+    "url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\Wu2014.pdf",
+    "bytes": 2674871,
+    "sha256": "f469fa5a28bafe61b35d6319f28d8cb13013739ece4cf2ec595cc3f4ab53d26e"
+  },
+  {
+    "key": "ICGplus2023",
+    "url": "https://arxiv.org/pdf/2302.11458",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\ICGplus2023.pdf",
+    "bytes": 2257566,
+    "sha256": "5f3b30673f82329ee8f360a8b43e0afda03a1f706c65e9c6721180b072c59971"
+  },
+  {
+    "key": "STag2019",
+    "url": "https://arxiv.org/pdf/1707.06292",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\STag2019.pdf",
+    "bytes": 7355649,
+    "sha256": "b01dd0f6687142485672a9126257892e7c9ede8fb8f5db3dc52c2256a421f43d"
+  },
+  {
+    "key": "CALTag2010",
+    "url": "https://diglib.eg.org/bitstreams/8c1bf0fc-2bab-49e8-9457-c1cce5d3196d/download",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\CALTag2010.pdf",
+    "bytes": 1120637,
+    "sha256": "ac2c80c67ce1d6687699459933c18dca358b2e828e4e2f6877ecb51fd3798a6e"
+  },
+  {
+    "key": "AKAZE2013",
+    "url": "https://encov.ip.uca.fr/publications/pubfiles/2013_Alcantarilla_etal_BMVC_akaze.pdf",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\AKAZE2013.pdf",
+    "bytes": 374299,
+    "sha256": "eeda27091b0fb8659e185fdfc88299c8fc351dd7bcc3b08b8a5d58fe1fb2792b"
+  },
+  {
+    "key": "Lynen2013",
+    "url": "https://www.pure.ed.ac.uk/ws/portalfiles/portal/17220481/Lynen_et_al_2013_A_Robust_and_Modular_Mutli_Sensor_Fusion.pdf",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\Lynen2013.pdf",
+    "bytes": 1291874,
+    "sha256": "4cbe8adfb4fa674d2e5fd46cbd55d126db34d54b9e05dc456635fecc9bf7637e"
+  },
+  {
+    "key": "Lv2024",
+    "url": "https://mdpi-res.com/d_attachment/sensors/sensors-24-01645/article_deploy/sensors-24-01645.pdf",
+    "accessed": "2026-09-30",
+    "status": "archived",
+    "path": "C:\\NEW_Steretracker-master\\manuscript\\research-sessions\\2026-09-30-uav-target-pose\\papers\\Lv2024.pdf",
+    "bytes": 7291985,
+    "sha256": "f8a636c6fa0642f5e394f29b08e8ce6e8cea889b3208295b02429f5804e2be90"
+  }
+]

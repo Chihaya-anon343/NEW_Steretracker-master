@@ -1,0 +1,2713 @@
+{
+  "10.1109/icra.2011.5979561": {
+    "key": "10.1109/ICRA.2011.5979561",
+    "title": "AprilTag: A robust and flexible visual fiducial system",
+    "authors": [
+      "Edwin Olson"
+    ],
+    "year": 2011,
+    "doi": "10.1109/ICRA.2011.5979561",
+    "url": "https://april.eecs.umich.edu/pdfs/olson2011a.pdf",
+    "score_parts": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "人工平面靶标位姿直接相关；有边界恢复和编码算法；基础比较价值。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§III pp2–4",
+      "§III-C quad detection",
+      "§IV coding"
+    ],
+    "supported": [
+      "梯度分组拟合线段，再搜索四边形并用编码验证。",
+      "原始 AprilTag 考虑部分遮挡边界，而非要求全部标记像素完整。"
+    ],
+    "reported_limits": [
+      "§III-A指出梯度分组对图像噪声敏感，采用低通滤波。"
+    ],
+    "inference_limits": [
+      "其边界恢复不同于本文在全局观测失败后切换中心子区域；不能据此断言它缺乏所有恢复机制。"
+    ],
+    "id": "H01",
+    "score": 8,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 3,
+    "bibtex_key": "Olson2011",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/iros.2016.7759617": {
+    "key": "10.1109/IROS.2016.7759617",
+    "title": "AprilTag 2: Efficient and robust fiducial detection",
+    "authors": [
+      "John Wang",
+      "Edwin Olson"
+    ],
+    "year": 2016,
+    "doi": "10.1109/IROS.2016.7759617",
+    "url": "https://april.eecs.umich.edu/pdfs/wang2016iros.pdf",
+    "score_parts": [
+      3,
+      3,
+      3
+    ],
+    "score_reason": "高效靶标位姿基础；明确检测速度与部分边界遮挡处理的取舍，直接帮助划定恢复贡献。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§I p1",
+      "§III-A p2",
+      "§III-B/C pp2–3"
+    ],
+    "supported": [
+      "重新设计四边形检测器，提高小目标检测和效率。",
+      "作者明确以恢复部分遮挡边界的能力换取检测速度与较少假候选。"
+    ],
+    "reported_limits": [
+      "部分遮挡边界恢复能力是明确被取舍的能力。"
+    ],
+    "inference_limits": [
+      "该取舍属于 AprilTag 2 的特定设计，不能泛化为所有人工标记都无法应对遮挡。"
+    ],
+    "id": "H02",
+    "score": 9,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 14,
+    "bibtex_key": "Wang2016",
+    "crossref_metadata_verified": true
+  },
+  "10.1016/j.imavis.2019.06.007": {
+    "key": "10.1016/j.imavis.2019.06.007",
+    "title": "STag: A stable fiducial marker system",
+    "authors": [
+      "Burak Benligiray",
+      "Cihan Topal",
+      "Cuneyt Akinlar"
+    ],
+    "year": 2019,
+    "doi": "10.1016/j.imavis.2019.06.007",
+    "arxiv": "1707.06292",
+    "url": "https://arxiv.org/pdf/1707.06292",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "组合几何观测和条件回退与本文直接可比；必须用于收窄融合和恢复贡献。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§4.1 pp9–10",
+      "§4.3 pp12–13",
+      "§5.5.2 p23"
+    ],
+    "supported": [
+      "外方框用于检测和初始单应，内圆轮廓用于单应精化。",
+      "三个连续角可构建候选四边形，允许一个角被遮挡。",
+      "没有合适内圆边缘时省略精化；作者观察到部分遮挡椭圆精化可能降低稳定性。"
+    ],
+    "reported_limits": [
+      "单个圆锥曲线对应不足以独立估计单应，需要方框初始解。",
+      "部分遮挡内圆不执行精化。"
+    ],
+    "inference_limits": [
+      "已有混合几何与条件省略精化，本文应强调跨尺度轮廓/纹理策略调度和多层子集/区域重解，而非首次互补或首次回退。"
+    ],
+    "version_note": "2019期刊版元数据；页号按28页arXiv稿计。",
+    "id": "H03",
+    "score": 10,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 15,
+    "bibtex_key": "STag2019",
+    "crossref_metadata_verified": true
+  },
+  "10.2312/pe/vmv/vmv10/041-048": {
+    "key": "10.2312/PE/VMV/VMV10/041-048",
+    "title": "CALTag: High Precision Fiducial Markers for Camera Calibration",
+    "authors": [
+      "Bradley Atcheson",
+      "Felix Heide",
+      "Wolfgang Heidrich"
+    ],
+    "year": 2010,
+    "doi": "10.2312/PE/VMV/VMV10/041-048",
+    "url": "https://www.cs.ubc.ca/labs/imager/tr/2010/Atcheson_VMV2010_CALTag/files/caltag.pdf",
+    "score_parts": [
+      3,
+      3,
+      3
+    ],
+    "score_reason": "局部标记ID和已知布局恢复观测直接对应部分可见性问题；校准任务与逼近定位不同。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§3.2 pp3–5",
+      "§3.2.4 p5",
+      "§3.2.6 p5"
+    ],
+    "supported": [
+      "检测局部编码区域后以鞍点求亚像素坐标。",
+      "已知布局及单应/畸变估计用于寻找可见但漏检的校准点。"
+    ],
+    "reported_limits": [
+      "候选区域面积条件反映编码像素需可分辨。",
+      "编码只检测错误不纠错，因为成组使用可容许部分ID缺失。"
+    ],
+    "inference_limits": [
+      "缺失局部ID不一定让整板失效，故不能称已有靶标必须整体完整；本文采用整体/中心两区域与不同观测策略，须实验验证其任务收益。"
+    ],
+    "id": "H04",
+    "score": 9,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 19,
+    "bibtex_key": "CALTag2010",
+    "primary_metadata_override": {
+      "container-title": [
+        "Vision, Modeling, and Visualization"
+      ],
+      "page": "41-48",
+      "type": "proceedings-article",
+      "source": "https://diglib.eg.org/items/8aaa0fd8-f07d-45b2-bad2-d38dd31ff035"
+    }
+  },
+  "10.1109/iccv.2017.164": {
+    "key": "10.1109/ICCV.2017.164",
+    "title": "ChromaTag: A Colored Marker and Fast Detection Algorithm",
+    "authors": [
+      "Joseph DeGol",
+      "Timothy Bretl",
+      "Derek Hoiem"
+    ],
+    "year": 2017,
+    "doi": "10.1109/ICCV.2017.164",
+    "arxiv": "1708.02982",
+    "url": "https://arxiv.org/pdf/1708.02982",
+    "metadata_note": "Crossref原始DOI注册元数据核验：IEEE页1481–1490；CVF页1472–1481可能排版页码不同，引用只保留不带页码DOI及作者年。",
+    "score_parts": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "颜色-几何互补基础和尺度依赖实验相关；未直接设计本文回退链。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§3.1/3.2 pp3–4",
+      "§4 pp4–5",
+      "§5.2 pp7–8",
+      "References [21] p9/[33] p10"
+    ],
+    "supported": [
+      "LAB对立色梯度用于提前拒绝假候选，黑白外边框用于精确角点定位。",
+      "召回同时依赖标记图像尺寸和视角。"
+    ],
+    "reported_limits": [
+      "§5.2图9中小标记召回下降；论文说明很小标记不是重点时适合其速度取舍。"
+    ],
+    "inference_limits": [
+      "颜色与灰度分工已存在；这不是纹理关键点与轮廓角点统一PnP的同一机制，且检测指标不能替代6DoF真值误差。"
+    ],
+    "id": "H05",
+    "score": 8,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "metadata_source": "https://api.crossref.org/works/10.1109/ICCV.2017.164",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text"
+  },
+  "10.1109/cvpr.2011.5995544": {
+    "key": "10.1109/CVPR.2011.5995544",
+    "title": "RUNE-Tag: A high accuracy fiducial marker with strong occlusion resilience",
+    "authors": [
+      "Filippo Bergamasco",
+      "Andrea Albarelli",
+      "Emanuele Rodolà",
+      "Andrea Torsello"
+    ],
+    "year": 2011,
+    "doi": "10.1109/CVPR.2011.5995544",
+    "url": "https://iris.unive.it/bitstream/10278/33533/1/2011-CVPR-runetag-published.pdf",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "通过剩余分散特征进行识别和位姿恢复，直接挑战‘首次部分可见恢复’表述。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§2.2 pp4–5",
+      "§3.2/3.3/3.4 p7",
+      "§4 p8"
+    ],
+    "supported": [
+      "同心层圆点与循环码建立标记对应，部分圆点不可见时仍能识别。",
+      "以多点对应估计位姿，遮挡能力与码本/圆点数量存在取舍。"
+    ],
+    "reported_limits": [
+      "§3.4/§4明确高密度圆点在远距或倾斜条件下变小、混叠，椭圆检测可能失败。",
+      "速度并非主要优化目标。"
+    ],
+    "inference_limits": [
+      "‘抗遮挡’不等于‘全尺度连续输出’；本文需要显示远距检测、近距截断和重解覆盖的联合收益，不能否定已有遮挡恢复。"
+    ],
+    "id": "H06",
+    "score": 10,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 20,
+    "bibtex_key": "RUNE2011",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/tvcg.2020.2988466": {
+    "key": "10.1109/TVCG.2020.2988466",
+    "title": "TopoTag: A Robust and Scalable Topological Fiducial Marker System",
+    "authors": [
+      "Guoxing Yu",
+      "Yongtao Hu",
+      "Jingwen Dai"
+    ],
+    "year": 2021,
+    "arxiv": "1908.01450",
+    "doi": "10.1109/TVCG.2020.2988466",
+    "url": "https://arxiv.org/pdf/1908.01450",
+    "metadata_note": "Crossref原始DOI注册元数据核验：TVCG正式版2021年9月1日，页3769–3780；全文按2019起预印本读取。",
+    "score_parts": [
+      3,
+      3,
+      3
+    ],
+    "score_reason": "利用全部内部顶点与拓扑处理部分遮挡，适合人工靶标局部可见比较。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§5.4 pp7–8",
+      "§5.7 pp9–10",
+      "§5.10 p10"
+    ],
+    "supported": [
+      "使用拓扑及几何信息检测和解码，利用多个顶点估计位姿。",
+      "§5.7将支持遮挡的条件明确限定为保持拓扑结构。"
+    ],
+    "reported_limits": [
+      "遮挡支持要求主拓扑结构未被破坏。",
+      "§5.7遮挡比例实验依赖从基准节点侧/反侧遮挡方式，不可普遍化到任意遮挡。"
+    ],
+    "inference_limits": [
+      "可见面积比例不能独自刻画几何信息损失；本文五状态应包含区域可见性，且需报告截断位置与对应点分布。"
+    ],
+    "id": "H07",
+    "score": 9,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "metadata_source": "https://api.crossref.org/works/10.1109/TVCG.2020.2988466",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text"
+  },
+  "10.1109/cvpr42600.2020.00051": {
+    "key": "arxiv:2001.01869",
+    "title": "HybridPose: 6D Object Pose Estimation under Hybrid Representations",
+    "authors": [
+      "Chen Song",
+      "Jiaru Song",
+      "Qixing Huang"
+    ],
+    "year": 2020,
+    "arxiv": "2001.01869",
+    "doi": "10.1109/CVPR42600.2020.00051",
+    "url": "https://arxiv.org/pdf/2001.01869",
+    "score_parts": [
+      2,
+      4,
+      2
+    ],
+    "score_reason": "一般6D对象任务；关键点、边向量和对称对应互补联合求解有直接方法比较价值。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§3.1–3.3 pp3–5",
+      "§4 Tables1–2 pp7–8"
+    ],
+    "supported": [
+      "联合预测关键点、边向量和对称对应，初估和鲁棒精化共同利用这些表示。"
+    ],
+    "reported_limits": [
+      "预测结果包含异常值，精化采用鲁棒函数处理。"
+    ],
+    "inference_limits": [
+      "不同表示互补和统一求解不是本文独有；本文重点是无须训练姿态网络的已知平面模板观测组织与逼近失败恢复。"
+    ],
+    "version_note": "作者GitHub 2020-10-16更新训练/测试划分，当前arXiv与CVF旧版性能数字不一致，禁止引用旧摘要数字。",
+    "version_source": "https://github.com/chensong1995/HybridPose",
+    "id": "H08",
+    "score": 8,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 17,
+    "bibtex_key": "HybridPose2020",
+    "crossref_metadata_verified": true,
+    "primary_metadata_override": {
+      "page": "431-440",
+      "source": "https://openaccess.thecvf.com/content_CVPR_2020/html/Song_HybridPose_6D_Object_Pose_Estimation_Under_Hybrid_Representations_CVPR_2020_paper.html",
+      "note": "CVF正式排版页码；Crossref/IEEE注册页码428-437另保留在原始缓存，不混用。"
+    }
+  },
+  "10.1177/0278364907080477": {
+    "key": "10.1177/0278364907080477",
+    "title": "Real-time Hybrid Tracking using Edge and Texture Information",
+    "authors": [
+      "Muriel Pressigout",
+      "Eric Marchand"
+    ],
+    "year": 2007,
+    "doi": "10.1177/0278364907080477",
+    "url": "https://journals.sagepub.com/doi/10.1177/0278364907080477",
+    "score_parts": [
+      2,
+      4,
+      3
+    ],
+    "score_reason": "边缘纹理同目标联合非线性位姿估计为直接先例，优先级高。",
+    "status": "publisher_abstract_and_indexed_fragments_only",
+    "full_text_attempts": [
+      "作者旧域irisa无法读取",
+      "CiteSeer全文索引存在，直接open失败",
+      "Unpaywall查询未返回OA"
+    ],
+    "locations": [
+      "Publisher abstract",
+      "出版社元数据IJRR26(7):689–713"
+    ],
+    "supported": [
+      "出版社原始摘要明确由单一非线性准则整合纹理与边缘，同时估计单应或3D位姿。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "不能宣称本文首次融合轮廓与纹理。全文尚不可核验，不据此断言其初始化、回退机制缺失，也不用于性能数字。"
+    ],
+    "legal_author_url_unavailable": "https://www.irisa.fr/lagadic/pdf/2007_ijrr_pressigout.pdf",
+    "id": "H09",
+    "score": 9,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "publisher_abstract_and_indexed_fragments_only",
+    "manuscript_reference_number": 7,
+    "bibtex_key": "Pressigout2007",
+    "crossref_metadata_verified": true
+  },
+  "arxiv:1812.03247": {
+    "key": "arxiv:1812.03247",
+    "title": "Deep ChArUco: Dark ChArUco Marker Pose Estimation",
+    "authors": [
+      "Danying Hu",
+      "Daniel DeTone",
+      "Tomasz Malisiewicz"
+    ],
+    "year": 2019,
+    "arxiv": "1812.03247",
+    "doi": null,
+    "url": "https://arxiv.org/pdf/1812.03247",
+    "score_parts": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "已知平面标记CNN亚像素点＋PnP，说明光照模糊退化可用不同检测路线处理。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§3.1–3.3 pp3–4",
+      "§4 pp4–5",
+      "§5.2/5.3 pp6–7"
+    ],
+    "supported": [
+      "点位置和ID网络结合RefineNet亚像素精化，然后PnPRansac。",
+      "CNN针对特定ChArUco板训练，评测低光照及运动模糊。"
+    ],
+    "reported_limits": [
+      "§5.3给出精化精度与时间取舍。",
+      "附录提到严格小于1像素阈值下运动模糊序列传统法更好，可能需要真实模糊训练。"
+    ],
+    "inference_limits": [
+      "§5采用重投影误差定义‘正确位姿’，不能直接解读为独立6DoF真值误差；本文若有真实真值应以平移旋转误差验证。"
+    ],
+    "id": "H10",
+    "score": 8,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text"
+  },
+  "10.1109/cvpr.2016.67": {
+    "key": "10.1109/CVPR.2016.67",
+    "title": "Detection and Accurate Localization of Circular Fiducials Under Highly Challenging Conditions",
+    "authors": [
+      "Lilian Calvet",
+      "Pierre Gurdjos",
+      "Carsten Griwodz",
+      "Simone Gasparini"
+    ],
+    "year": 2016,
+    "doi": "10.1109/CVPR.2016.67",
+    "url": "https://openaccess.thecvf.com/content_cvpr_2016/html/Calvet_Detection_and_Accurate_CVPR_2016_paper.html",
+    "score_parts": [
+      3,
+      2,
+      2
+    ],
+    "score_reason": "圆形靶标投影中心与复杂条件定位相关，但不直接涉及跨区域回退。",
+    "status": "publisher_abstract_only_pdf_fetch_failed",
+    "locations": [
+      "CVF abstract"
+    ],
+    "supported": [
+      "同心圆标记利用投影性质实现圆心投影定位；研究目标包含遮挡、距离、角度和相机运动。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "圆心定位属于2D观测，不宜自动等同于单标记完整6DoF求解。原文PDF打不开，正文只能保留方法类别。"
+    ],
+    "id": "H11",
+    "score": 7,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "publisher_abstract_only_pdf_fetch_failed"
+  },
+  "10.1016/j.patcog.2014.01.005": {
+    "key": "10.1016/j.patcog.2014.01.005",
+    "title": "Automatic generation and detection of highly reliable fiducial markers under occlusion",
+    "authors": [
+      "Sergio Garrido-Jurado",
+      "Rafael Muñoz-Salinas",
+      "F. J. Madrid-Cuevas",
+      "Manuel J. Marín-Jiménez"
+    ],
+    "year": 2014,
+    "doi": "10.1016/j.patcog.2014.01.005",
+    "url": "https://www.sciencedirect.com/science/article/pii/S0031320314000235",
+    "score_parts": [
+      3,
+      3,
+      3
+    ],
+    "score_reason": "多标记board与遮挡处理挑战‘部分可见定位首次’；高优先级。",
+    "status": "publisher_abstract_intro_and_section_snippets_only",
+    "full_text_attempts": [
+      "Unpaywall is_oa=false,no locations"
+    ],
+    "locations": [
+      "Publisher abstract/introduction",
+      "§5 section snippet"
+    ],
+    "supported": [
+      "可配置编码字典和纠错检测；多标记board搭配颜色分割遮挡mask。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "原始摘要支持多标记联合应对遮挡这一类方法；mask一部分用途是避免渲染遮挡像素，不应偷换成本文求解后验收。全文不可得不比较具体恢复算法。"
+    ],
+    "id": "H12",
+    "score": 9,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "publisher_abstract_intro_and_section_snippets_only",
+    "manuscript_reference_number": 4,
+    "bibtex_key": "Garrido2014",
+    "crossref_metadata_verified": true
+  },
+  "arxiv:2006.00842": {
+    "key": "arxiv:2006.00842",
+    "title": "LFTag: A Scalable Visual Fiducial System with Low Spatial Frequency",
+    "authors": [
+      "Ben Wang"
+    ],
+    "year": 2020,
+    "arxiv": "2006.00842",
+    "doi": null,
+    "url": "https://arxiv.org/abs/2006.00842",
+    "score_parts": [
+      3,
+      2,
+      1
+    ],
+    "score_reason": "低空间频率与检测距离相关；仅有仿真类摘要证据，非本文融合/恢复核心。",
+    "status": "abstract_screened_possible_relevance",
+    "locations": [
+      "arXiv abstract"
+    ],
+    "supported": [
+      "低空间频率约束下用拓扑检测与相对位置编码。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "距离/码本性能摘要主张基于仿真，暂不用于真值精度或逼近连续性结论。"
+    ],
+    "id": "H13",
+    "score": 6,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "abstract_screened_possible_relevance"
+  },
+  "10.1109/tpami.2009.146": {
+    "key": "10.1109/TPAMI.2009.146",
+    "title": "Designing highly reliable fiducial markers",
+    "authors": [
+      "Mark Fiala"
+    ],
+    "year": 2010,
+    "doi": "10.1109/TPAMI.2009.146",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/20489233/",
+    "score_parts": [
+      3,
+      2,
+      1
+    ],
+    "score_reason": "ARTag基础；两阶段可靠设计有关但对本文区域重解比较不具体。",
+    "status": "abstract_screened_possible_relevance",
+    "full_text_attempts": [
+      "Unpaywall is_oa=false,no locations"
+    ],
+    "locations": [
+      "Indexed original abstract"
+    ],
+    "supported": [
+      "候选生成与身份验证分离；边缘候选与数字编码校验用于可靠标记。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "仅背景，不拿摘要证明其完整失败恢复性能。"
+    ],
+    "id": "H14",
+    "score": 6,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "abstract_screened_possible_relevance"
+  },
+  "arxiv:2203.05334": {
+    "key": "arxiv:2203.05334",
+    "title": "Iterative Corresponding Geometry: Fusing Region and Depth for Highly Efficient 3D Tracking of Textureless Objects",
+    "authors": [
+      "Manuel Stoiber",
+      "Martin Sundermeyer",
+      "Rudolph Triebel"
+    ],
+    "year": 2022,
+    "arxiv": "2203.05334",
+    "doi": null,
+    "url": "https://arxiv.org/pdf/2203.05334",
+    "score_parts": [
+      2,
+      3,
+      2
+    ],
+    "score_reason": "区域与depth概率融合及拒绝遮挡观测直接提供方法比较，但传感器/3D任务不同。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§3 fusion formulation",
+      "Algorithm/occlusion discussion pp6–7",
+      "Fig4 p6",
+      "§4 evaluation"
+    ],
+    "supported": [
+      "联合区域与深度观测迭代优化，深度测量比模型预测更近时识别遮挡并剔除对应。"
+    ],
+    "reported_limits": [
+      "算法参数按数据集调整，考虑帧间运动、深度质量和图像分辨率。"
+    ],
+    "inference_limits": [
+      "显式遮挡拒绝不能称为本文创新；本文的中心区域重解针对平面已知模板和视野截断，需区别于深度遮挡mask。"
+    ],
+    "id": "H15",
+    "score": 7,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text"
+  },
+  "10.1007/s11263-022-01579-8": {
+    "key": "10.1007/s11263-022-01579-8",
+    "title": "SRT3D: A Sparse Region-Based 3D Object Tracking Approach for the Real World",
+    "authors": [
+      "Manuel Stoiber",
+      "Martin Pfanne",
+      "Klaus H. Strobl",
+      "Rudolph Triebel",
+      "Alin Albu-Schäffer"
+    ],
+    "year": 2022,
+    "doi": "10.1007/s11263-022-01579-8",
+    "arxiv": "2110.12715",
+    "url": "https://link.springer.com/article/10.1007/s11263-022-01579-8",
+    "score_parts": [
+      2,
+      3,
+      2
+    ],
+    "score_reason": "稀疏区域位姿跟踪、多尺度优化和遮挡建模有直接方法启发，非目标特定逼近调度。",
+    "status": "full_text_html_reviewed",
+    "locations": [
+      "§1.3",
+      "§4.4 Occlusion Modeling",
+      "§5.1 RBOT",
+      "§5.2 OPT"
+    ],
+    "supported": [
+      "仅区域观测的稀疏对应线概率模型；显式已知遮挡mask用于排除对应线。",
+      "§5.1失效后以真值重新初始化。"
+    ],
+    "reported_limits": [
+      "§5.1评测需正确初始位姿，失效以真值重启。",
+      "§5.2对轴对称对象加强旋转正则化，因为几何不能约束某些旋转。"
+    ],
+    "inference_limits": [
+      "含真值重启的tracking success不可直接与自主恢复或完整序列覆盖率比较。本文恢复指标须独立记录无需真值重启的连续失败长度。"
+    ],
+    "id": "H16",
+    "score": 7,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text"
+  },
+  "10.1109/iros55552.2023.10341961": {
+    "key": "10.1109/IROS55552.2023.10341961",
+    "title": "Fusing Visual Appearance and Geometry for Multi-modality 6DoF Object Tracking",
+    "authors": [
+      "Manuel Stoiber",
+      "Mariam Elsayed",
+      "Anne E. Reichert",
+      "Florian Steidle",
+      "Dongheui Lee",
+      "Rudolph Triebel"
+    ],
+    "year": 2023,
+    "doi": "10.1109/IROS55552.2023.10341961",
+    "arxiv": "2302.11458",
+    "url": "https://arxiv.org/pdf/2302.11458",
+    "score_parts": [
+      2,
+      4,
+      3
+    ],
+    "score_reason": "近年关键点纹理、多区域与几何统一位姿融合直接最接近本文联合观测概念。",
+    "status": "full_text_reviewed",
+    "locations": [
+      "§III-B p3 Eqs4–7",
+      "§III-C pp3–4",
+      "§III-D p4",
+      "§IV-C p6",
+      "References [16] p8"
+    ],
+    "supported": [
+      "联合depth、texture和多region概率，通过汇总梯度/Hessian估计位姿。",
+      "关键帧2D描述子匹配3D模型点，Tukey损失处理异常；多区域考虑物体内部差异。"
+    ],
+    "reported_limits": [
+      "纹理残差不确定度及Tukey常量为用户参数；方法使用前一位姿附近区域和关键帧。"
+    ],
+    "inference_limits": [
+      "统一坐标下互补观测与鲁棒融合已有明确先例；本文只能以尺度/可见性调度和多层重解这一任务组合为差异，不能宣称首创。"
+    ],
+    "id": "H17",
+    "score": 9,
+    "has_full_text": true,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 18,
+    "bibtex_key": "ICGplus2023",
+    "crossref_metadata_verified": true
+  },
+  "10.1016/j.aei.2024.102788": {
+    "key": "10.1016/j.aei.2024.102788",
+    "title": "A multi-feature fusion-based pose tracking method for industrial object with visual ambiguities",
+    "authors": [
+      "Nengbin Lv",
+      "Delong Zhao",
+      "Feifei Kong",
+      "Zhangmao Xu",
+      "Fuzhou Du"
+    ],
+    "year": 2024,
+    "doi": "10.1016/j.aei.2024.102788",
+    "url": "https://www.sciencedirect.com/science/article/pii/S1474034624004361",
+    "score_parts": [
+      2,
+      4,
+      3
+    ],
+    "score_reason": "按实时观测状态自适应多特征融合，最新强比较候选，防止泛化创新主张。",
+    "status": "publisher_abstract_intro_and_section_snippets_only",
+    "full_text_attempts": [
+      "Unpaywall is_oa=false,no locations"
+    ],
+    "locations": [
+      "Publisher abstract and introduction",
+      "Proposed method section snippet"
+    ],
+    "supported": [
+      "出版社摘要和引言明确统计颜色＋几何边缘、按残差和匹配率分配权重、局部/非局部混合优化。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "‘首次自适应多特征融合’不可成立。全文未得，不判断其是否含本文同样的整体→中心区域回退，不使用性能数字。"
+    ],
+    "id": "H18",
+    "score": 9,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "publisher_abstract_intro_and_section_snippets_only"
+  },
+  "10.1109/euvip53989.2022.9922671": {
+    "key": "10.1109/EUVIP53989.2022.9922671",
+    "title": "ITER-Tag: An Adaptable Framework for Robust Uncoded Fiducial Marker Detection and Identification",
+    "authors": [
+      "Laura Gonçalves Ribeiro",
+      "Olli J. Suominen",
+      "Sari Peltonen",
+      "Emilio Ruiz Morales",
+      "Atanas Gotchev"
+    ],
+    "year": 2022,
+    "doi": "10.1109/EUVIP53989.2022.9922671",
+    "url": "https://researchportal.tuni.fi/en/publications/iter-tag-an-adaptable-framework-for-robust-uncoded-fiducial-marke/",
+    "score_parts": [
+      2,
+      2,
+      2
+    ],
+    "score_reason": "少量非编码点和部分遮挡六自由度靶标定位可参考；工业部署与本文任务差异较大。",
+    "status": "abstract_screened_possible_relevance",
+    "locations": [
+      "Author institution abstract"
+    ],
+    "supported": [
+      "少量无编码标记适应不同布局，检测/识别后求6DoF，研究一定程度的遮挡。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "保留后续候选，未深读不用于具体恢复链比较。"
+    ],
+    "potential_full_text_url_not_read": "https://trepo.tuni.fi/bitstream/handle/10024/148035/978-952-03-2882-5.pdf?isAllowed=y&sequence=5",
+    "id": "H19",
+    "score": 6,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "abstract_screened_possible_relevance"
+  },
+  "10.1016/j.imavis.2025.105821": {
+    "key": "10.1016/j.imavis.2025.105821",
+    "title": "PACMAN: Rapid identification of keypoint patch-based fiducial marker in occluded environments",
+    "authors": [
+      "Taewook Park",
+      "Geunsik Bae",
+      "Woojae Shin",
+      "Meraj Mammadov",
+      "Jaemin Seo",
+      "Heejung Shin",
+      "Hyondong Oh"
+    ],
+    "year": 2026,
+    "doi": "10.1016/j.imavis.2025.105821",
+    "url": "https://www.sciencedirect.com/science/article/pii/S0262885625004093",
+    "score_parts": [
+      3,
+      2,
+      2
+    ],
+    "score_reason": "最新人工关键点标记遮挡检测，避免综述只含老文；全文机制暂不可核验。",
+    "status": "publisher_indexed_abstract_only",
+    "locations": [
+      "Publisher indexed abstract",
+      "Author lab publication list J82"
+    ],
+    "full_text_attempts": [
+      "Publisher full text unavailable",
+      "Unpaywall is_oa=false,no locations"
+    ],
+    "supported": [
+      "标题与原始摘要表明面向遮挡环境的关键点patch标记及快速识别。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "只可作为最新遮挡靶标检测候选，不比较具体PnP/区域回退；期刊正式年2026，DOI含2025不能当出版年。"
+    ],
+    "metadata_note": "Crossref原始DOI注册元数据核验：正式期刊2026年1月，第六作者Heejung Shin；实验室页缩写存在歧义，以Crossref为准。",
+    "id": "H20",
+    "score": 7,
+    "has_full_text": false,
+    "source": "targeted_web_search_and_verified_reference_traversal",
+    "review_date": "2026-09-30",
+    "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+    "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+    "metadata_source": "https://api.crossref.org/works/10.1016/j.imavis.2025.105821",
+    "review_batch": "batch_hybrid.json",
+    "read_level": "publisher_indexed_abstract_only"
+  },
+  "10.1007/s11263-008-0152-6": {
+    "key": "Lepetit2009EPnP",
+    "title": "EPnP: An Accurate O(n) Solution to the PnP Problem",
+    "authors": [
+      "Vincent Lepetit",
+      "Francesc Moreno-Noguer",
+      "Pascal Fua"
+    ],
+    "year": 2009,
+    "venue": "International Journal of Computer Vision 81:155-166",
+    "doi": "10.1007/s11263-008-0152-6",
+    "primary_url": "https://www.epfl.ch/labs/cvlab/software/multi-view-stereo/epnp/",
+    "full_text_url": "https://www.tugraz.at/fileadmin/user_upload/Institute/ICG/Images/team_lepetit/publications/lepetit_ijcv08.pdf",
+    "score_parts": [
+      2,
+      4,
+      2
+    ],
+    "score": 8,
+    "reason": "系统使用的通用PnP基础；必须避免把平面歧义说成EPnP特有。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "作者版本PDF第6页Sec3式(9)，第10页Sec5.1.2；正式期刊页码请用出版社版本映射。",
+    "supports": "可处理n>=4的平面和非平面点；内部也有多组候选按重投影选择；平面实验承认GN精化不能解决其余歧义案例。",
+    "source_limitations": "Sec5.1.2中平面实验误差对未受歧义影响的解统计，另报告异常解比例。",
+    "inference_for_project": "冷启动EPnP属于既有算法；不能由较小重投影误差推断较小真值姿态误差。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 21,
+    "bibtex_key": "EPnP2009",
+    "crossref_metadata_verified": true
+  },
+  "10.1007/s11263-014-0725-5": {
+    "key": "Collins2014IPPE",
+    "title": "Infinitesimal Plane-Based Pose Estimation",
+    "authors": [
+      "Toby Collins",
+      "Adrien Bartoli"
+    ],
+    "year": 2014,
+    "venue": "International Journal of Computer Vision 109:252-286",
+    "doi": "10.1007/s11263-014-0725-5",
+    "primary_url": "https://doi.org/10.1007/s11263-014-0725-5",
+    "full_text_url": "https://3dvar.com/Collins2014Infinitesimal.pdf",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score": 10,
+    "reason": "平面两解、弱透视和候选评价的直接理论依据。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "p253 Sec1/1.1，p254 Q1-Q6，pp255-257 Sec2；参考文献pp285-286。",
+    "supports": "小平面或远距弱透视条件下两候选均可与噪声相容；IPPE一至两物理有效解，旋转歧义与平移唯一性有特定理论条件；候选精化取最小重投影为常用流程。",
+    "source_limitations": "Sec1.3假定相机已标定且畸变预处理；一般几何退化下不能唯一恢复。",
+    "inference_for_project": "IPPE提供候选而非对真实姿态的保证；尺度门限不增加独立几何信息。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 9,
+    "bibtex_key": "Collins2014",
+    "primary_metadata_override": {
+      "container-title": [
+        "International Journal of Computer Vision"
+      ],
+      "volume": "109",
+      "page": "252-286",
+      "type": "journal-article",
+      "source": "https://3dvar.com/Collins2014Infinitesimal.pdf"
+    }
+  },
+  "10.1109/tpami.2006.252": {
+    "key": "Schweighofer2006RPP",
+    "title": "Robust Pose Estimation from a Planar Target",
+    "authors": [
+      "Gerald Schweighofer",
+      "Axel Pinz"
+    ],
+    "year": 2006,
+    "venue": "IEEE TPAMI 28(12):2024-2030",
+    "doi": "10.1109/TPAMI.2006.252",
+    "primary_url": "https://ieeexplore.ieee.org/document/1717461/",
+    "abstract_url": "https://pubmed.ncbi.nlm.nih.gov/17108375/",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score": 10,
+    "reason": "经典平面局部极小歧义论文。",
+    "status": "relevant_abstract_only",
+    "has_full_text": false,
+    "oa_check": "Unpaywall已查询，best_oa_location为空；CiteSeer技术报告PDF搜索可发现但打开失败，不当成正式2006全文。",
+    "evidence_location": "正式摘要；详细解释通过IPPE等已得全文交叉核对。",
+    "supports": "摘要研究透视相机平面歧义，指出两局部极小也可存在于近距及宽视角场景。",
+    "source_limitations": "未获取正式全文，不提取详细模型和数值结果。",
+    "inference_for_project": "不能把歧义仅归因远距或某一种求解器。",
+    "read_level": "abstract_or_metadata_only",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "unpaywall_check": {
+      "accessed_on": "2026-09-30",
+      "doi": "10.1109/TPAMI.2006.252",
+      "best_oa_location": null,
+      "status": "request_succeeded_no_best_oa_location",
+      "contact_email_recorded": false
+    },
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1109/icra40945.2020.9196902": {
+    "key": "Chng2020Clique",
+    "title": "Resolving Marker Pose Ambiguity by Robust Rotation Averaging with Clique Constraints",
+    "authors": [
+      "Shin-Fang Ch'ng",
+      "Naoya Sogi",
+      "Pulak Purkait",
+      "Tat-Jun Chin",
+      "Kazuhiro Fukui"
+    ],
+    "year": 2020,
+    "venue": "ICRA:9680-9686",
+    "doi": "10.1109/ICRA40945.2020.9196902",
+    "arxiv": "1909.11888",
+    "primary_url": "https://sfchng.github.io/publication/conference-manuscript/",
+    "full_text_url": "https://arxiv.org/pdf/1909.11888",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score": 10,
+    "reason": "直接反证最小重投影即正确姿态，代表多视图消歧。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "预印本p1 Fig1/式(1)-(2)；p2 Related work与SecII；pp3-4 SecIV；p7 References[12]-[14]。",
+    "supports": "Fig1展示较小重投影候选仍错误；以多标记多视图一致性及团约束旋转平均选择候选。",
+    "source_limitations": "SecII静态多标记、标定相机，SecIII要求共视多重图连通；Related work指出时序过滤依赖连续观测。",
+    "inference_for_project": "与单靶标在线候选竞争场景不同，但证明仅凭重投影排序不足；不能声称本文解决同样的全局消歧任务。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 22,
+    "bibtex_key": "Chng2020",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/icme.2012.176": {
+    "key": "Wu2012Motion",
+    "title": "Stable Pose Estimation with a Motion Model in Real-Time Application",
+    "authors": [
+      "Po-Chen Wu",
+      "Jui-Hsin Lai",
+      "Ja-Ling Wu",
+      "Shao-Yi Chien"
+    ],
+    "year": 2012,
+    "venue": "ICME:314-319",
+    "doi": "10.1109/ICME.2012.176",
+    "primary_url": "https://scholars.lib.ntu.edu.tw/entities/publication/94869574-a23d-4740-a3da-fd686b384f91",
+    "full_text_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/icme2012_spe/icme2012_spe.pdf",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score": 10,
+    "reason": "时序预测选两姿态候选的最接近先例。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "pp317-318 Sec4.1-4.2/Fig7；p318 Sec5.1参数；p319参考文献。",
+    "supports": "运动模型Kalman预测后选择与预测相似的候选，并滤波减少跳变与抖动。",
+    "source_limitations": "Sec5.1过程与测量噪声参数经验设定；Intro对预测合理性作条件性描述。",
+    "inference_for_project": "时序选解并非新增原则；须强调当前观测可替换陈旧seed的具体规则，不能把平滑直接等同准确。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 23,
+    "bibtex_key": "Wu2012",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/mmsp.2014.6958793": {
+    "key": "Wu2014AnalyticalMotion",
+    "title": "Stable Pose Tracking from a Planar Target with an Analytical Motion Model in Real-time Applications",
+    "authors": [
+      "Po-Chen Wu",
+      "Yao-Hung Tsai",
+      "Shao-Yi Chien"
+    ],
+    "year": 2014,
+    "venue": "IEEE MMSP",
+    "doi": "10.1109/MMSP.2014.6958793",
+    "primary_url": "https://doi.org/10.1109/MMSP.2014.6958793",
+    "full_text_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score": 10,
+    "reason": "同时涉及平面候选、运动预测与图像面积相关测量方差，必须比较。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "PDF第3-4页SecIII.B/Fig6-7；第4-5页SecIV；第6页References[7]-[8]。",
+    "supports": "建立角度测量标准差与标记面积的反幂关系，并将分析运动模型用于候选选择与Kalman处理。",
+    "source_limitations": "SecIII.B通过Blender和棋盘辅助获取评价参考、对其记录的数据拟合；参数与数据依赖需独立验证。",
+    "inference_for_project": "图像尺度影响可靠性与时序选候选均已有先例；本文跨度阈值是残差验收规则而非该方差模型。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 10,
+    "bibtex_key": "Wu2014",
+    "crossref_metadata_verified": true
+  },
+  "title:leveragingfeatureuncertaintyinthepnpproblem": {
+    "key": "Ferraz2014CEPPnP",
+    "title": "Leveraging Feature Uncertainty in the PnP Problem",
+    "authors": [
+      "Luis Ferraz",
+      "Xavier Binefa",
+      "Francesc Moreno-Noguer"
+    ],
+    "year": 2014,
+    "venue": "BMVC paper065:1-13",
+    "doi": null,
+    "primary_url": "https://bmva-archive.org.uk/bmvc/2014/files/paper065.pdf",
+    "full_text_url": "https://bmva-archive.org.uk/bmvc/2014/files/paper065.pdf",
+    "score_parts": [
+      2,
+      4,
+      2
+    ],
+    "score": 8,
+    "reason": "特征异方差与位姿求解可靠性基础。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "pp4-6 Sec3.2-3.3；p8 Fig3平面/非平面合成，pp9-10真实图像实验。",
+    "supports": "以观测协方差构建近似最大似然PnP，真实图像通过视角敏感性预估特征噪声。",
+    "source_limitations": "Sec3.3明确真实图像特征协方差估计仍难；依赖参考视角及噪声模型。",
+    "inference_for_project": "若BC/AKAZE混合点都等权，应承认与统计异方差加权不同；不能将尺度门限称作最大似然验收。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.5194/isprs-annals-iii-3-131-2016": {
+    "key": "Urban2016MLPnP",
+    "title": "MLPnP – A Real-Time Maximum Likelihood Solution to the Perspective-n-Point Problem",
+    "authors": [
+      "Steffen Urban",
+      "Jens Leitloff",
+      "Stefan Hinz"
+    ],
+    "year": 2016,
+    "venue": "ISPRS Annals III-3:131-138",
+    "doi": "10.5194/isprs-annals-III-3-131-2016",
+    "arxiv": "1607.08112",
+    "primary_url": "https://isprs-annals.copernicus.org/articles/III-3/131/2016/index.html",
+    "full_text_url": "https://arxiv.org/pdf/1607.08112",
+    "score_parts": [
+      2,
+      4,
+      2
+    ],
+    "score": 8,
+    "reason": "实时协方差感知PnP及内部精度评价的代表。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "预印本p2 Introduction，pp2-4 Sec3，p5 Sec4.2。",
+    "supports": "将二维点协方差传播到单位射线切空间，构造最大似然解并估计位姿精度。",
+    "source_limitations": "估计依据给定观测随机模型；真实实验为头戴鱼眼轨迹。",
+    "inference_for_project": "精度估计与求解器候选门限不同；不能据本文小目标验收规则宣称优于协方差感知求解。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1109/cvpr46437.2021.00463": {
+    "key": "Vakhitov2021Uncertainty",
+    "title": "Uncertainty-Aware Camera Pose Estimation from Points and Lines",
+    "authors": [
+      "Alexander Vakhitov",
+      "Luis Ferraz Colomina",
+      "Antonio Agudo",
+      "Francesc Moreno-Noguer"
+    ],
+    "year": 2021,
+    "venue": "CVPR:4657-4666",
+    "doi": "10.1109/CVPR46437.2021.00463",
+    "arxiv": "2107.03890",
+    "primary_url": "https://www.iri.upc-csic.es/publications/show/2495",
+    "full_text_url": "https://arxiv.org/pdf/2107.03890",
+    "score_parts": [
+      2,
+      4,
+      2
+    ],
+    "score": 8,
+    "reason": "同时建模二维与三维不确定性及残差精化，提供可靠性边界。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "pp3-4 Sec3.1-3.3；p5 Sec3.5-3.6；pp7-8 Tables1-3；pp9-10 References[6],[20],[40]。",
+    "supports": "二维和三维特征噪声传播到残差协方差；提供EPnPU/DLSU与协方差感知精化。",
+    "source_limitations": "假设零均值Gaussian噪声及一定独立性；部分协方差近似需要平均深度或初始姿态；数据为KITTI/TUM视觉里程计。",
+    "inference_for_project": "不把其一般场景收益数字转用到无人机靶标；跨度门限是较轻量的工程规则，不是完整不确定性传播。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.3390/s23125746": {
+    "key": "Adamek2023Variance",
+    "title": "Analytical Models for Pose Estimate Variance of Planar Fiducial Markers for Mobile Robot Localisation",
+    "authors": [
+      "Roman Adámek",
+      "Martin Brablc",
+      "Patrik Vávra",
+      "Barnabás Dobossy",
+      "Martin Formánek",
+      "Filip Radil"
+    ],
+    "year": 2023,
+    "venue": "Sensors 23(12):5746",
+    "doi": "10.3390/s23125746",
+    "primary_url": "https://www.mdpi.com/1424-8220/23/12/5746",
+    "full_text_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10300747/",
+    "score_parts": [
+      3,
+      4,
+      3
+    ],
+    "score": 10,
+    "reason": "标记投影面积/视角相关方差与自适应EKF的近期直接先例。",
+    "status": "relevant",
+    "has_full_text": true,
+    "access_note": "PMC/MDPI直接打开有时触发验证，全文章节经网页索引缓存及作者仓库PDF内容核对；不将打不开页面标为下载成功。",
+    "evidence_location": "Sec4.2/Fig5-6；Sec5.1-5.3式(8)；Sec6.4-6.5；Sec7；Data Availability。",
+    "supports": "方差随面积、观察角度与距离变化，并用于EKF观测噪声设置。",
+    "source_limitations": "面向2D机器人相关三个自由度；Sec7模型当前基于静态相机，动态运动模糊需后续扩展；数据受隐私限制不可得。",
+    "inference_for_project": "面积只是一项代理变量；不可只凭面积断言每帧可靠性，项目仍应评价视角/模糊影响。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.3390/s23020917": {
+    "key": "Wang2023MarkerSLAM",
+    "title": "A Robust Planar Marker-Based Visual SLAM",
+    "authors": [
+      "Zhoubo Wang",
+      "Zhenhai Zhang",
+      "Wei Zhu",
+      "Xuehai Hu",
+      "Hongbin Deng",
+      "Guang He",
+      "Xiao Kang"
+    ],
+    "year": 2023,
+    "venue": "Sensors 23(2):917",
+    "doi": "10.3390/s23020917",
+    "primary_url": "https://www.mdpi.com/1424-8220/23/2/917",
+    "full_text_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/",
+    "score_parts": [
+      3,
+      4,
+      2
+    ],
+    "score": 9,
+    "reason": "多关键帧候选筛选、初始化/重定位恢复近期代表。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "Sec2；Sec4.1-4.3式(9)及M2M目标；References[19],[20],[23]。",
+    "supports": "已有方法已采用多图候选选择及初始化、关键帧、重定位增强；通过标记间旋转一致性确定标记姿态。",
+    "source_limitations": "标记SLAM任务，依赖多标记共视及关键帧姿态；作者对Ch'ng方法实时性评价为其论文中的判断，不等于本文实测。",
+    "inference_for_project": "本文单靶标局部策略回退区别于地图恢复，但不能笼统声称现有方法不处理失败。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.3390/app142210225": {
+    "key": "Kim2024MultiMarker",
+    "title": "Enhancing Pose Estimation Using Multiple Graphical Markers with Spatial and Temporal Outlier Detection",
+    "authors": [
+      "Doyoung Kim",
+      "Jae Hwan Bong",
+      "Seongkyun Jeong"
+    ],
+    "year": 2024,
+    "venue": "Applied Sciences 14(22):10225",
+    "doi": "10.3390/app142210225",
+    "primary_url": "https://www.mdpi.com/2076-3417/14/22/10225",
+    "full_text_url": "https://www.mdpi.com/2076-3417/14/22/10225",
+    "score_parts": [
+      3,
+      3,
+      2
+    ],
+    "score": 8,
+    "reason": "无人机相机实验、空间/时间异常检测，与可靠性验收有比较价值。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "Sec3.2式(7)-(8)，Sec3.3式(9)-(10)，Sec3.4；Sec4实验。",
+    "supports": "固定多ArUco阵列用相对几何一致性和移动平均旋转差剔除异常，再平均剩余观测。",
+    "source_limitations": "依赖已知多标记几何与预设阈值；把突变定义为异常的机制见Sec3.3。",
+    "inference_for_project": "分析推断：真实快速旋转也可能触发其时间阈值；本文若强调快速运动，应给轨迹消融，不做无实测优劣结论。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1007/978-3-030-58452-8_28": {
+    "key": "Terzakis2020SQPnP",
+    "title": "A Consistently Fast and Globally Optimal Solution to the Perspective-n-Point Problem",
+    "authors": [
+      "George Terzakis",
+      "Manolis Lourakis"
+    ],
+    "year": 2020,
+    "venue": "ECCV:478-494",
+    "doi": "10.1007/978-3-030-58452-8_28",
+    "primary_url": "https://www.ecva.net/papers/eccv_2020/papers_ECCV/html/1969_ECCV_2020_paper.php",
+    "score_parts": [
+      1,
+      3,
+      2
+    ],
+    "score": 6,
+    "reason": "一般PnP全局优化背景，本文不提出新PnP算法。",
+    "status": "possibly_relevant_background",
+    "has_full_text": false,
+    "evidence_location": "官方摘要",
+    "supports": "一般PnP可覆盖共面配置；只作为已有求解器范围背景。",
+    "source_limitations": "未全文审查其全局目标和假设。",
+    "inference_for_project": "数值目标全局最优和真实物理解正确是不同命题。",
+    "read_level": "abstract_or_metadata_only",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。",
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1109/34.862199": {
+    "key": "Lu2000LHM",
+    "title": "Fast and Globally Convergent Pose Estimation from Video Images",
+    "authors": [
+      "Chien-Ping Lu",
+      "Gregory D. Hager",
+      "Eric Mjolsness"
+    ],
+    "year": 2000,
+    "venue": "IEEE TPAMI 22(6):610-622",
+    "doi": "10.1109/34.862199",
+    "primary_url": "https://doi.org/10.1109/34.862199",
+    "full_text_url": "https://computableplant.ics.uci.edu/papers/2000/LuHagerMjolsness.pdf",
+    "score_parts": [
+      1,
+      3,
+      2
+    ],
+    "score": 6,
+    "reason": "迭代正交姿态估计基础，对本文主线辅助。",
+    "status": "possibly_relevant_background",
+    "has_full_text": true,
+    "evidence_location": "摘要及引言，非深入提取",
+    "supports": "以物空间共线性误差构造迭代求解。",
+    "source_limitations": "未深读全部证明，不能把globally convergent转写为所有含噪平面真实姿态保证。",
+    "inference_for_project": "引用目的限于迭代求解背景。",
+    "read_level": "background_full_text_available_not_deep_read",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。",
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1006/cviu.1996.0037": {
+    "key": "Oberkampf1996Planar",
+    "title": "Iterative Pose Estimation Using Coplanar Feature Points",
+    "authors": [
+      "Daniel Oberkampf",
+      "Daniel F. DeMenthon",
+      "Larry S. Davis"
+    ],
+    "year": 1996,
+    "venue": "Computer Vision and Image Understanding 63(3):495-511",
+    "doi": "10.1006/cviu.1996.0037",
+    "primary_url": "https://doi.org/10.1006/cviu.1996.0037",
+    "score_parts": [
+      2,
+      2,
+      2
+    ],
+    "score": 6,
+    "reason": "历史共面迭代方法，由IPPE/Wang全文引用核对，保留背景。",
+    "status": "possibly_relevant_background",
+    "has_full_text": false,
+    "evidence_location": "IPPE Sec2及References、Wang2023 References[18]",
+    "supports": "仅用于历史文献关系，不由二手概述替代原文详细结论。",
+    "source_limitations": "未获取全文。",
+    "inference_for_project": "无需在引言详细讲算法。",
+    "read_level": "abstract_or_metadata_only",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。",
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.3389/frobt.2022.838128": {
+    "key": "Rijlaarsdam2022Encoding",
+    "title": "A novel encoding element for robust pose estimation using planar fiducials",
+    "authors": [
+      "David D. W. Rijlaarsdam",
+      "Martin Zwick",
+      "J. M. (Hans) Kuiper"
+    ],
+    "year": 2022,
+    "venue": "Frontiers in Robotics and AI 9:838128",
+    "doi": "10.3389/frobt.2022.838128",
+    "primary_url": "https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2022.838128/full",
+    "full_text_url": "https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2022.838128/pdf",
+    "score_parts": [
+      3,
+      2,
+      2
+    ],
+    "score": 7,
+    "reason": "通过改变靶标信息维度改善平面姿态的替代路线。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "Sec1、Sec2、Sec4 Discussion",
+    "supports": "编码构件提供等价突起的虚拟空间点，支持加入额外几何信息的路线。",
+    "source_limitations": "须制作专门构件；传感器与标记设计不同。",
+    "inference_for_project": "本文保留既有平面模板时不能宣称消除几何信息不足；该论文可用于说明硬件/标记设计替代路线。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1109/cvprw53098.2021.00141": {
+    "key": "Meza2021MarkerPose",
+    "title": "MarkerPose: Robust Real-Time Planar Target Tracking for Accurate Stereo Pose Estimation",
+    "authors": [
+      "Jhacson Meza",
+      "Lenny A. Romero",
+      "Andres G. Marrugo"
+    ],
+    "year": 2021,
+    "venue": "CVPR Workshops:1282-1290",
+    "doi": "10.1109/CVPRW53098.2021.00141",
+    "arxiv": "2105.00368",
+    "primary_url": "https://openaccess.thecvf.com/content/CVPR2021W/LXCV/html/Meza_MarkerPose_Robust_Real-Time_Planar_Target_Tracking_for_Accurate_Stereo_Pose_CVPRW_2021_paper.html",
+    "full_text_url": "https://arxiv.org/pdf/2105.00368",
+    "score_parts": [
+      2,
+      3,
+      2
+    ],
+    "score": 7,
+    "reason": "平面靶标双目学习特征定位替代路线。",
+    "status": "relevant",
+    "has_full_text": true,
+    "evidence_location": "Sec3方法/立体三角化；Sec4机器人验证",
+    "supports": "三圆平面目标，SuperPoint类检测与椭圆分割获得亚像素点，立体几何计算姿态。",
+    "source_limitations": "指定三圆目标与立体相机、机器人/超声应用评价；不评价本文跨尺度回退链。",
+    "inference_for_project": "对比双目靶标姿态路线时有价值，不能从其摘要宣传语写所有无标记方法不足。",
+    "read_level": "relevant_sections_full_text",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": null,
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "arxiv:1711.02508": {
+    "key": "Sola2017ESKF",
+    "title": "Quaternion kinematics for the error-state Kalman filter",
+    "authors": [
+      "Joan Solà"
+    ],
+    "year": 2017,
+    "venue": "arXiv technical report",
+    "doi": null,
+    "arxiv": "1711.02508",
+    "primary_url": "https://arxiv.org/abs/1711.02508",
+    "full_text_url": "https://arxiv.org/pdf/1711.02508",
+    "score_parts": [
+      1,
+      3,
+      2
+    ],
+    "score": 6,
+    "reason": "ESKF惯性后端基础，非视觉策略贡献。",
+    "status": "possibly_relevant_background",
+    "has_full_text": true,
+    "evidence_location": "Sec5.3-5.4 pp53-61；Sec6 pp62-65",
+    "supports": "名义状态、误差传播、校正注入与reset框架。",
+    "source_limitations": "本次仅核对相关基础章节，未以此证明延迟视觉回放正确性。",
+    "inference_for_project": "普通ESKF应归既有技术，且融合持续输出不等于视觉观测持续有效。",
+    "read_level": "background_full_text_available_not_deep_read",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。",
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30",
+    "additional_verification": [
+      {
+        "title": "Quaternion kinematics for the error-state Kalman filter",
+        "authors": [
+          "Joan Solà"
+        ],
+        "year": 2017,
+        "id": "arxiv:1711.02508",
+        "primary_url": "https://arxiv.org/abs/1711.02508",
+        "full_text_url": "https://arxiv.org/html/1711.02508",
+        "score": 6,
+        "read_level": "background_full_text_available_not_deep_read",
+        "has_full_text": true,
+        "locations": [
+          "误差状态滤波及旋转扰动推导"
+        ],
+        "supported": [
+          "名义状态和误差状态分离、旋转扰动参数化的基础推导。"
+        ],
+        "review_date": "2026-09-30"
+      }
+    ],
+    "manuscript_reference_number": 25,
+    "bibtex_key": "Sola2017"
+  },
+  "title:realtimemetricstateestimationformodularvisioninertialsystems": {
+    "key": "Weiss2011ModularVI",
+    "title": "Real-Time Metric State Estimation for Modular Vision-Inertial Systems",
+    "authors": [
+      "Stephan Weiss",
+      "Roland Siegwart"
+    ],
+    "year": 2011,
+    "venue": "ICRA:4531-4537",
+    "doi": null,
+    "repository_doi": "10.3929/ethz-a-010025261",
+    "primary_url": "https://www.research-collection.ethz.ch/handle/20.500.11850/43138",
+    "score_parts": [
+      1,
+      3,
+      2
+    ],
+    "score": 6,
+    "reason": "模块化视觉惯性融合背景；IEEE正式DOI未核对故不填。",
+    "status": "possibly_relevant_background",
+    "has_full_text": false,
+    "evidence_location": "机构库元数据",
+    "supports": "本次只核对元数据；不据此描述历史回放算法。",
+    "source_limitations": "未全文提取。",
+    "inference_for_project": "如需独立融合相关工作，应继续深读时延处理原始文献。",
+    "read_level": "abstract_or_metadata_only",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。",
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.1108/ir-10-2024-0485": {
+    "key": "Wang2025LidarVI",
+    "title": "Tightly-coupled lidar-inertial localization with visual landmarks in operational scenarios",
+    "authors": [
+      "Gongcheng Wang",
+      "Zexin Cao",
+      "Xin Lv",
+      "Han Wang",
+      "Chong Wang",
+      "Pengchao Ding",
+      "Weidong Wang"
+    ],
+    "year": 2025,
+    "venue": "Industrial Robot 52(5):760-769",
+    "doi": "10.1108/IR-10-2024-0485",
+    "primary_url": "https://doi.org/10.1108/IR-10-2024-0485",
+    "abstract_url": "https://www.sciencedirect.com/org/science/article/pii/S0143991X25000236",
+    "score_parts": [
+      1,
+      3,
+      2
+    ],
+    "score": 6,
+    "reason": "近期额外传感器约束消歧路线，任务距本文单靶标链较远。",
+    "status": "possibly_relevant_background",
+    "has_full_text": false,
+    "evidence_location": "出版社摘要与2025卷期作者页",
+    "supports": "仅概括激光/惯性/视觉标记紧耦合及附加约束路线。",
+    "source_limitations": "未获取全文，不引用具体机理、实验数字。",
+    "inference_for_project": "非直接必要引文；可从主稿删去，保留检索记录。",
+    "read_level": "abstract_or_metadata_only",
+    "source": "primary_web_search_and_verified_reference_traversal",
+    "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。",
+    "review_batch": "batch_pose.json",
+    "review_date": "2026-09-30"
+  },
+  "10.2514/6.2024-0338": {
+    "title": "The Use of Multi-Scale Fiducial Markers To Aid Takeoff and Landing Navigation by Rotorcraft",
+    "authors": [
+      "Jongwon Lee",
+      "Su Yeon Choi",
+      "Timothy Bretl"
+    ],
+    "year": 2024,
+    "doi": "10.2514/6.2024-0338",
+    "id": "arXiv:2309.08769v3",
+    "publication_status": "正式会议论文：AIAA SCITECH 2024 Forum；全文阅读arXiv 2309.08769v3（预印本初版2023）",
+    "url": "https://arxiv.org/abs/2309.08769",
+    "full_text_url": "https://arxiv.org/html/2309.08769v3",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "rotorcraft takeoff/landing, nested multiscale markers, outdoor pose and availability evaluation",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§3.2.1",
+      "§3.3",
+      "§4 Tables 1–2",
+      "§5",
+      "§6"
+    ],
+    "claims": [
+      "Evaluates nested (3 tags at scales 1:4:30) and non-nested (20 tags, 1:5:28) AprilTag layouts with WOLF binocular SLAM.",
+      "Reports ATE and estimated-pose fraction; marker-only and marker+feature modes did not show clear differences on this dataset."
+    ],
+    "author_limitations": [
+      "All 10–50 Lux sequences failed; low runway texture and markers leaving view limit tracking (§5).",
+      "RTK takeoff/landing position mismatch limits rigorous interpretation of ATE (§5).",
+      "Layout-aware PnP and IMU integration are future work (§6)."
+    ],
+    "our_inference": [
+      "Cannot claim adding texture always improves accuracy/availability; our texture lives on known target unlike generic scene-feature SLAM."
+    ],
+    "references_verified": [
+      {
+        "target": "10.1109/IROS40897.2019.8967787",
+        "location": "references [6]"
+      },
+      {
+        "target_title": "UcoSLAM: Simultaneous localization and mapping by fusion of keypoints and squared planar markers",
+        "location": "references [4]; title relation verified; DOI omitted pending primary verification"
+      }
+    ],
+    "score": 10,
+    "formal_metadata_url": "https://experts.illinois.edu/en/publications/the-use-of-multi-scale-fiducial-markers-to-aid-takeoff-and-landin/",
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 1,
+    "bibtex_key": "Lee2024",
+    "crossref_metadata_verified": true
+  },
+  "10.3390/jsan15050070": {
+    "title": "Recursive ArUco Markers: A Scalable Fiducial Marker Design for Unmanned Aerial Vehicle Landing Pads",
+    "authors": [
+      "Rafael Muñoz-Salinas",
+      "Francisco J. Romero-Ramirez",
+      "Sergio Garrido-Jurado"
+    ],
+    "year": 2026,
+    "doi": "10.3390/jsan15050070",
+    "id": "arXiv:2607.13830v1",
+    "publication_status": "formal JSAN 15(5):70, 2026-08-24 (parent verified); full text read arXiv",
+    "url": "https://www.mdpi.com/2224-2708/15/5/70",
+    "full_text_url": "https://arxiv.org/html/2607.13830v1",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "direct multiscale and partial-visible UAV marker competitor",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§3.1–3.2",
+      "§4.1–4.5",
+      "§5"
+    ],
+    "claims": [
+      "Embeds same-ID submarkers in both black and white cells; border sampling makes decoding independent of cell-center content.",
+      "Evaluates simulated distance/view angle, random occlusion, cropping, motion blur and a DJI flight sequence."
+    ],
+    "author_limitations": [
+      "HArCo and Embedded ArUco not empirical baselines because source/executables unavailable (§4).",
+      "Flight sequence has no detection before takeoff, intermittent loss above about 14 m and final camera pitch loss (§4.5)."
+    ],
+    "our_inference": [
+      "Reported cropped/occluded detection means decoding any hierarchical ID; it is not a pose-accuracy or successful autonomous-landing metric.",
+      "State5 center-only mechanism cannot be sold as general solution to arbitrary occlusion."
+    ],
+    "references_verified": [
+      {
+        "target": "10.1109/SIBCON50419.2021.9438855",
+        "location": "references [13]"
+      },
+      {
+        "target": "10.1109/ACCESS.2019.2951204",
+        "location": "references [14]"
+      },
+      {
+        "target": "10.1002/rob.21780",
+        "location": "references [16]"
+      },
+      {
+        "target": "10.3390/drones7120703",
+        "location": "references [12]"
+      },
+      {
+        "target": "10.3390/s17091987",
+        "location": "references [21]"
+      }
+    ],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 6,
+    "bibtex_key": "Recursive2026",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/iros40897.2019.8967787": {
+    "title": "Flexible Layouts for Fiducial Tags",
+    "authors": [
+      "Maximilian Krogius",
+      "Acshi Haggenmiller",
+      "Edwin Olson"
+    ],
+    "year": 2019,
+    "doi": "10.1109/IROS40897.2019.8967787",
+    "publication_status": "formal IROS 2019 pp1898–1903",
+    "url": "https://april.eecs.umich.edu/papers/details.php?name=krogius2019iros",
+    "full_text_url": "https://april.eecs.umich.edu/pdfs/krogius2019iros.pdf",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "original flexible/nested tags applied to quadrotor; foundational for Lee",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§III-A pp2–3",
+      "§IV-A p5",
+      "§IV-C p5",
+      "Fig1"
+    ],
+    "claims": [
+      "Supports custom layouts with an empty center for smaller recursive tags.",
+      "Demonstrates a 90.2 cm doubly nested tag detected from 0.08 to 16.15±0.03 m with 640×480 onboard images (§IV-A)."
+    ],
+    "author_limitations": [
+      "Detection speed and recall trade off through decimation (§IV-C)."
+    ],
+    "our_inference": [
+      "Detection-range demonstration is not proof of equivalent pose accuracy at all ranges.",
+      "Known-size outer/inner center-switching predates our five-state schedule."
+    ],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 12,
+    "bibtex_key": "Krogius2019",
+    "crossref_metadata_verified": true
+  },
+  "10.1177/1550147718800655": {
+    "title": "A hierarchical vision-based localization of rotor unmanned aerial vehicles for autonomous landing",
+    "authors": [
+      "Haiwen Yuan",
+      "Changshi Xiao",
+      "Supu Xiu",
+      "Wenqiang Zhan",
+      "Zhenyi Ye",
+      "Fan Zhang",
+      "Chunhui Zhou",
+      "Yuanqiao Wen",
+      "Qiliang Li"
+    ],
+    "year": 2018,
+    "doi": "10.1177/1550147718800655",
+    "publication_status": "formal International Journal of Distributed Sensor Networks 14(9)",
+    "url": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+    "full_text_url": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "direct adaptive feature selection over approach/adjust/touchdown and pose failure handling",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "Object detection and pose recovery",
+      "A hierarchical vision-based localization framework / Hierarchical localization",
+      "False pose estimation detection",
+      "Experiments and analysis / Field experiment",
+      "Conclusion and future work"
+    ],
+    "claims": [
+      "Far approach uses external four-vertex contour; adjustment uses artificial fiducial corners; close touchdown uses Harris+Lucas–Kanade temporal homography accumulation.",
+      "Switches considering height and object projection ratio; detects orientation outliers using camera–inertial relative rotation and a median/3σ rule."
+    ],
+    "author_limitations": [
+      "Touchdown accumulation argued acceptable for short duration; filtering three phase measurements is future work.",
+      "Reference GPS/INS typical position accuracy <1 m horizontal / <2 m vertical, given in Field experiment."
+    ],
+    "our_inference": [
+      "Our scale-driven feature strategy and pose-failure check are not first in general.",
+      "Distinction must be same-template raw observations, intraframe fallback and geometrically tied region use; no claim based on state count."
+    ],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 13,
+    "bibtex_key": "Yuan2018",
+    "crossref_metadata_verified": true,
+    "primary_metadata_override": {
+      "page": "",
+      "source": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+      "note": "Crossref page字段呈截断文章号，省略该字段，保留卷期与DOI。"
+    }
+  },
+  "10.3390/s24051645": {
+    "title": "Autonomous Landing of Quadrotor Unmanned Aerial Vehicles Based on Multi-Level Marker and Linear Active Disturbance Reject Control",
+    "authors": [
+      "Mingming Lv",
+      "Bo Fan",
+      "Jiwen Fang",
+      "Jia Wang"
+    ],
+    "year": 2024,
+    "doi": "10.3390/s24051645",
+    "publication_status": "formal Sensors24(5):1645",
+    "url": "https://www.mdpi.com/1424-8220/24/5/1645",
+    "full_text_url": "https://mdpi-res.com/d_attachment/sensors/sensors-24-01645/article_deploy/sensors-24-01645.pdf",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "recent multilayer ArUco+EPnP+fusion UAV-USV direct comparison",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§3 pp4–6",
+      "§3.2 pp5–6 Eq6",
+      "§5.3 p10",
+      "§5.4 pp11–12",
+      "§6 p13",
+      "Data Availability p13"
+    ],
+    "claims": [
+      "Largest marker → multiple visible markers → smallest marker three-stage approach.",
+      "Each marker estimates pose; positions from visible markers are averaged (Eq6) then Kalman-filtered.",
+      "30 ground landing experiments compare single/multilevel landing accuracy."
+    ],
+    "author_limitations": [
+      "Complex USV motion and wave impact compensation listed as future work.",
+      "Data unavailable because privacy restrictions."
+    ],
+    "our_inference": [
+      "Position-level averaging differs from our unified-coordinate raw 2D/3D joint PnP.",
+      "Landing error includes controller effects; not interchangeable with framewise pose error."
+    ],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 11,
+    "bibtex_key": "Lv2024",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/sibcon50419.2021.9438855": {
+    "title": "Embedded ArUco: a novel approach for high precision UAV landing",
+    "authors": [
+      "Artur Khazetdinov",
+      "Aufar Zakiev",
+      "Tatyana Tsoy",
+      "Mikhail Svinin",
+      "Evgeni Magid"
+    ],
+    "year": 2021,
+    "doi": "10.1109/SIBCON50419.2021.9438855",
+    "publication_status": "formal SIBCON2021 pp1–6; DOI printed in author PDF",
+    "url": "https://doi.org/10.1109/SIBCON50419.2021.9438855",
+    "full_text_url": "https://kpfu.ru/staff_files/F842132796/2021_Embedded_ArUco_a_novel_approach_for_high_precision_UAV_landing.pdf",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "outer loss followed by inner-center marker is direct antecedent to State5",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§IV-A pp3–4 TableI",
+      "§IV-B pp4–5 Fig6",
+      "§V p5 Fig7",
+      "§VI p5"
+    ],
+    "claims": [
+      "Inner marker replaces a central black encoding cell; inner/outer use different IDs.",
+      "Landing switches to inner marker when outer is outside frame; tested 20 Gazebo landings."
+    ],
+    "author_limitations": [
+      "Outer ID must have black central cell; recommends inner marker with more black than white cells (§IV-A).",
+      "Validation explicitly virtual Gazebo environment (§V/VI)."
+    ],
+    "our_inference": [
+      "Center-only recovery already exists; our contribution must reside in observation-family fallback and common target geometry, with real-data evidence."
+    ],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text"
+  },
+  "arxiv:2403.03806": {
+    "title": "A Precision Drone Landing System using Visual and IR Fiducial Markers and a Multi-Payload Camera",
+    "authors": [
+      "Joshua Springer",
+      "Gylfi Þór Guðmundsson",
+      "Marcel Kyas"
+    ],
+    "year": 2024,
+    "doi": null,
+    "id": "arXiv:2403.03806",
+    "publication_status": "arXiv version read; formal venue not verified",
+    "url": "https://arxiv.org/abs/2403.03806",
+    "full_text_url": "https://arxiv.org/html/2403.03806v1",
+    "scores": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "long-range visual/IR, nested targets and detection-loss recovery; avoids six-DOF unlike our task",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§III-A/B/C",
+      "§IV TableII",
+      "§IV-A",
+      "§V"
+    ],
+    "claims": [
+      "Controls primarily from direction, apparent marker size and zoom; deliberately avoids full 6-DOF fiducial pose.",
+      "Uses three concentric AprilTags for RGB tests and a high-level search/reacquisition policy.",
+      "26 landing tests, including visual and active/passive IR, report final landing error."
+    ],
+    "author_limitations": [
+      "Passive IR may depend on weather and reflect drone heat; more tests required (§IV).",
+      "Moving pads, other weather/backgrounds are future work (§V)."
+    ],
+    "our_inference": [
+      "Reacquiring via camera/aircraft motion differs from intraframe observation fallback; final landing error is not pose RMSE."
+    ],
+    "references_verified": [
+      {
+        "target": "10.1109/IROS40897.2019.8967787",
+        "location": "references [2]"
+      },
+      {
+        "target": "10.1109/IRC55401.2022.00047",
+        "location": "references [23]"
+      },
+      {
+        "target": "10.1109/IRC55401.2022.00054",
+        "location": "references [7]"
+      }
+    ],
+    "score": 8,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text"
+  },
+  "10.1109/access.2019.2951204": {
+    "title": "Fractal Markers: A New Approach for Long-Range Marker Pose Estimation Under Occlusion",
+    "authors": [
+      "Francisco J. Romero-Ramirez",
+      "Rafael Muñoz-Salinas",
+      "Rafael Medina-Carnicer"
+    ],
+    "year": 2019,
+    "doi": "10.1109/ACCESS.2019.2951204",
+    "publication_status": "formal IEEE Access7:169908–169919",
+    "url": "https://www.uco.es/investiga/grupos/ava/portfolio/fractal-markers/",
+    "full_text_url": "https://www.researchgate.net/publication/337024999_Fractal_Markers_A_New_Approach_for_Long-Range_Marker_Pose_Estimation_Under_Occlusion",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "direct multiscale planar marker and observation fallback antecedent",
+    "status": "deep_read",
+    "has_full_text": true,
+    "locations": [
+      "§III pp169910–169911",
+      "§IV-B/C pp169912–169913",
+      "§IV-D pp169913–169915",
+      "§V-D/E pp169916–169917",
+      "§VI p169918"
+    ],
+    "claims": [
+      "Nested square markers share a common reference origin; initial detected outer corners seed projection/refinement of other visible internal corners and pose is re-estimated from the combined set.",
+      "When no complete marker is detected, prior detection seeds FAST corner classification and RANSAC matching before refinement.",
+      "With temporal prior, partial-visible recovery does not require current full-marker decoding."
+    ],
+    "author_limitations": [
+      "Keypoint association assumes interframe motion is not very large (§IV-D).",
+      "Higher occlusion increases error (§V-E); multiple distinct Fractal markers suggested as future work (§VI)."
+    ],
+    "our_inference": [
+      "RArUco2026 center-dependence characterization cannot be transferred wholesale to Fractal's temporal fallback; distinguish initialization decoding vs tracking.",
+      "Our generic contour+texture families differ, but 'unified 3D coordinates/internal+external points' and 'remaining observation recovery' alone are established."
+    ],
+    "references_verified": [
+      {
+        "target": "10.1109/IROS40897.2019.8967787",
+        "location": "references [32] AprilTag3/Flexible Layouts"
+      },
+      {
+        "target": "10.1002/rob.21780",
+        "location": "references [33] HArCo; full DOI needs primary metadata crosscheck"
+      },
+      {
+        "target": "10.1007/s11263-014-0725-5",
+        "location": "references [38] IPPE; title relationship verified"
+      }
+    ],
+    "score": 10,
+    "institutional_full_text_url": "https://burjcdigital.urjc.es/bitstreams/6cc6b966-a4c5-460a-b33f-ef710eb576b6/download",
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "relevant_sections_full_text",
+    "manuscript_reference_number": 5,
+    "bibtex_key": "Fractal2019",
+    "crossref_metadata_verified": true
+  },
+  "10.1002/rob.21780": {
+    "title": "Hierarchical fiducial marker design for pose estimation in large-scale scenarios",
+    "authors": [
+      "Hao Wang",
+      "Zongying Shi",
+      "Geng Lu",
+      "Yisheng Zhong"
+    ],
+    "year": 2018,
+    "doi": "10.1002/rob.21780",
+    "url": "https://onlinelibrary.wiley.com/doi/abs/10.1002/rob.21780",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "Hierarchical HArCo recognizable at several scales; oscillating-platform landing validation stated in publisher abstract. Full methodology not read; do not infer missing fallback.",
+    "status": "primary_abstract",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_abstract"
+  },
+  "10.1109/smc.2015.343": {
+    "title": "HArCo: Hierarchical Fiducial Markers for Pose Estimation in Helicopter Landing Tasks",
+    "authors": [
+      "Hao Wang",
+      "Xiongfeng Wang",
+      "Geng Lu",
+      "Yisheng Zhong"
+    ],
+    "year": 2015,
+    "doi": "10.1109/SMC.2015.343",
+    "url": "https://doi.org/10.1109/SMC.2015.343",
+    "scores": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "Conference predecessor; authors/year/DOI from bibliographic discovery, primary abstract not retrieved. Retain for lineage, no mechanism claim.",
+    "status": "metadata_only",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 8,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "metadata_only"
+  },
+  "10.3390/electronics7050068": {
+    "title": "A Hierarchical Vision-Based UAV Localization for an Open Landing",
+    "authors": [
+      "Haiwen Yuan",
+      "Changshi Xiao",
+      "Supu Xiu",
+      "Wenqiang Zhan",
+      "Zhenyi Ye",
+      "Fan Zhang",
+      "Chunhui Zhou",
+      "Yuanqiao Wen",
+      "Qiliang Li"
+    ],
+    "year": 2018,
+    "doi": "10.3390/electronics7050068",
+    "url": "https://www.mdpi.com/2079-9292/7/5/68",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "Related but distinct from Sage2018: three-phase RQRLP measurements fused by federated EKF. Publisher indexed §4.1/§4.2/fig4 inspected; full article fetch429. Avoid treating as independent replication.",
+    "status": "primary_indexed_sections",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_indexed_sections"
+  },
+  "10.7527/s1000-6893.2018.22150": {
+    "title": "基于阶层标识的无人机自主精准降落系统",
+    "authors": [
+      "张咪",
+      "赵勇",
+      "布树辉",
+      "张臻炜",
+      "杨君"
+    ],
+    "year": 2018,
+    "doi": "10.7527/S1000-6893.2018.22150",
+    "url": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22150",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "中文原始研究，多层嵌套二维编码识别匹配用于相对定位；真实飞行与仿真验证由摘要陈述。PDF按钮本工具未获得正文，不做具体失败机制比较。",
+    "status": "primary_abstract",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_abstract"
+  },
+  "10.1016/j.ast.2017.03.008": {
+    "title": "Multi-resolution visual fiducial and assistant navigation system for unmanned aerial vehicle landing",
+    "authors": [
+      "Chong Yu",
+      "Jiyuan Cai",
+      "Qingyu Chen"
+    ],
+    "year": 2017,
+    "doi": "10.1016/j.ast.2017.03.008",
+    "url": "https://www.sciencedirect.com/science/article/abs/pii/S1270963816312858",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "多分辨率条码处理相机分辨率和视角限制，提供相对6DOF；publisher abstract/§3–5 snippets only, no full mechanism comparison.",
+    "status": "primary_abstract_and_section_snippets",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_abstract_and_section_snippets"
+  },
+  "10.3390/drones9010057": {
+    "title": "Autonomous Landing Guidance for Quad-UAVs Based on Visual Image and Altitude Estimation",
+    "authors": [
+      "Lingxia Mu",
+      "Shaowei Cao",
+      "Youmin Zhang",
+      "Xielong Zhang",
+      "Nan Feng",
+      "Yuan Zhang"
+    ],
+    "year": 2025,
+    "doi": "10.3390/drones9010057",
+    "url": "https://www.mdpi.com/2504-446X/9/1/57",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "双层ArUco+NWD-YOLOv4+PnP视觉/IMU高度融合+丢失后重捕获；publisher indexed §2/§7 and abstract inspected; full fetch429. Core mechanism promising but not fully read.",
+    "status": "primary_indexed_sections",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_indexed_sections"
+  },
+  "10.3390/s17091987": {
+    "title": "Remote Marker-Based Tracking for UAV Landing Using Visible-Light Camera Sensor",
+    "authors": [
+      "Phong Ha Nguyen",
+      "Ki Wan Kim",
+      "Young Won Lee",
+      "Kang Ryoung Park"
+    ],
+    "year": 2017,
+    "doi": "10.3390/s17091987",
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5621353/",
+    "scores": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "ATM/profile checker/Kalman fallback predicts target center when partial marker exits FOV (§3.2.3 Fig7). Tracking/center-direction result, not general relative6DOF; primary index inspected, direct PMC CAPTCHA.",
+    "status": "primary_indexed_sections",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 8,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_indexed_sections"
+  },
+  "10.1007/978-3-031-43111-1_32": {
+    "title": "Autonomous Landing Algorithm for UAV on a Mobile Robotic Platform with a Fractal Marker",
+    "authors": [
+      "Dmitry Anikin",
+      "Artem Ryabinov",
+      "Anton Saveliev",
+      "Alexander Semenov"
+    ],
+    "year": 2023,
+    "doi": "10.1007/978-3-031-43111-1_32",
+    "url": "https://doi.org/10.1007/978-3-031-43111-1_32",
+    "scores": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "Official conference portal abstract describes Gazebo5–20m landing. DOI/formal4-author metadata via discovery; portal lists3 authors and delayed2025 deposit, prioritize Springer metadata before cite.",
+    "status": "conference_abstract",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 8,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "conference_abstract"
+  },
+  "10.1007/s10846-020-01307-9": {
+    "title": "Fiducial Markers for Pose Estimation",
+    "authors": [
+      "Michail Kalaitzakis",
+      "Brennan Cain",
+      "Sabrina Carroll",
+      "Anand Ambrosi",
+      "Camden Whitehead",
+      "Nikolaos Vitzilaios"
+    ],
+    "year": 2021,
+    "doi": "10.1007/s10846-020-01307-9",
+    "url": "https://link.springer.com/article/10.1007/s10846-020-01307-9",
+    "scores": [
+      2,
+      3,
+      1
+    ],
+    "score_reason": "Marker overview/applications/experimental comparison; background benchmark guidance, exclude from core multiscale mechanism novelty comparison.",
+    "status": "background_only",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 6,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "background_only"
+  },
+  "title:无人机自主降落视觉标识设计及位姿测量方法": {
+    "title": "无人机自主降落视觉标识设计及位姿测量方法",
+    "authors": [
+      "陶孟卫",
+      "姚宇威",
+      "元海文",
+      "肖长诗",
+      "文元桥"
+    ],
+    "year": 2022,
+    "doi": null,
+    "url": "https://yqyb.etmchina.com/yqyb/article/abstract/20220518",
+    "scores": [
+      3,
+      3,
+      2
+    ],
+    "score_reason": "中文原始研究，同心圆调和比圆心提取、二次曲线重投影优化、运动连续性测量关键帧；DOI未显示，期刊记录ID20220518；原刊摘要索引核验，全文403，不能作全面机制否定。",
+    "status": "primary_abstract",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 8,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_abstract"
+  },
+  "10.3390/drones7120703": {
+    "title": "An Autonomous Tracking and Landing Method for Unmanned Aerial Vehicles Based on Visual Navigation",
+    "authors": [
+      "Bingkun Wang",
+      "Ruitao Ma",
+      "Hang Zhu",
+      "Yongbai Sha",
+      "Tianye Yang"
+    ],
+    "year": 2023,
+    "doi": "10.3390/drones7120703",
+    "url": "https://www.mdpi.com/2504-446X/7/12/703",
+    "scores": [
+      3,
+      4,
+      3
+    ],
+    "score_reason": "内外嵌套标记与跟踪/着陆模式切换，丢失后上升扩视野；§2 publisher index read. Full429; no claims about missing corner-level joint solver.",
+    "status": "primary_abstract_and_section_snippets",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 10,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "primary_abstract_and_section_snippets"
+  },
+  "10.3390/s24144605": {
+    "title": "Tape-Shaped, Multiscale, and Continuous-Readable Fiducial Marker for Indoor Navigation and Localization Systems",
+    "authors": [
+      "Benedito S. R. Neto",
+      "Tiago Davi Oliveira de Araújo",
+      "Bianchi Serique Meiguins",
+      "Carlos Gustavo Resque dos Santos"
+    ],
+    "year": 2024,
+    "doi": "10.3390/s24144605",
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11281181/",
+    "scores": [
+      1,
+      2,
+      1
+    ],
+    "score_reason": "室内手机条带定位，不同于无人机平面靶标逼近；可留作广义多尺度背景，本批不深读。",
+    "status": "excluded",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 4,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "excluded"
+  },
+  "10.3390/s18061703": {
+    "title": "LightDenseYOLO: A Fast and Accurate Marker Tracker for Autonomous UAV Landing by Visible Light Camera Sensor on Drone",
+    "authors": [
+      "Phong Ha Nguyen",
+      "Muhammad Arsalan",
+      "Ja Hyung Koo",
+      "Rizwan Ali Naqvi",
+      "Noi Quang Truong",
+      "Kang Ryoung Park"
+    ],
+    "year": 2018,
+    "doi": "10.3390/s18061703",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/29795038/",
+    "scores": [
+      3,
+      2,
+      1
+    ],
+    "score_reason": "只聚焦训练检测/跟踪的相关摘要，非尺度调度和6DOF核心比较，本批排除深读。",
+    "status": "possible_background",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 6,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "possible_background"
+  },
+  "10.16383/j.aas.c230557": {
+    "title": "面向无人机自主着陆的视觉感知与位姿估计方法综述",
+    "authors": [
+      "马宁",
+      "曹云峰"
+    ],
+    "year": 2024,
+    "doi": "10.16383/j.aas.c230557",
+    "url": "https://www.aas.net.cn/cn/article/doi/10.16383/j.aas.c230557?viewType=HTML",
+    "scores": [
+      3,
+      2,
+      1
+    ],
+    "score_reason": "中文综述用于分类/引文发现，不作为原创机制或性能比较的原始证据。Primary HTML inspected §2/§3/§4.",
+    "status": "background_only",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 6,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "background_only"
+  },
+  "10.1109/icara69401.2026.11480363": {
+    "title": "Hierarchical Embedded ArUco Markers for Precise Positioning",
+    "authors": [
+      "Aleksei Kislovskii",
+      "Tatyana Tsoy",
+      "Yang Bai",
+      "Edgar A. Martínez-García",
+      "Mikhail Svinin",
+      "Evgeni Magid"
+    ],
+    "year": 2026,
+    "doi": "10.1109/ICARA69401.2026.11480363",
+    "url": "https://www.icara.us/2026.html",
+    "scores": [
+      2,
+      2,
+      1
+    ],
+    "score_reason": "新会议题名相关但未取得摘要，分数仅临时题名优先度；会议主办方与DBLP核对存在，不能支持具体机制论断。",
+    "status": "metadata_only_pending",
+    "has_full_text": false,
+    "publication_status": "formal record unless noted",
+    "locations": [],
+    "claims": [],
+    "author_limitations": [],
+    "our_inference": [],
+    "references_verified": [],
+    "score": 5,
+    "review_batch": "batch_scale.json",
+    "review_date": "2026-09-30",
+    "read_level": "metadata_only_pending"
+  },
+  "10.7527/s1000-6893.2018.22601": {
+    "title": "基于复合地标导航的动平台四旋翼飞行器自主优化降落技术",
+    "authors": [
+      "邢伯阳",
+      "潘峰",
+      "王位",
+      "冯肖雪"
+    ],
+    "year": 2019,
+    "doi": "10.7527/S1000-6893.2018.22601",
+    "venue": "航空学报 40(6):322601",
+    "primary_url": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22601",
+    "score_parts": [
+      3,
+      3,
+      2
+    ],
+    "score": 8,
+    "reason": "无人机混合地标定位直接相关；用于中文应用背景，不评价未获得全文的细节。",
+    "status": "primary_abstract_reviewed",
+    "read_level": "primary_abstract",
+    "has_full_text": false,
+    "locations": [
+      "出版页摘要",
+      "出版页引用信息",
+      "参考文献[17]、[19]"
+    ],
+    "supported": [
+      "采用圆环与二维码构成复合地标，配合平台运动状态估计进行着陆。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "只支持原始摘要明述的方法类别；不据此评价精度、范围或恢复机制缺失。"
+    ],
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 2,
+    "bibtex_key": "Xing2019",
+    "primary_metadata_override": {
+      "container-title": [
+        "航空学报"
+      ],
+      "volume": "40",
+      "issue": "6",
+      "page": "322601",
+      "type": "journal-article",
+      "source": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22601"
+    }
+  },
+  "10.5244/c.27.13": {
+    "title": "Fast Explicit Diffusion for Accelerated Features in Nonlinear Scale Spaces",
+    "authors": [
+      "Pablo F. Alcantarilla",
+      "Jesús Nuevo",
+      "Adrien Bartoli"
+    ],
+    "year": 2013,
+    "doi": "10.5244/C.27.13",
+    "venue": "Proceedings of the British Machine Vision Conference:13.1–13.11",
+    "primary_url": "https://www.bmva-archive.org.uk/bmvc/2013/Papers/paper0013/index.html",
+    "full_text_url": "https://encov.ip.uca.fr/publications/pubfiles/2013_Alcantarilla_etal_BMVC_akaze.pdf",
+    "score_parts": [
+      1,
+      4,
+      2
+    ],
+    "score": 7,
+    "reason": "项目局部纹理检测器的基础来源；用于归属常规技术。",
+    "status": "full_text_reviewed",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "locations": [
+      "§3 FED及非线性尺度空间",
+      "§3.2 M-LDB描述子",
+      "§4实验"
+    ],
+    "supported": [
+      "以FED加速非线性尺度空间；使用M-LDB二进制描述子。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "使用AKAZE不是新的描述子；原文不提供本任务跨尺度调度的验证。"
+    ],
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 16,
+    "bibtex_key": "AKAZE2013",
+    "crossref_metadata_verified": true,
+    "primary_metadata_override": {
+      "container-title": [
+        "Proceedings of the British Machine Vision Conference"
+      ],
+      "source": "https://www.bmva-archive.org.uk/bmvc/2013/Papers/paper0013/index.html"
+    }
+  },
+  "10.1016/j.patcog.2019.107193": {
+    "title": "UcoSLAM: Simultaneous localization and mapping by fusion of keypoints and squared planar markers",
+    "authors": [
+      "Rafael Muñoz-Salinas",
+      "Rafael Medina-Carnicer"
+    ],
+    "year": 2020,
+    "doi": "10.1016/j.patcog.2019.107193",
+    "venue": "Pattern Recognition 101:107193",
+    "primary_url": "https://doi.org/10.1016/j.patcog.2019.107193",
+    "full_text_url": "https://arxiv.org/pdf/1902.03729",
+    "score_parts": [
+      2,
+      4,
+      3
+    ],
+    "score": 9,
+    "reason": "自然特征与人工标记联合定位的直接先例；SLAM范围与固定靶标不同。",
+    "status": "full_text_reviewed",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "locations": [
+      "§3系统总览，PDF第4–5页",
+      "§4.2.2联合关键点/标记角点位姿估计，PDF第7–8页",
+      "§4.4地图优化，PDF第8–9页",
+      "§4.7失败后重定位，PDF第9页"
+    ],
+    "supported": [
+      "在统一SLAM系统中结合关键点和方形平面标记。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "不能由视觉线索联合本身证明本文首次；此文构图任务不等价于已知模板相对位姿。"
+    ],
+    "version_note": "阅读arXiv作者稿，引用2020正式期刊；正文仅使用稳定的方法类别，不搬用未映射版本的实验数字。",
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 8,
+    "bibtex_key": "UcoSLAM2020",
+    "crossref_metadata_verified": true
+  },
+  "10.1109/iros.2013.6696917": {
+    "title": "A Robust and Modular Multi-Sensor Fusion Approach Applied to MAV Navigation",
+    "authors": [
+      "Simon Lynen",
+      "Markus W. Achtelik",
+      "Stephan Weiss",
+      "Margarita Chli",
+      "Roland Siegwart"
+    ],
+    "year": 2013,
+    "doi": "10.1109/IROS.2013.6696917",
+    "venue": "IEEE/RSJ International Conference on Intelligent Robots and Systems:3923–3929",
+    "primary_url": "https://doi.org/10.1109/IROS.2013.6696917",
+    "full_text_url": "https://www.pure.ed.ac.uk/ws/portalfiles/portal/17220481/Lynen_et_al_2013_A_Robust_and_Modular_Mutli_Sensor_Fusion.pdf",
+    "score_parts": [
+      2,
+      3,
+      2
+    ],
+    "score": 7,
+    "reason": "定位延迟测量回退和重传播的直接先例，限定项目ESKF适配贡献。",
+    "status": "full_text_reviewed",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "locations": [
+      "§IV-A历史环形缓冲",
+      "§IV-B延迟更新与后续重传播；PDF含封面，第4–5页"
+    ],
+    "supported": [
+      "使用历史状态缓冲在对应测量时刻更新，并重传播后续状态/更新。"
+    ],
+    "reported_limits": [],
+    "inference_limits": [
+      "本文IMU-only重放不能包装为新的延迟估计理论；雷达更新重放边界需另行说明。"
+    ],
+    "review_date": "2026-09-30",
+    "manuscript_reference_number": 24,
+    "bibtex_key": "Lynen2013",
+    "crossref_metadata_verified": true
+  }
+}

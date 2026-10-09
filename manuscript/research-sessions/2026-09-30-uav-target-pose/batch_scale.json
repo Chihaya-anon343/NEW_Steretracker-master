@@ -1,0 +1,1147 @@
+{
+  "topic": "无人机已知靶标跨尺度、多层、嵌套标记的相对位姿定位",
+  "date": "2026-09-30",
+  "skill_paths": [
+    ".codex/skills/research-superpower-main/skills/research/evaluating-paper-relevance/SKILL.md",
+    ".codex/skills/research-superpower-main/skills/research/traversing-citations/SKILL.md"
+  ],
+  "rubric": {
+    "components": [
+      {
+        "name": "任务场景匹配",
+        "max": 3
+      },
+      {
+        "name": "机制相关性",
+        "max": 4
+      },
+      {
+        "name": "比较与贡献边界价值",
+        "max": 3
+      }
+    ],
+    "deep_read_threshold": 7,
+    "note": "metadata_only条目分数仅用于检索优先级；不作为已核实机制证据"
+  },
+  "queries": [
+    {
+      "query": "2309.08769 Lee Choi Bretl multi-scale rotorcraft landing marker",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "UAV landing nested multiscale fiducial markers pose estimation paper",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "无人机 降落 多尺度 嵌套 标记 位姿 论文",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"2309.08769\" \"10.2514\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Multi-resolution visual fiducial\" authors",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Fractal markers\" \"pose estimation\" Romero Ramirez",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous Landing Guidance\" \"57\" Authors",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Hierarchical fiducial marker design\" pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"A hierarchical vision-based localization\" pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Flexible Layouts for Fiducial Tags\" pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"The Use of Multi-Scale\" \"2024\" \"doi\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Fractal markers\" site:uco.es pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Hierarchical fiducial marker\" Wang Lu Zhong pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"无人机自主降落视觉标识设计及位姿测量方法\" 仪器仪表学报",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"基于阶层标识\" filetype:pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "site:mdpi.com/2504-446X/9/1/57 \"2.\" \"3.\" \"4.\" \"Mu\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "site:mdpi.com/1424-8220/24/5/1645 \"2.\" \"3.\" authors",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "site:mdpi.com/2079-9292/7/5/68 \"4.1\" \"4.2\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"22150\" \"pdf\" \"张咪\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous Landing of Quadrotor\" \"Multi-Level\" \"Zhang\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous Landing Guidance for Quad-UAVs\" \"Mu\" \"2.\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"A Hierarchical Vision-Based UAV Localization for an Open Landing\" Authors DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Flexible Layouts for Fiducial Tags\" \"nested\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous Landing of Quadrotor Unmanned Aerial Vehicles Based on Multi-Level Marker\" -site:eurekamag.com",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous Landing Guidance for Quad-UAVs\" \"Lei\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"HArCo\" \"2015\" \"10.1109\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"无人机自主降落视觉标识设计及位姿测量方法\" site:yqyb.cn",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Fractal Markers\" \"Romero\" \"uco.es/investiga\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"无人机自主降落视觉标识\" \"10.19650\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous Landing Guidance for Quad-UAVs\" filetype:pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"A Hierarchical Vision-Based UAV\" site:mdpi-res.com",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Embedded ArUco\" Khazetdinov DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Remote Marker-Based Tracking\" \"PMC\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"基于阶层标识的无人机自主精准降落系统\" \"下载\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Recursive ArUco\" \"10.3390\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"10.1109/SIBCON50419.2021.9438855\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous tracking and landing method\" \"Drones\" \"703\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Hierarchical Embedded ArUco Markers for Precise Positioning\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Fiducial markers for pose estimation\" Kalaitzakis 2021 DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"无人机自主降落视觉标识设计及位姿测量方法\" \"doi\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Tape-Shaped, Multiscale\" author DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Autonomous landing algorithm\" \"fractal marker\" DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Multi-resolution visual fiducial\" \"Yu\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Tape-Shaped, Multiscale, and Continuous-Readable\" \"by\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"LightDenseYOLO\" \"Nguyen\" \"doi\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"面向无人机自主着陆的视觉感知与位姿估计方法综述\" \"马宁\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    },
+    {
+      "query": "\"Recursive ArUco\" \"24 August 2026\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  ],
+  "records": [
+    {
+      "title": "The Use of Multi-Scale Fiducial Markers To Aid Takeoff and Landing Navigation by Rotorcraft",
+      "authors": [
+        "Jongwon Lee",
+        "Su Yeon Choi",
+        "Timothy Bretl"
+      ],
+      "year": 2024,
+      "doi": "10.2514/6.2024-0338",
+      "id": "arXiv:2309.08769v3",
+      "publication_status": "正式会议论文：AIAA SCITECH 2024 Forum；全文阅读arXiv 2309.08769v3（预印本初版2023）",
+      "url": "https://arxiv.org/abs/2309.08769",
+      "full_text_url": "https://arxiv.org/html/2309.08769v3",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "rotorcraft takeoff/landing, nested multiscale markers, outdoor pose and availability evaluation",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§3.2.1",
+        "§3.3",
+        "§4 Tables 1–2",
+        "§5",
+        "§6"
+      ],
+      "claims": [
+        "Evaluates nested (3 tags at scales 1:4:30) and non-nested (20 tags, 1:5:28) AprilTag layouts with WOLF binocular SLAM.",
+        "Reports ATE and estimated-pose fraction; marker-only and marker+feature modes did not show clear differences on this dataset."
+      ],
+      "author_limitations": [
+        "All 10–50 Lux sequences failed; low runway texture and markers leaving view limit tracking (§5).",
+        "RTK takeoff/landing position mismatch limits rigorous interpretation of ATE (§5).",
+        "Layout-aware PnP and IMU integration are future work (§6)."
+      ],
+      "our_inference": [
+        "Cannot claim adding texture always improves accuracy/availability; our texture lives on known target unlike generic scene-feature SLAM."
+      ],
+      "references_verified": [
+        {
+          "target": "10.1109/IROS40897.2019.8967787",
+          "location": "references [6]"
+        },
+        {
+          "target_title": "UcoSLAM: Simultaneous localization and mapping by fusion of keypoints and squared planar markers",
+          "location": "references [4]; title relation verified; DOI omitted pending primary verification"
+        }
+      ],
+      "score": 10,
+      "formal_metadata_url": "https://experts.illinois.edu/en/publications/the-use-of-multi-scale-fiducial-markers-to-aid-takeoff-and-landin/"
+    },
+    {
+      "title": "Recursive ArUco Markers: A Scalable Fiducial Marker Design for Unmanned Aerial Vehicle Landing Pads",
+      "authors": [
+        "Rafael Muñoz-Salinas",
+        "Francisco J. Romero-Ramirez",
+        "Sergio Garrido-Jurado"
+      ],
+      "year": 2026,
+      "doi": "10.3390/jsan15050070",
+      "id": "arXiv:2607.13830v1",
+      "publication_status": "formal JSAN 15(5):70, 2026-08-24 (parent verified); full text read arXiv",
+      "url": "https://www.mdpi.com/2224-2708/15/5/70",
+      "full_text_url": "https://arxiv.org/html/2607.13830v1",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "direct multiscale and partial-visible UAV marker competitor",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§3.1–3.2",
+        "§4.1–4.5",
+        "§5"
+      ],
+      "claims": [
+        "Embeds same-ID submarkers in both black and white cells; border sampling makes decoding independent of cell-center content.",
+        "Evaluates simulated distance/view angle, random occlusion, cropping, motion blur and a DJI flight sequence."
+      ],
+      "author_limitations": [
+        "HArCo and Embedded ArUco not empirical baselines because source/executables unavailable (§4).",
+        "Flight sequence has no detection before takeoff, intermittent loss above about 14 m and final camera pitch loss (§4.5)."
+      ],
+      "our_inference": [
+        "Reported cropped/occluded detection means decoding any hierarchical ID; it is not a pose-accuracy or successful autonomous-landing metric.",
+        "State5 center-only mechanism cannot be sold as general solution to arbitrary occlusion."
+      ],
+      "references_verified": [
+        {
+          "target": "10.1109/SIBCON50419.2021.9438855",
+          "location": "references [13]"
+        },
+        {
+          "target": "10.1109/ACCESS.2019.2951204",
+          "location": "references [14]"
+        },
+        {
+          "target": "10.1002/rob.21780",
+          "location": "references [16]"
+        },
+        {
+          "target": "10.3390/drones7120703",
+          "location": "references [12]"
+        },
+        {
+          "target": "10.3390/s17091987",
+          "location": "references [21]"
+        }
+      ],
+      "score": 10
+    },
+    {
+      "title": "Flexible Layouts for Fiducial Tags",
+      "authors": [
+        "Maximilian Krogius",
+        "Acshi Haggenmiller",
+        "Edwin Olson"
+      ],
+      "year": 2019,
+      "doi": "10.1109/IROS40897.2019.8967787",
+      "publication_status": "formal IROS 2019 pp1898–1903",
+      "url": "https://april.eecs.umich.edu/papers/details.php?name=krogius2019iros",
+      "full_text_url": "https://april.eecs.umich.edu/pdfs/krogius2019iros.pdf",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "original flexible/nested tags applied to quadrotor; foundational for Lee",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§III-A pp2–3",
+        "§IV-A p5",
+        "§IV-C p5",
+        "Fig1"
+      ],
+      "claims": [
+        "Supports custom layouts with an empty center for smaller recursive tags.",
+        "Demonstrates a 90.2 cm doubly nested tag detected from 0.08 to 16.15±0.03 m with 640×480 onboard images (§IV-A)."
+      ],
+      "author_limitations": [
+        "Detection speed and recall trade off through decimation (§IV-C)."
+      ],
+      "our_inference": [
+        "Detection-range demonstration is not proof of equivalent pose accuracy at all ranges.",
+        "Known-size outer/inner center-switching predates our five-state schedule."
+      ],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "A hierarchical vision-based localization of rotor unmanned aerial vehicles for autonomous landing",
+      "authors": [
+        "Haiwen Yuan",
+        "Changshi Xiao",
+        "Supu Xiu",
+        "Wenqiang Zhan",
+        "Zhenyi Ye",
+        "Fan Zhang",
+        "Chunhui Zhou",
+        "Yuanqiao Wen",
+        "Qiliang Li"
+      ],
+      "year": 2018,
+      "doi": "10.1177/1550147718800655",
+      "publication_status": "formal International Journal of Distributed Sensor Networks 14(9)",
+      "url": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+      "full_text_url": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "direct adaptive feature selection over approach/adjust/touchdown and pose failure handling",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "Object detection and pose recovery",
+        "A hierarchical vision-based localization framework / Hierarchical localization",
+        "False pose estimation detection",
+        "Experiments and analysis / Field experiment",
+        "Conclusion and future work"
+      ],
+      "claims": [
+        "Far approach uses external four-vertex contour; adjustment uses artificial fiducial corners; close touchdown uses Harris+Lucas–Kanade temporal homography accumulation.",
+        "Switches considering height and object projection ratio; detects orientation outliers using camera–inertial relative rotation and a median/3σ rule."
+      ],
+      "author_limitations": [
+        "Touchdown accumulation argued acceptable for short duration; filtering three phase measurements is future work.",
+        "Reference GPS/INS typical position accuracy <1 m horizontal / <2 m vertical, given in Field experiment."
+      ],
+      "our_inference": [
+        "Our scale-driven feature strategy and pose-failure check are not first in general.",
+        "Distinction must be same-template raw observations, intraframe fallback and geometrically tied region use; no claim based on state count."
+      ],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "Autonomous Landing of Quadrotor Unmanned Aerial Vehicles Based on Multi-Level Marker and Linear Active Disturbance Reject Control",
+      "authors": [
+        "Mingming Lv",
+        "Bo Fan",
+        "Jiwen Fang",
+        "Jia Wang"
+      ],
+      "year": 2024,
+      "doi": "10.3390/s24051645",
+      "publication_status": "formal Sensors24(5):1645",
+      "url": "https://www.mdpi.com/1424-8220/24/5/1645",
+      "full_text_url": "https://mdpi-res.com/d_attachment/sensors/sensors-24-01645/article_deploy/sensors-24-01645.pdf",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "recent multilayer ArUco+EPnP+fusion UAV-USV direct comparison",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§3 pp4–6",
+        "§3.2 pp5–6 Eq6",
+        "§5.3 p10",
+        "§5.4 pp11–12",
+        "§6 p13",
+        "Data Availability p13"
+      ],
+      "claims": [
+        "Largest marker → multiple visible markers → smallest marker three-stage approach.",
+        "Each marker estimates pose; positions from visible markers are averaged (Eq6) then Kalman-filtered.",
+        "30 ground landing experiments compare single/multilevel landing accuracy."
+      ],
+      "author_limitations": [
+        "Complex USV motion and wave impact compensation listed as future work.",
+        "Data unavailable because privacy restrictions."
+      ],
+      "our_inference": [
+        "Position-level averaging differs from our unified-coordinate raw 2D/3D joint PnP.",
+        "Landing error includes controller effects; not interchangeable with framewise pose error."
+      ],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "Embedded ArUco: a novel approach for high precision UAV landing",
+      "authors": [
+        "Artur Khazetdinov",
+        "Aufar Zakiev",
+        "Tatyana Tsoy",
+        "Mikhail Svinin",
+        "Evgeni Magid"
+      ],
+      "year": 2021,
+      "doi": "10.1109/SIBCON50419.2021.9438855",
+      "publication_status": "formal SIBCON2021 pp1–6; DOI printed in author PDF",
+      "url": "https://doi.org/10.1109/SIBCON50419.2021.9438855",
+      "full_text_url": "https://kpfu.ru/staff_files/F842132796/2021_Embedded_ArUco_a_novel_approach_for_high_precision_UAV_landing.pdf",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "outer loss followed by inner-center marker is direct antecedent to State5",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§IV-A pp3–4 TableI",
+        "§IV-B pp4–5 Fig6",
+        "§V p5 Fig7",
+        "§VI p5"
+      ],
+      "claims": [
+        "Inner marker replaces a central black encoding cell; inner/outer use different IDs.",
+        "Landing switches to inner marker when outer is outside frame; tested 20 Gazebo landings."
+      ],
+      "author_limitations": [
+        "Outer ID must have black central cell; recommends inner marker with more black than white cells (§IV-A).",
+        "Validation explicitly virtual Gazebo environment (§V/VI)."
+      ],
+      "our_inference": [
+        "Center-only recovery already exists; our contribution must reside in observation-family fallback and common target geometry, with real-data evidence."
+      ],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "A Precision Drone Landing System using Visual and IR Fiducial Markers and a Multi-Payload Camera",
+      "authors": [
+        "Joshua Springer",
+        "Gylfi Þór Guðmundsson",
+        "Marcel Kyas"
+      ],
+      "year": 2024,
+      "doi": null,
+      "id": "arXiv:2403.03806",
+      "publication_status": "arXiv version read; formal venue not verified",
+      "url": "https://arxiv.org/abs/2403.03806",
+      "full_text_url": "https://arxiv.org/html/2403.03806v1",
+      "scores": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "long-range visual/IR, nested targets and detection-loss recovery; avoids six-DOF unlike our task",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§III-A/B/C",
+        "§IV TableII",
+        "§IV-A",
+        "§V"
+      ],
+      "claims": [
+        "Controls primarily from direction, apparent marker size and zoom; deliberately avoids full 6-DOF fiducial pose.",
+        "Uses three concentric AprilTags for RGB tests and a high-level search/reacquisition policy.",
+        "26 landing tests, including visual and active/passive IR, report final landing error."
+      ],
+      "author_limitations": [
+        "Passive IR may depend on weather and reflect drone heat; more tests required (§IV).",
+        "Moving pads, other weather/backgrounds are future work (§V)."
+      ],
+      "our_inference": [
+        "Reacquiring via camera/aircraft motion differs from intraframe observation fallback; final landing error is not pose RMSE."
+      ],
+      "references_verified": [
+        {
+          "target": "10.1109/IROS40897.2019.8967787",
+          "location": "references [2]"
+        },
+        {
+          "target": "10.1109/IRC55401.2022.00047",
+          "location": "references [23]"
+        },
+        {
+          "target": "10.1109/IRC55401.2022.00054",
+          "location": "references [7]"
+        }
+      ],
+      "score": 8
+    },
+    {
+      "title": "Fractal Markers: A New Approach for Long-Range Marker Pose Estimation Under Occlusion",
+      "authors": [
+        "Francisco J. Romero-Ramirez",
+        "Rafael Muñoz-Salinas",
+        "Rafael Medina-Carnicer"
+      ],
+      "year": 2019,
+      "doi": "10.1109/ACCESS.2019.2951204",
+      "publication_status": "formal IEEE Access7:169908–169919",
+      "url": "https://www.uco.es/investiga/grupos/ava/portfolio/fractal-markers/",
+      "full_text_url": "https://www.researchgate.net/publication/337024999_Fractal_Markers_A_New_Approach_for_Long-Range_Marker_Pose_Estimation_Under_Occlusion",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "direct multiscale planar marker and observation fallback antecedent",
+      "status": "deep_read",
+      "has_full_text": true,
+      "locations": [
+        "§III pp169910–169911",
+        "§IV-B/C pp169912–169913",
+        "§IV-D pp169913–169915",
+        "§V-D/E pp169916–169917",
+        "§VI p169918"
+      ],
+      "claims": [
+        "Nested square markers share a common reference origin; initial detected outer corners seed projection/refinement of other visible internal corners and pose is re-estimated from the combined set.",
+        "When no complete marker is detected, prior detection seeds FAST corner classification and RANSAC matching before refinement.",
+        "With temporal prior, partial-visible recovery does not require current full-marker decoding."
+      ],
+      "author_limitations": [
+        "Keypoint association assumes interframe motion is not very large (§IV-D).",
+        "Higher occlusion increases error (§V-E); multiple distinct Fractal markers suggested as future work (§VI)."
+      ],
+      "our_inference": [
+        "RArUco2026 center-dependence characterization cannot be transferred wholesale to Fractal's temporal fallback; distinguish initialization decoding vs tracking.",
+        "Our generic contour+texture families differ, but 'unified 3D coordinates/internal+external points' and 'remaining observation recovery' alone are established."
+      ],
+      "references_verified": [
+        {
+          "target": "10.1109/IROS40897.2019.8967787",
+          "location": "references [32] AprilTag3/Flexible Layouts"
+        },
+        {
+          "target": "10.1002/rob.21780",
+          "location": "references [33] HArCo; full DOI needs primary metadata crosscheck"
+        },
+        {
+          "target": "10.1007/s11263-014-0725-5",
+          "location": "references [38] IPPE; title relationship verified"
+        }
+      ],
+      "score": 10,
+      "institutional_full_text_url": "https://burjcdigital.urjc.es/bitstreams/6cc6b966-a4c5-460a-b33f-ef710eb576b6/download"
+    },
+    {
+      "title": "Hierarchical fiducial marker design for pose estimation in large-scale scenarios",
+      "authors": [
+        "Hao Wang",
+        "Zongying Shi",
+        "Geng Lu",
+        "Yisheng Zhong"
+      ],
+      "year": 2018,
+      "doi": "10.1002/rob.21780",
+      "url": "https://onlinelibrary.wiley.com/doi/abs/10.1002/rob.21780",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "Hierarchical HArCo recognizable at several scales; oscillating-platform landing validation stated in publisher abstract. Full methodology not read; do not infer missing fallback.",
+      "status": "primary_abstract",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "HArCo: Hierarchical Fiducial Markers for Pose Estimation in Helicopter Landing Tasks",
+      "authors": [
+        "Hao Wang",
+        "Xiongfeng Wang",
+        "Geng Lu",
+        "Yisheng Zhong"
+      ],
+      "year": 2015,
+      "doi": "10.1109/SMC.2015.343",
+      "url": "https://doi.org/10.1109/SMC.2015.343",
+      "scores": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "Conference predecessor; authors/year/DOI from bibliographic discovery, primary abstract not retrieved. Retain for lineage, no mechanism claim.",
+      "status": "metadata_only",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 8
+    },
+    {
+      "title": "A Hierarchical Vision-Based UAV Localization for an Open Landing",
+      "authors": [
+        "Haiwen Yuan",
+        "Changshi Xiao",
+        "Supu Xiu",
+        "Wenqiang Zhan",
+        "Zhenyi Ye",
+        "Fan Zhang",
+        "Chunhui Zhou",
+        "Yuanqiao Wen",
+        "Qiliang Li"
+      ],
+      "year": 2018,
+      "doi": "10.3390/electronics7050068",
+      "url": "https://www.mdpi.com/2079-9292/7/5/68",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "Related but distinct from Sage2018: three-phase RQRLP measurements fused by federated EKF. Publisher indexed §4.1/§4.2/fig4 inspected; full article fetch429. Avoid treating as independent replication.",
+      "status": "primary_indexed_sections",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "基于阶层标识的无人机自主精准降落系统",
+      "authors": [
+        "张咪",
+        "赵勇",
+        "布树辉",
+        "张臻炜",
+        "杨君"
+      ],
+      "year": 2018,
+      "doi": "10.7527/S1000-6893.2018.22150",
+      "url": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22150",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "中文原始研究，多层嵌套二维编码识别匹配用于相对定位；真实飞行与仿真验证由摘要陈述。PDF按钮本工具未获得正文，不做具体失败机制比较。",
+      "status": "primary_abstract",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "Multi-resolution visual fiducial and assistant navigation system for unmanned aerial vehicle landing",
+      "authors": [
+        "Chong Yu",
+        "Jiyuan Cai",
+        "Qingyu Chen"
+      ],
+      "year": 2017,
+      "doi": "10.1016/j.ast.2017.03.008",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S1270963816312858",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "多分辨率条码处理相机分辨率和视角限制，提供相对6DOF；publisher abstract/§3–5 snippets only, no full mechanism comparison.",
+      "status": "primary_abstract_and_section_snippets",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "Autonomous Landing Guidance for Quad-UAVs Based on Visual Image and Altitude Estimation",
+      "authors": [
+        "Lingxia Mu",
+        "Shaowei Cao",
+        "Youmin Zhang",
+        "Xielong Zhang",
+        "Nan Feng",
+        "Yuan Zhang"
+      ],
+      "year": 2025,
+      "doi": "10.3390/drones9010057",
+      "url": "https://www.mdpi.com/2504-446X/9/1/57",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "双层ArUco+NWD-YOLOv4+PnP视觉/IMU高度融合+丢失后重捕获；publisher indexed §2/§7 and abstract inspected; full fetch429. Core mechanism promising but not fully read.",
+      "status": "primary_indexed_sections",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "Remote Marker-Based Tracking for UAV Landing Using Visible-Light Camera Sensor",
+      "authors": [
+        "Phong Ha Nguyen",
+        "Ki Wan Kim",
+        "Young Won Lee",
+        "Kang Ryoung Park"
+      ],
+      "year": 2017,
+      "doi": "10.3390/s17091987",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5621353/",
+      "scores": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "ATM/profile checker/Kalman fallback predicts target center when partial marker exits FOV (§3.2.3 Fig7). Tracking/center-direction result, not general relative6DOF; primary index inspected, direct PMC CAPTCHA.",
+      "status": "primary_indexed_sections",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 8
+    },
+    {
+      "title": "Autonomous Landing Algorithm for UAV on a Mobile Robotic Platform with a Fractal Marker",
+      "authors": [
+        "Dmitry Anikin",
+        "Artem Ryabinov",
+        "Anton Saveliev",
+        "Alexander Semenov"
+      ],
+      "year": 2023,
+      "doi": "10.1007/978-3-031-43111-1_32",
+      "url": "https://doi.org/10.1007/978-3-031-43111-1_32",
+      "scores": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "Official conference portal abstract describes Gazebo5–20m landing. DOI/formal4-author metadata via discovery; portal lists3 authors and delayed2025 deposit, prioritize Springer metadata before cite.",
+      "status": "conference_abstract",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 8
+    },
+    {
+      "title": "Fiducial Markers for Pose Estimation",
+      "authors": [
+        "Michail Kalaitzakis",
+        "Brennan Cain",
+        "Sabrina Carroll",
+        "Anand Ambrosi",
+        "Camden Whitehead",
+        "Nikolaos Vitzilaios"
+      ],
+      "year": 2021,
+      "doi": "10.1007/s10846-020-01307-9",
+      "url": "https://link.springer.com/article/10.1007/s10846-020-01307-9",
+      "scores": [
+        2,
+        3,
+        1
+      ],
+      "score_reason": "Marker overview/applications/experimental comparison; background benchmark guidance, exclude from core multiscale mechanism novelty comparison.",
+      "status": "background_only",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 6
+    },
+    {
+      "title": "无人机自主降落视觉标识设计及位姿测量方法",
+      "authors": [
+        "陶孟卫",
+        "姚宇威",
+        "元海文",
+        "肖长诗",
+        "文元桥"
+      ],
+      "year": 2022,
+      "doi": null,
+      "url": "https://yqyb.etmchina.com/yqyb/article/abstract/20220518",
+      "scores": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "中文原始研究，同心圆调和比圆心提取、二次曲线重投影优化、运动连续性测量关键帧；DOI未显示，期刊记录ID20220518；原刊摘要索引核验，全文403，不能作全面机制否定。",
+      "status": "primary_abstract",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 8
+    },
+    {
+      "title": "An Autonomous Tracking and Landing Method for Unmanned Aerial Vehicles Based on Visual Navigation",
+      "authors": [
+        "Bingkun Wang",
+        "Ruitao Ma",
+        "Hang Zhu",
+        "Yongbai Sha",
+        "Tianye Yang"
+      ],
+      "year": 2023,
+      "doi": "10.3390/drones7120703",
+      "url": "https://www.mdpi.com/2504-446X/7/12/703",
+      "scores": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "内外嵌套标记与跟踪/着陆模式切换，丢失后上升扩视野；§2 publisher index read. Full429; no claims about missing corner-level joint solver.",
+      "status": "primary_abstract_and_section_snippets",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 10
+    },
+    {
+      "title": "Tape-Shaped, Multiscale, and Continuous-Readable Fiducial Marker for Indoor Navigation and Localization Systems",
+      "authors": [
+        "Benedito S. R. Neto",
+        "Tiago Davi Oliveira de Araújo",
+        "Bianchi Serique Meiguins",
+        "Carlos Gustavo Resque dos Santos"
+      ],
+      "year": 2024,
+      "doi": "10.3390/s24144605",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11281181/",
+      "scores": [
+        1,
+        2,
+        1
+      ],
+      "score_reason": "室内手机条带定位，不同于无人机平面靶标逼近；可留作广义多尺度背景，本批不深读。",
+      "status": "excluded",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 4
+    },
+    {
+      "title": "LightDenseYOLO: A Fast and Accurate Marker Tracker for Autonomous UAV Landing by Visible Light Camera Sensor on Drone",
+      "authors": [
+        "Phong Ha Nguyen",
+        "Muhammad Arsalan",
+        "Ja Hyung Koo",
+        "Rizwan Ali Naqvi",
+        "Noi Quang Truong",
+        "Kang Ryoung Park"
+      ],
+      "year": 2018,
+      "doi": "10.3390/s18061703",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/29795038/",
+      "scores": [
+        3,
+        2,
+        1
+      ],
+      "score_reason": "只聚焦训练检测/跟踪的相关摘要，非尺度调度和6DOF核心比较，本批排除深读。",
+      "status": "possible_background",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 6
+    },
+    {
+      "title": "面向无人机自主着陆的视觉感知与位姿估计方法综述",
+      "authors": [
+        "马宁",
+        "曹云峰"
+      ],
+      "year": 2024,
+      "doi": "10.16383/j.aas.c230557",
+      "url": "https://www.aas.net.cn/cn/article/doi/10.16383/j.aas.c230557?viewType=HTML",
+      "scores": [
+        3,
+        2,
+        1
+      ],
+      "score_reason": "中文综述用于分类/引文发现，不作为原创机制或性能比较的原始证据。Primary HTML inspected §2/§3/§4.",
+      "status": "background_only",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 6
+    },
+    {
+      "title": "Hierarchical Embedded ArUco Markers for Precise Positioning",
+      "authors": [
+        "Aleksei Kislovskii",
+        "Tatyana Tsoy",
+        "Yang Bai",
+        "Edgar A. Martínez-García",
+        "Mikhail Svinin",
+        "Evgeni Magid"
+      ],
+      "year": 2026,
+      "doi": "10.1109/ICARA69401.2026.11480363",
+      "url": "https://www.icara.us/2026.html",
+      "scores": [
+        2,
+        2,
+        1
+      ],
+      "score_reason": "新会议题名相关但未取得摘要，分数仅临时题名优先度；会议主办方与DBLP核对存在，不能支持具体机制论断。",
+      "status": "metadata_only_pending",
+      "has_full_text": false,
+      "publication_status": "formal record unless noted",
+      "locations": [],
+      "claims": [],
+      "author_limitations": [],
+      "our_inference": [],
+      "references_verified": [],
+      "score": 5
+    }
+  ],
+  "synthesis": {
+    "critical_prior_art": "Fractal2019在统一标记坐标系下联合内部/外部可见角点求位姿；无完整标记检出时可由上一帧检测引导FAST角点类型分类与RANSAC恢复。须区分无历史冷启动解码和有历史跟踪。RArUco2026对Fractal中心依赖的概括不能代替Fractal原文。",
+    "contribution_boundaries": [
+      "多尺度、分级标记、外框丢失后内层定位并非本文首次。",
+      "由高度/投影比例切换特征或定位策略已有Yuan2018先例。",
+      "本文可着重具体任务的五状态调度、轮廓与纹理共同坐标建模、同帧求解失败后的策略降级；创新强度须由消融验证。",
+      "不能泛化宣称特征融合必然提升定位：Lee2024对其跑道数据未见明确改进。",
+      "PnP观测精度、系统定位精度和最终闭环着陆误差须分开叙述。"
+    ],
+    "access_notes": "公开作者/机构/出版社全文优先。无法全文读取的记录仅使用实际可见摘要、索引章节或元数据；没有以未读全文推断方法缺少某机制。"
+  },
+  "counts": {
+    "candidates": 23,
+    "deep_read": 8
+  }
+}

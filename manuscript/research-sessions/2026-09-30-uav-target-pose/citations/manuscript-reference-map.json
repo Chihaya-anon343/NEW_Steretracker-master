@@ -1,0 +1,339 @@
+[
+  {
+    "number": 1,
+    "key": "Lee2024",
+    "canonical_id": "10.2514/6.2024-0338",
+    "title": "The Use of Multi-Scale Fiducial Markers To Aid Takeoff and Landing Navigation by Rotorcraft",
+    "cited_url": "https://doi.org/10.2514/6.2024-0338",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/html/2309.08769v3",
+    "evidence_source_url": "https://arxiv.org/abs/2309.08769",
+    "metadata_override": null
+  },
+  {
+    "number": 2,
+    "key": "Xing2019",
+    "canonical_id": "10.7527/s1000-6893.2018.22601",
+    "title": "基于复合地标导航的动平台四旋翼飞行器自主优化降落技术",
+    "cited_url": "https://doi.org/10.7527/S1000-6893.2018.22601",
+    "read_level": "primary_abstract",
+    "has_full_text": false,
+    "full_text_read_url": null,
+    "evidence_source_url": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22601",
+    "metadata_override": {
+      "container-title": [
+        "航空学报"
+      ],
+      "volume": "40",
+      "issue": "6",
+      "page": "322601",
+      "type": "journal-article",
+      "source": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22601"
+    }
+  },
+  {
+    "number": 3,
+    "key": "Olson2011",
+    "canonical_id": "10.1109/icra.2011.5979561",
+    "title": "AprilTag: A robust and flexible visual fiducial system",
+    "cited_url": "https://doi.org/10.1109/ICRA.2011.5979561",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://april.eecs.umich.edu/pdfs/olson2011a.pdf",
+    "evidence_source_url": "https://april.eecs.umich.edu/pdfs/olson2011a.pdf",
+    "metadata_override": null
+  },
+  {
+    "number": 4,
+    "key": "Garrido2014",
+    "canonical_id": "10.1016/j.patcog.2014.01.005",
+    "title": "Automatic generation and detection of highly reliable fiducial markers under occlusion",
+    "cited_url": "https://doi.org/10.1016/j.patcog.2014.01.005",
+    "read_level": "publisher_abstract_intro_and_section_snippets_only",
+    "has_full_text": false,
+    "full_text_read_url": null,
+    "evidence_source_url": "https://www.sciencedirect.com/science/article/pii/S0031320314000235",
+    "metadata_override": null
+  },
+  {
+    "number": 5,
+    "key": "Fractal2019",
+    "canonical_id": "10.1109/access.2019.2951204",
+    "title": "Fractal Markers: A New Approach for Long-Range Marker Pose Estimation Under Occlusion",
+    "cited_url": "https://doi.org/10.1109/ACCESS.2019.2951204",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://www.researchgate.net/publication/337024999_Fractal_Markers_A_New_Approach_for_Long-Range_Marker_Pose_Estimation_Under_Occlusion",
+    "evidence_source_url": "https://www.uco.es/investiga/grupos/ava/portfolio/fractal-markers/",
+    "metadata_override": null
+  },
+  {
+    "number": 6,
+    "key": "Recursive2026",
+    "canonical_id": "10.3390/jsan15050070",
+    "title": "Recursive ArUco Markers: A Scalable Fiducial Marker Design for Unmanned Aerial Vehicle Landing Pads",
+    "cited_url": "https://doi.org/10.3390/jsan15050070",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/html/2607.13830v1",
+    "evidence_source_url": "https://www.mdpi.com/2224-2708/15/5/70",
+    "metadata_override": null
+  },
+  {
+    "number": 7,
+    "key": "Pressigout2007",
+    "canonical_id": "10.1177/0278364907080477",
+    "title": "Real-time Hybrid Tracking using Edge and Texture Information",
+    "cited_url": "https://doi.org/10.1177/0278364907080477",
+    "read_level": "publisher_abstract_and_indexed_fragments_only",
+    "has_full_text": false,
+    "full_text_read_url": null,
+    "evidence_source_url": "https://journals.sagepub.com/doi/10.1177/0278364907080477",
+    "metadata_override": null
+  },
+  {
+    "number": 8,
+    "key": "UcoSLAM2020",
+    "canonical_id": "10.1016/j.patcog.2019.107193",
+    "title": "UcoSLAM: Simultaneous localization and mapping by fusion of keypoints and squared planar markers",
+    "cited_url": "https://doi.org/10.1016/j.patcog.2019.107193",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/pdf/1902.03729",
+    "evidence_source_url": "https://doi.org/10.1016/j.patcog.2019.107193",
+    "metadata_override": null
+  },
+  {
+    "number": 9,
+    "key": "Collins2014",
+    "canonical_id": "10.1007/s11263-014-0725-5",
+    "title": "Infinitesimal Plane-Based Pose Estimation",
+    "cited_url": "https://doi.org/10.1007/s11263-014-0725-5",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://3dvar.com/Collins2014Infinitesimal.pdf",
+    "evidence_source_url": "https://doi.org/10.1007/s11263-014-0725-5",
+    "metadata_override": {
+      "container-title": [
+        "International Journal of Computer Vision"
+      ],
+      "volume": "109",
+      "page": "252-286",
+      "type": "journal-article",
+      "source": "https://3dvar.com/Collins2014Infinitesimal.pdf"
+    }
+  },
+  {
+    "number": 10,
+    "key": "Wu2014",
+    "canonical_id": "10.1109/mmsp.2014.6958793",
+    "title": "Stable Pose Tracking from a Planar Target with an Analytical Motion Model in Real-time Applications",
+    "cited_url": "https://doi.org/10.1109/MMSP.2014.6958793",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf",
+    "evidence_source_url": "https://doi.org/10.1109/MMSP.2014.6958793",
+    "metadata_override": null
+  },
+  {
+    "number": 11,
+    "key": "Lv2024",
+    "canonical_id": "10.3390/s24051645",
+    "title": "Autonomous Landing of Quadrotor Unmanned Aerial Vehicles Based on Multi-Level Marker and Linear Active Disturbance Reject Control",
+    "cited_url": "https://doi.org/10.3390/s24051645",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://mdpi-res.com/d_attachment/sensors/sensors-24-01645/article_deploy/sensors-24-01645.pdf",
+    "evidence_source_url": "https://www.mdpi.com/1424-8220/24/5/1645",
+    "metadata_override": null
+  },
+  {
+    "number": 12,
+    "key": "Krogius2019",
+    "canonical_id": "10.1109/iros40897.2019.8967787",
+    "title": "Flexible Layouts for Fiducial Tags",
+    "cited_url": "https://doi.org/10.1109/IROS40897.2019.8967787",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://april.eecs.umich.edu/pdfs/krogius2019iros.pdf",
+    "evidence_source_url": "https://april.eecs.umich.edu/papers/details.php?name=krogius2019iros",
+    "metadata_override": null
+  },
+  {
+    "number": 13,
+    "key": "Yuan2018",
+    "canonical_id": "10.1177/1550147718800655",
+    "title": "A hierarchical vision-based localization of rotor unmanned aerial vehicles for autonomous landing",
+    "cited_url": "https://doi.org/10.1177/1550147718800655",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+    "evidence_source_url": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+    "metadata_override": {
+      "page": "",
+      "source": "https://journals.sagepub.com/doi/10.1177/1550147718800655",
+      "note": "Crossref page字段呈截断文章号，省略该字段，保留卷期与DOI。"
+    }
+  },
+  {
+    "number": 14,
+    "key": "Wang2016",
+    "canonical_id": "10.1109/iros.2016.7759617",
+    "title": "AprilTag 2: Efficient and robust fiducial detection",
+    "cited_url": "https://doi.org/10.1109/IROS.2016.7759617",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://april.eecs.umich.edu/pdfs/wang2016iros.pdf",
+    "evidence_source_url": "https://april.eecs.umich.edu/pdfs/wang2016iros.pdf",
+    "metadata_override": null
+  },
+  {
+    "number": 15,
+    "key": "STag2019",
+    "canonical_id": "10.1016/j.imavis.2019.06.007",
+    "title": "STag: A stable fiducial marker system",
+    "cited_url": "https://doi.org/10.1016/j.imavis.2019.06.007",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/pdf/1707.06292",
+    "evidence_source_url": "https://arxiv.org/pdf/1707.06292",
+    "metadata_override": null
+  },
+  {
+    "number": 16,
+    "key": "AKAZE2013",
+    "canonical_id": "10.5244/c.27.13",
+    "title": "Fast Explicit Diffusion for Accelerated Features in Nonlinear Scale Spaces",
+    "cited_url": "https://doi.org/10.5244/C.27.13",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://encov.ip.uca.fr/publications/pubfiles/2013_Alcantarilla_etal_BMVC_akaze.pdf",
+    "evidence_source_url": "https://www.bmva-archive.org.uk/bmvc/2013/Papers/paper0013/index.html",
+    "metadata_override": {
+      "container-title": [
+        "Proceedings of the British Machine Vision Conference"
+      ],
+      "source": "https://www.bmva-archive.org.uk/bmvc/2013/Papers/paper0013/index.html"
+    }
+  },
+  {
+    "number": 17,
+    "key": "HybridPose2020",
+    "canonical_id": "10.1109/cvpr42600.2020.00051",
+    "title": "HybridPose: 6D Object Pose Estimation under Hybrid Representations",
+    "cited_url": "https://doi.org/10.1109/CVPR42600.2020.00051",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/pdf/2001.01869",
+    "evidence_source_url": "https://arxiv.org/pdf/2001.01869",
+    "metadata_override": {
+      "page": "431-440",
+      "source": "https://openaccess.thecvf.com/content_CVPR_2020/html/Song_HybridPose_6D_Object_Pose_Estimation_Under_Hybrid_Representations_CVPR_2020_paper.html",
+      "note": "CVF正式排版页码；Crossref/IEEE注册页码428-437另保留在原始缓存，不混用。"
+    }
+  },
+  {
+    "number": 18,
+    "key": "ICGplus2023",
+    "canonical_id": "10.1109/iros55552.2023.10341961",
+    "title": "Fusing Visual Appearance and Geometry for Multi-modality 6DoF Object Tracking",
+    "cited_url": "https://doi.org/10.1109/IROS55552.2023.10341961",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/pdf/2302.11458",
+    "evidence_source_url": "https://arxiv.org/pdf/2302.11458",
+    "metadata_override": null
+  },
+  {
+    "number": 19,
+    "key": "CALTag2010",
+    "canonical_id": "10.2312/pe/vmv/vmv10/041-048",
+    "title": "CALTag: High Precision Fiducial Markers for Camera Calibration",
+    "cited_url": "https://doi.org/10.2312/PE/VMV/VMV10/041-048",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://www.cs.ubc.ca/labs/imager/tr/2010/Atcheson_VMV2010_CALTag/files/caltag.pdf",
+    "evidence_source_url": "https://www.cs.ubc.ca/labs/imager/tr/2010/Atcheson_VMV2010_CALTag/files/caltag.pdf",
+    "metadata_override": {
+      "container-title": [
+        "Vision, Modeling, and Visualization"
+      ],
+      "page": "41-48",
+      "type": "proceedings-article",
+      "source": "https://diglib.eg.org/items/8aaa0fd8-f07d-45b2-bad2-d38dd31ff035"
+    }
+  },
+  {
+    "number": 20,
+    "key": "RUNE2011",
+    "canonical_id": "10.1109/cvpr.2011.5995544",
+    "title": "RUNE-Tag: A high accuracy fiducial marker with strong occlusion resilience",
+    "cited_url": "https://doi.org/10.1109/CVPR.2011.5995544",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://iris.unive.it/bitstream/10278/33533/1/2011-CVPR-runetag-published.pdf",
+    "evidence_source_url": "https://iris.unive.it/bitstream/10278/33533/1/2011-CVPR-runetag-published.pdf",
+    "metadata_override": null
+  },
+  {
+    "number": 21,
+    "key": "EPnP2009",
+    "canonical_id": "10.1007/s11263-008-0152-6",
+    "title": "EPnP: An Accurate O(n) Solution to the PnP Problem",
+    "cited_url": "https://doi.org/10.1007/s11263-008-0152-6",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://www.tugraz.at/fileadmin/user_upload/Institute/ICG/Images/team_lepetit/publications/lepetit_ijcv08.pdf",
+    "evidence_source_url": "https://www.epfl.ch/labs/cvlab/software/multi-view-stereo/epnp/",
+    "metadata_override": null
+  },
+  {
+    "number": 22,
+    "key": "Chng2020",
+    "canonical_id": "10.1109/icra40945.2020.9196902",
+    "title": "Resolving Marker Pose Ambiguity by Robust Rotation Averaging with Clique Constraints",
+    "cited_url": "https://doi.org/10.1109/ICRA40945.2020.9196902",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/pdf/1909.11888",
+    "evidence_source_url": "https://sfchng.github.io/publication/conference-manuscript/",
+    "metadata_override": null
+  },
+  {
+    "number": 23,
+    "key": "Wu2012",
+    "canonical_id": "10.1109/icme.2012.176",
+    "title": "Stable Pose Estimation with a Motion Model in Real-Time Application",
+    "cited_url": "https://doi.org/10.1109/ICME.2012.176",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/icme2012_spe/icme2012_spe.pdf",
+    "evidence_source_url": "https://scholars.lib.ntu.edu.tw/entities/publication/94869574-a23d-4740-a3da-fd686b384f91",
+    "metadata_override": null
+  },
+  {
+    "number": 24,
+    "key": "Lynen2013",
+    "canonical_id": "10.1109/iros.2013.6696917",
+    "title": "A Robust and Modular Multi-Sensor Fusion Approach Applied to MAV Navigation",
+    "cited_url": "https://doi.org/10.1109/IROS.2013.6696917",
+    "read_level": "relevant_sections_full_text",
+    "has_full_text": true,
+    "full_text_read_url": "https://www.pure.ed.ac.uk/ws/portalfiles/portal/17220481/Lynen_et_al_2013_A_Robust_and_Modular_Mutli_Sensor_Fusion.pdf",
+    "evidence_source_url": "https://doi.org/10.1109/IROS.2013.6696917",
+    "metadata_override": null
+  },
+  {
+    "number": 25,
+    "key": "Sola2017",
+    "canonical_id": "arxiv:1711.02508",
+    "title": "Quaternion kinematics for the error-state Kalman filter",
+    "cited_url": "https://arxiv.org/abs/1711.02508",
+    "read_level": "background_full_text_available_not_deep_read",
+    "has_full_text": true,
+    "full_text_read_url": "https://arxiv.org/pdf/1711.02508",
+    "evidence_source_url": "https://arxiv.org/abs/1711.02508",
+    "metadata_override": null
+  }
+]

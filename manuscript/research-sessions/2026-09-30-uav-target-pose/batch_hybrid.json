@@ -1,0 +1,1280 @@
+{
+  "batch": "hybrid_contour_texture_partial_visibility_recovery",
+  "reviewer": "hybrid_recovery",
+  "queries": [
+    {
+      "id": "HQ01",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "STag A Stable Fiducial Marker System paper pdf"
+    },
+    {
+      "id": "HQ02",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "CALTag High Precision Fiducial Markers Camera Calibration pdf"
+    },
+    {
+      "id": "HQ03",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "ChromaTag Colored Marker Fast Detection paper pdf"
+    },
+    {
+      "id": "HQ04",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "hybrid model based tracking texture edges pose estimation robust occlusion paper"
+    },
+    {
+      "id": "HQ05",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "AprilTag robust flexible visual fiducial system Olson 2011 pdf"
+    },
+    {
+      "id": "HQ06",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "Pressigout Marchand Real-time hybrid tracking edge texture information 2007 pdf INRIA"
+    },
+    {
+      "id": "HQ07",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "RUNE Tag high accuracy fiducial marker strong occlusion resilience 2011 pdf"
+    },
+    {
+      "id": "HQ08",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "CCTag Detection identification reliable color blind circular fiducial tag under challenging conditions pdf"
+    },
+    {
+      "id": "HQ09",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "site.inria.fr Pressigout Marchand hybrid tracking texture edges 2007 pdf"
+    },
+    {
+      "id": "HQ10",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "TopoTag robust scalable topological fiducial marker system CVPR 2019"
+    },
+    {
+      "id": "HQ11",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "AprilTag 2 efficient robust fiducial detection Wang Olson 2016 pdf"
+    },
+    {
+      "id": "HQ12",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "Deep ChArUco dark noisy images corners paper CVPR 2019"
+    },
+    {
+      "id": "HQ13",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Real-time Hybrid Tracking\" \"hal\""
+    },
+    {
+      "id": "HQ14",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"RUNE-Tag\" pdf site:unive.it"
+    },
+    {
+      "id": "HQ15",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"HybridPose\" \"Song\" \"2020\" CVPR"
+    },
+    {
+      "id": "HQ16",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Detection and Accurate Localization\" \"Calvet\" arxiv"
+    },
+    {
+      "id": "HQ17",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "M3T multi region modality multi body 3D tracking 2023 paper pdf"
+    },
+    {
+      "id": "HQ18",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "region texture based 6d object tracking 2024 robust edge texture paper"
+    },
+    {
+      "id": "HQ19",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "robust fiducial marker detection occlusion OILUtag 2024 paper"
+    },
+    {
+      "id": "HQ20",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Pressigout\" \"2007\" \"lagadic\" pdf"
+    },
+    {
+      "id": "HQ21",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Fusing Visual Appearance and Geometry\" Stoiber 2023"
+    },
+    {
+      "id": "HQ22",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"A multi-feature fusion-based pose tracking\" authors DOI"
+    },
+    {
+      "id": "HQ23",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN: Rapid identification\" authors DOI"
+    },
+    {
+      "id": "HQ24",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"ITER-Tag\" \"2022\" authors DOI"
+    },
+    {
+      "id": "HQ25",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"SRT3D\" \"2022\" DOI"
+    },
+    {
+      "id": "HQ26",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"LFTag\" \"Smith\" 2020"
+    },
+    {
+      "id": "HQ27",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Automatic generation and detection of highly reliable\" \"10.1016\""
+    },
+    {
+      "id": "HQ28",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Designing highly reliable fiducial markers\" Fiala DOI"
+    },
+    {
+      "id": "HQ29",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"SRT3D\" \"Stoiber\" \"doi\""
+    },
+    {
+      "id": "HQ30",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"LFTag\" \"Authors\""
+    },
+    {
+      "id": "HQ31",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN\" \"Taewook\" \"Geunsik\" marker"
+    },
+    {
+      "id": "HQ32",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Real-time Hybrid Tracking\" \"pdf\" Marchand"
+    },
+    {
+      "id": "HQ33",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"TopoTag\" \"10.1109\""
+    },
+    {
+      "id": "HQ34",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"ChromaTag\" \"10.1109\""
+    },
+    {
+      "id": "HQ35",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN\" \"105821\" \"Park\""
+    },
+    {
+      "id": "HQ36",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Automatic generation and detection\" \"Garrido\" site:sciencedirect.com"
+    },
+    {
+      "id": "HQ37",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN: Rapid identification\" \"105821\" authors year"
+    },
+    {
+      "id": "HQ38",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"TopoTag\" site:herohuyongtao.github.io"
+    },
+    {
+      "id": "HQ39",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"ChromaTag\" site:ieeexplore.ieee.org/document"
+    }
+  ],
+  "search_audit_note": "仅记录本批次真实提交的web检索式；并未直接调用IEEE Xplore、Scopus或Web of Science数据库搜索API，不能把域名结果当作这些数据库的检索次数。",
+  "open_access_attempts": [
+    {
+      "target": "10.1177/0278364907080477",
+      "action": "publisher_landing_page",
+      "url": "https://journals.sagepub.com/doi/10.1177/0278364907080477",
+      "result": "publisher_abstract_available"
+    },
+    {
+      "target": "10.1177/0278364907080477",
+      "action": "author_pdf",
+      "url": "https://www.irisa.fr/lagadic/pdf/2007_ijrr_pressigout.pdf",
+      "result": "web_open_failed"
+    },
+    {
+      "target": "10.1177/0278364907080477",
+      "action": "author_pdf_http",
+      "url": "http://www.irisa.fr/lagadic/pdf/2007_ijrr_pressigout.pdf",
+      "result": "web_open_failed"
+    },
+    {
+      "target": "10.1177/0278364907080477",
+      "action": "possible_new_author_pdf_path",
+      "url": "https://team.inria.fr/lagadic/files/2011/10/2007_ijrr_pressigout.pdf",
+      "result": "web_open_failed"
+    },
+    {
+      "target": "10.1177/0278364907080477",
+      "action": "repository_pdf",
+      "url": "https://citeseerx.ist.psu.edu/document?doi=d99f8b0cc019302a006cdbbf3b863f76d2e0be12&repid=rep1&type=pdf",
+      "result": "indexed_fragments_available_but_direct_open_failed"
+    },
+    {
+      "target": "10.1177/0278364907080477",
+      "action": "unpaywall_api",
+      "checked_date": "2026-09-30",
+      "api_endpoint_without_contact": "https://api.unpaywall.org/v2/10.1177/0278364907080477",
+      "result": "successful_shell_api_query",
+      "is_oa": false,
+      "best_oa_location": null,
+      "oa_locations_count": 0
+    },
+    {
+      "target": "10.1016/j.aei.2024.102788",
+      "action": "publisher_landing_page",
+      "url": "https://www.sciencedirect.com/science/article/pii/S1474034624004361",
+      "result": "abstract_intro_section_snippets_available_full_text_unavailable"
+    },
+    {
+      "target": "10.1016/j.aei.2024.102788",
+      "action": "unpaywall_api",
+      "checked_date": "2026-09-30",
+      "api_endpoint_without_contact": "https://api.unpaywall.org/v2/10.1016/j.aei.2024.102788",
+      "result": "successful_shell_api_query",
+      "is_oa": false,
+      "best_oa_location": null,
+      "oa_locations_count": 0
+    },
+    {
+      "target": "10.1016/j.imavis.2025.105821",
+      "action": "unpaywall_api",
+      "checked_date": "2026-09-30",
+      "api_endpoint_without_contact": "https://api.unpaywall.org/v2/10.1016/j.imavis.2025.105821",
+      "result": "successful_shell_api_query",
+      "is_oa": false,
+      "oa_locations_count": 0
+    },
+    {
+      "target": "10.1016/j.patcog.2014.01.005",
+      "action": "unpaywall_api",
+      "checked_date": "2026-09-30",
+      "api_endpoint_without_contact": "https://api.unpaywall.org/v2/10.1016/j.patcog.2014.01.005",
+      "result": "successful_shell_api_query",
+      "is_oa": false,
+      "oa_locations_count": 0
+    },
+    {
+      "target": "10.1109/TPAMI.2009.146",
+      "action": "unpaywall_api",
+      "checked_date": "2026-09-30",
+      "api_endpoint_without_contact": "https://api.unpaywall.org/v2/10.1109/TPAMI.2009.146",
+      "result": "successful_shell_api_query",
+      "is_oa": false,
+      "oa_locations_count": 0
+    }
+  ],
+  "open_access_successes": [
+    {
+      "target": "STag",
+      "url": "https://arxiv.org/pdf/1707.06292"
+    },
+    {
+      "target": "CALTag",
+      "url": "https://www.cs.ubc.ca/labs/imager/tr/2010/Atcheson_VMV2010_CALTag/files/caltag.pdf"
+    },
+    {
+      "target": "ChromaTag",
+      "url": "https://arxiv.org/pdf/1708.02982"
+    },
+    {
+      "target": "AprilTag",
+      "url": "https://april.eecs.umich.edu/pdfs/olson2011a.pdf"
+    },
+    {
+      "target": "AprilTag2",
+      "url": "https://april.eecs.umich.edu/pdfs/wang2016iros.pdf"
+    },
+    {
+      "target": "RUNE-Tag",
+      "url": "https://iris.unive.it/bitstream/10278/33533/1/2011-CVPR-runetag-published.pdf"
+    },
+    {
+      "target": "TopoTag",
+      "url": "https://arxiv.org/pdf/1908.01450"
+    },
+    {
+      "target": "HybridPose",
+      "url": "https://arxiv.org/pdf/2001.01869"
+    },
+    {
+      "target": "Deep ChArUco",
+      "url": "https://arxiv.org/pdf/1812.03247"
+    },
+    {
+      "target": "ICG",
+      "url": "https://arxiv.org/pdf/2203.05334"
+    },
+    {
+      "target": "SRT3D",
+      "url": "https://link.springer.com/article/10.1007/s11263-022-01579-8"
+    },
+    {
+      "target": "ICG+",
+      "url": "https://arxiv.org/pdf/2302.11458"
+    }
+  ],
+  "paper_count": 20,
+  "notes": [
+    "所有页码为PDF自1起算；HTML用节号定位。全文状态表示具体方法/限制段已阅读，不代表每句全文穷尽核验。",
+    "出版社摘要可以支持作者明述的方法类别，但未读取全文的条目不能支持性能、机制缺失或具体限制。",
+    "没有找到同一完整调度链不等于证明新颖性。",
+    "文稿不应引用跨硬件/数据集绝对数字作为本文性能基准；不将重投影低误差等同于真值正确。"
+  ],
+  "papers": [
+    {
+      "key": "10.1109/ICRA.2011.5979561",
+      "title": "AprilTag: A robust and flexible visual fiducial system",
+      "authors": [
+        "Edwin Olson"
+      ],
+      "year": 2011,
+      "doi": "10.1109/ICRA.2011.5979561",
+      "url": "https://april.eecs.umich.edu/pdfs/olson2011a.pdf",
+      "score_parts": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "人工平面靶标位姿直接相关；有边界恢复和编码算法；基础比较价值。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§III pp2–4",
+        "§III-C quad detection",
+        "§IV coding"
+      ],
+      "supported": [
+        "梯度分组拟合线段，再搜索四边形并用编码验证。",
+        "原始 AprilTag 考虑部分遮挡边界，而非要求全部标记像素完整。"
+      ],
+      "reported_limits": [
+        "§III-A指出梯度分组对图像噪声敏感，采用低通滤波。"
+      ],
+      "inference_limits": [
+        "其边界恢复不同于本文在全局观测失败后切换中心子区域；不能据此断言它缺乏所有恢复机制。"
+      ],
+      "id": "H01",
+      "score": 8,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/IROS.2016.7759617",
+      "title": "AprilTag 2: Efficient and robust fiducial detection",
+      "authors": [
+        "John Wang",
+        "Edwin Olson"
+      ],
+      "year": 2016,
+      "doi": "10.1109/IROS.2016.7759617",
+      "url": "https://april.eecs.umich.edu/pdfs/wang2016iros.pdf",
+      "score_parts": [
+        3,
+        3,
+        3
+      ],
+      "score_reason": "高效靶标位姿基础；明确检测速度与部分边界遮挡处理的取舍，直接帮助划定恢复贡献。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§I p1",
+        "§III-A p2",
+        "§III-B/C pp2–3"
+      ],
+      "supported": [
+        "重新设计四边形检测器，提高小目标检测和效率。",
+        "作者明确以恢复部分遮挡边界的能力换取检测速度与较少假候选。"
+      ],
+      "reported_limits": [
+        "部分遮挡边界恢复能力是明确被取舍的能力。"
+      ],
+      "inference_limits": [
+        "该取舍属于 AprilTag 2 的特定设计，不能泛化为所有人工标记都无法应对遮挡。"
+      ],
+      "id": "H02",
+      "score": 9,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1016/j.imavis.2019.06.007",
+      "title": "STag: A stable fiducial marker system",
+      "authors": [
+        "Burak Benligiray",
+        "Cihan Topal",
+        "Cuneyt Akinlar"
+      ],
+      "year": 2019,
+      "doi": "10.1016/j.imavis.2019.06.007",
+      "arxiv": "1707.06292",
+      "url": "https://arxiv.org/pdf/1707.06292",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "组合几何观测和条件回退与本文直接可比；必须用于收窄融合和恢复贡献。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§4.1 pp9–10",
+        "§4.3 pp12–13",
+        "§5.5.2 p23"
+      ],
+      "supported": [
+        "外方框用于检测和初始单应，内圆轮廓用于单应精化。",
+        "三个连续角可构建候选四边形，允许一个角被遮挡。",
+        "没有合适内圆边缘时省略精化；作者观察到部分遮挡椭圆精化可能降低稳定性。"
+      ],
+      "reported_limits": [
+        "单个圆锥曲线对应不足以独立估计单应，需要方框初始解。",
+        "部分遮挡内圆不执行精化。"
+      ],
+      "inference_limits": [
+        "已有混合几何与条件省略精化，本文应强调跨尺度轮廓/纹理策略调度和多层子集/区域重解，而非首次互补或首次回退。"
+      ],
+      "version_note": "2019期刊版元数据；页号按28页arXiv稿计。",
+      "id": "H03",
+      "score": 10,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.2312/PE/VMV/VMV10/041-048",
+      "title": "CALTag: High Precision Fiducial Markers for Camera Calibration",
+      "authors": [
+        "Bradley Atcheson",
+        "Felix Heide",
+        "Wolfgang Heidrich"
+      ],
+      "year": 2010,
+      "doi": "10.2312/PE/VMV/VMV10/041-048",
+      "url": "https://www.cs.ubc.ca/labs/imager/tr/2010/Atcheson_VMV2010_CALTag/files/caltag.pdf",
+      "score_parts": [
+        3,
+        3,
+        3
+      ],
+      "score_reason": "局部标记ID和已知布局恢复观测直接对应部分可见性问题；校准任务与逼近定位不同。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§3.2 pp3–5",
+        "§3.2.4 p5",
+        "§3.2.6 p5"
+      ],
+      "supported": [
+        "检测局部编码区域后以鞍点求亚像素坐标。",
+        "已知布局及单应/畸变估计用于寻找可见但漏检的校准点。"
+      ],
+      "reported_limits": [
+        "候选区域面积条件反映编码像素需可分辨。",
+        "编码只检测错误不纠错，因为成组使用可容许部分ID缺失。"
+      ],
+      "inference_limits": [
+        "缺失局部ID不一定让整板失效，故不能称已有靶标必须整体完整；本文采用整体/中心两区域与不同观测策略，须实验验证其任务收益。"
+      ],
+      "id": "H04",
+      "score": 9,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/ICCV.2017.164",
+      "title": "ChromaTag: A Colored Marker and Fast Detection Algorithm",
+      "authors": [
+        "Joseph DeGol",
+        "Timothy Bretl",
+        "Derek Hoiem"
+      ],
+      "year": 2017,
+      "doi": "10.1109/ICCV.2017.164",
+      "arxiv": "1708.02982",
+      "url": "https://arxiv.org/pdf/1708.02982",
+      "metadata_note": "Crossref原始DOI注册元数据核验：IEEE页1481–1490；CVF页1472–1481可能排版页码不同，引用只保留不带页码DOI及作者年。",
+      "score_parts": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "颜色-几何互补基础和尺度依赖实验相关；未直接设计本文回退链。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§3.1/3.2 pp3–4",
+        "§4 pp4–5",
+        "§5.2 pp7–8",
+        "References [21] p9/[33] p10"
+      ],
+      "supported": [
+        "LAB对立色梯度用于提前拒绝假候选，黑白外边框用于精确角点定位。",
+        "召回同时依赖标记图像尺寸和视角。"
+      ],
+      "reported_limits": [
+        "§5.2图9中小标记召回下降；论文说明很小标记不是重点时适合其速度取舍。"
+      ],
+      "inference_limits": [
+        "颜色与灰度分工已存在；这不是纹理关键点与轮廓角点统一PnP的同一机制，且检测指标不能替代6DoF真值误差。"
+      ],
+      "id": "H05",
+      "score": 8,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+      "metadata_source": "https://api.crossref.org/works/10.1109/ICCV.2017.164"
+    },
+    {
+      "key": "10.1109/CVPR.2011.5995544",
+      "title": "RUNE-Tag: A high accuracy fiducial marker with strong occlusion resilience",
+      "authors": [
+        "Filippo Bergamasco",
+        "Andrea Albarelli",
+        "Emanuele Rodolà",
+        "Andrea Torsello"
+      ],
+      "year": 2011,
+      "doi": "10.1109/CVPR.2011.5995544",
+      "url": "https://iris.unive.it/bitstream/10278/33533/1/2011-CVPR-runetag-published.pdf",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score_reason": "通过剩余分散特征进行识别和位姿恢复，直接挑战‘首次部分可见恢复’表述。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§2.2 pp4–5",
+        "§3.2/3.3/3.4 p7",
+        "§4 p8"
+      ],
+      "supported": [
+        "同心层圆点与循环码建立标记对应，部分圆点不可见时仍能识别。",
+        "以多点对应估计位姿，遮挡能力与码本/圆点数量存在取舍。"
+      ],
+      "reported_limits": [
+        "§3.4/§4明确高密度圆点在远距或倾斜条件下变小、混叠，椭圆检测可能失败。",
+        "速度并非主要优化目标。"
+      ],
+      "inference_limits": [
+        "‘抗遮挡’不等于‘全尺度连续输出’；本文需要显示远距检测、近距截断和重解覆盖的联合收益，不能否定已有遮挡恢复。"
+      ],
+      "id": "H06",
+      "score": 10,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/TVCG.2020.2988466",
+      "title": "TopoTag: A Robust and Scalable Topological Fiducial Marker System",
+      "authors": [
+        "Guoxing Yu",
+        "Yongtao Hu",
+        "Jingwen Dai"
+      ],
+      "year": 2021,
+      "arxiv": "1908.01450",
+      "doi": "10.1109/TVCG.2020.2988466",
+      "url": "https://arxiv.org/pdf/1908.01450",
+      "metadata_note": "Crossref原始DOI注册元数据核验：TVCG正式版2021年9月1日，页3769–3780；全文按2019起预印本读取。",
+      "score_parts": [
+        3,
+        3,
+        3
+      ],
+      "score_reason": "利用全部内部顶点与拓扑处理部分遮挡，适合人工靶标局部可见比较。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§5.4 pp7–8",
+        "§5.7 pp9–10",
+        "§5.10 p10"
+      ],
+      "supported": [
+        "使用拓扑及几何信息检测和解码，利用多个顶点估计位姿。",
+        "§5.7将支持遮挡的条件明确限定为保持拓扑结构。"
+      ],
+      "reported_limits": [
+        "遮挡支持要求主拓扑结构未被破坏。",
+        "§5.7遮挡比例实验依赖从基准节点侧/反侧遮挡方式，不可普遍化到任意遮挡。"
+      ],
+      "inference_limits": [
+        "可见面积比例不能独自刻画几何信息损失；本文五状态应包含区域可见性，且需报告截断位置与对应点分布。"
+      ],
+      "id": "H07",
+      "score": 9,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+      "metadata_source": "https://api.crossref.org/works/10.1109/TVCG.2020.2988466"
+    },
+    {
+      "key": "arxiv:2001.01869",
+      "title": "HybridPose: 6D Object Pose Estimation under Hybrid Representations",
+      "authors": [
+        "Chen Song",
+        "Jiaru Song",
+        "Qixing Huang"
+      ],
+      "year": 2020,
+      "arxiv": "2001.01869",
+      "doi": "10.1109/CVPR42600.2020.00051",
+      "url": "https://arxiv.org/pdf/2001.01869",
+      "score_parts": [
+        2,
+        4,
+        2
+      ],
+      "score_reason": "一般6D对象任务；关键点、边向量和对称对应互补联合求解有直接方法比较价值。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§3.1–3.3 pp3–5",
+        "§4 Tables1–2 pp7–8"
+      ],
+      "supported": [
+        "联合预测关键点、边向量和对称对应，初估和鲁棒精化共同利用这些表示。"
+      ],
+      "reported_limits": [
+        "预测结果包含异常值，精化采用鲁棒函数处理。"
+      ],
+      "inference_limits": [
+        "不同表示互补和统一求解不是本文独有；本文重点是无须训练姿态网络的已知平面模板观测组织与逼近失败恢复。"
+      ],
+      "version_note": "作者GitHub 2020-10-16更新训练/测试划分，当前arXiv与CVF旧版性能数字不一致，禁止引用旧摘要数字。",
+      "version_source": "https://github.com/chensong1995/HybridPose",
+      "id": "H08",
+      "score": 8,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1177/0278364907080477",
+      "title": "Real-time Hybrid Tracking using Edge and Texture Information",
+      "authors": [
+        "Muriel Pressigout",
+        "Eric Marchand"
+      ],
+      "year": 2007,
+      "doi": "10.1177/0278364907080477",
+      "url": "https://journals.sagepub.com/doi/10.1177/0278364907080477",
+      "score_parts": [
+        2,
+        4,
+        3
+      ],
+      "score_reason": "边缘纹理同目标联合非线性位姿估计为直接先例，优先级高。",
+      "status": "publisher_abstract_and_indexed_fragments_only",
+      "full_text_attempts": [
+        "作者旧域irisa无法读取",
+        "CiteSeer全文索引存在，直接open失败",
+        "Unpaywall查询未返回OA"
+      ],
+      "locations": [
+        "Publisher abstract",
+        "出版社元数据IJRR26(7):689–713"
+      ],
+      "supported": [
+        "出版社原始摘要明确由单一非线性准则整合纹理与边缘，同时估计单应或3D位姿。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "不能宣称本文首次融合轮廓与纹理。全文尚不可核验，不据此断言其初始化、回退机制缺失，也不用于性能数字。"
+      ],
+      "legal_author_url_unavailable": "https://www.irisa.fr/lagadic/pdf/2007_ijrr_pressigout.pdf",
+      "id": "H09",
+      "score": 9,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "arxiv:1812.03247",
+      "title": "Deep ChArUco: Dark ChArUco Marker Pose Estimation",
+      "authors": [
+        "Danying Hu",
+        "Daniel DeTone",
+        "Tomasz Malisiewicz"
+      ],
+      "year": 2019,
+      "arxiv": "1812.03247",
+      "doi": null,
+      "url": "https://arxiv.org/pdf/1812.03247",
+      "score_parts": [
+        3,
+        3,
+        2
+      ],
+      "score_reason": "已知平面标记CNN亚像素点＋PnP，说明光照模糊退化可用不同检测路线处理。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§3.1–3.3 pp3–4",
+        "§4 pp4–5",
+        "§5.2/5.3 pp6–7"
+      ],
+      "supported": [
+        "点位置和ID网络结合RefineNet亚像素精化，然后PnPRansac。",
+        "CNN针对特定ChArUco板训练，评测低光照及运动模糊。"
+      ],
+      "reported_limits": [
+        "§5.3给出精化精度与时间取舍。",
+        "附录提到严格小于1像素阈值下运动模糊序列传统法更好，可能需要真实模糊训练。"
+      ],
+      "inference_limits": [
+        "§5采用重投影误差定义‘正确位姿’，不能直接解读为独立6DoF真值误差；本文若有真实真值应以平移旋转误差验证。"
+      ],
+      "id": "H10",
+      "score": 8,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/CVPR.2016.67",
+      "title": "Detection and Accurate Localization of Circular Fiducials Under Highly Challenging Conditions",
+      "authors": [
+        "Lilian Calvet",
+        "Pierre Gurdjos",
+        "Carsten Griwodz",
+        "Simone Gasparini"
+      ],
+      "year": 2016,
+      "doi": "10.1109/CVPR.2016.67",
+      "url": "https://openaccess.thecvf.com/content_cvpr_2016/html/Calvet_Detection_and_Accurate_CVPR_2016_paper.html",
+      "score_parts": [
+        3,
+        2,
+        2
+      ],
+      "score_reason": "圆形靶标投影中心与复杂条件定位相关，但不直接涉及跨区域回退。",
+      "status": "publisher_abstract_only_pdf_fetch_failed",
+      "locations": [
+        "CVF abstract"
+      ],
+      "supported": [
+        "同心圆标记利用投影性质实现圆心投影定位；研究目标包含遮挡、距离、角度和相机运动。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "圆心定位属于2D观测，不宜自动等同于单标记完整6DoF求解。原文PDF打不开，正文只能保留方法类别。"
+      ],
+      "id": "H11",
+      "score": 7,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1016/j.patcog.2014.01.005",
+      "title": "Automatic generation and detection of highly reliable fiducial markers under occlusion",
+      "authors": [
+        "Sergio Garrido-Jurado",
+        "Rafael Muñoz-Salinas",
+        "F. J. Madrid-Cuevas",
+        "Manuel J. Marín-Jiménez"
+      ],
+      "year": 2014,
+      "doi": "10.1016/j.patcog.2014.01.005",
+      "url": "https://www.sciencedirect.com/science/article/pii/S0031320314000235",
+      "score_parts": [
+        3,
+        3,
+        3
+      ],
+      "score_reason": "多标记board与遮挡处理挑战‘部分可见定位首次’；高优先级。",
+      "status": "publisher_abstract_intro_and_section_snippets_only",
+      "full_text_attempts": [
+        "Unpaywall is_oa=false,no locations"
+      ],
+      "locations": [
+        "Publisher abstract/introduction",
+        "§5 section snippet"
+      ],
+      "supported": [
+        "可配置编码字典和纠错检测；多标记board搭配颜色分割遮挡mask。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "原始摘要支持多标记联合应对遮挡这一类方法；mask一部分用途是避免渲染遮挡像素，不应偷换成本文求解后验收。全文不可得不比较具体恢复算法。"
+      ],
+      "id": "H12",
+      "score": 9,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "arxiv:2006.00842",
+      "title": "LFTag: A Scalable Visual Fiducial System with Low Spatial Frequency",
+      "authors": [
+        "Ben Wang"
+      ],
+      "year": 2020,
+      "arxiv": "2006.00842",
+      "doi": null,
+      "url": "https://arxiv.org/abs/2006.00842",
+      "score_parts": [
+        3,
+        2,
+        1
+      ],
+      "score_reason": "低空间频率与检测距离相关；仅有仿真类摘要证据，非本文融合/恢复核心。",
+      "status": "abstract_screened_possible_relevance",
+      "locations": [
+        "arXiv abstract"
+      ],
+      "supported": [
+        "低空间频率约束下用拓扑检测与相对位置编码。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "距离/码本性能摘要主张基于仿真，暂不用于真值精度或逼近连续性结论。"
+      ],
+      "id": "H13",
+      "score": 6,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/TPAMI.2009.146",
+      "title": "Designing highly reliable fiducial markers",
+      "authors": [
+        "Mark Fiala"
+      ],
+      "year": 2010,
+      "doi": "10.1109/TPAMI.2009.146",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/20489233/",
+      "score_parts": [
+        3,
+        2,
+        1
+      ],
+      "score_reason": "ARTag基础；两阶段可靠设计有关但对本文区域重解比较不具体。",
+      "status": "abstract_screened_possible_relevance",
+      "full_text_attempts": [
+        "Unpaywall is_oa=false,no locations"
+      ],
+      "locations": [
+        "Indexed original abstract"
+      ],
+      "supported": [
+        "候选生成与身份验证分离；边缘候选与数字编码校验用于可靠标记。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "仅背景，不拿摘要证明其完整失败恢复性能。"
+      ],
+      "id": "H14",
+      "score": 6,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "arxiv:2203.05334",
+      "title": "Iterative Corresponding Geometry: Fusing Region and Depth for Highly Efficient 3D Tracking of Textureless Objects",
+      "authors": [
+        "Manuel Stoiber",
+        "Martin Sundermeyer",
+        "Rudolph Triebel"
+      ],
+      "year": 2022,
+      "arxiv": "2203.05334",
+      "doi": null,
+      "url": "https://arxiv.org/pdf/2203.05334",
+      "score_parts": [
+        2,
+        3,
+        2
+      ],
+      "score_reason": "区域与depth概率融合及拒绝遮挡观测直接提供方法比较，但传感器/3D任务不同。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§3 fusion formulation",
+        "Algorithm/occlusion discussion pp6–7",
+        "Fig4 p6",
+        "§4 evaluation"
+      ],
+      "supported": [
+        "联合区域与深度观测迭代优化，深度测量比模型预测更近时识别遮挡并剔除对应。"
+      ],
+      "reported_limits": [
+        "算法参数按数据集调整，考虑帧间运动、深度质量和图像分辨率。"
+      ],
+      "inference_limits": [
+        "显式遮挡拒绝不能称为本文创新；本文的中心区域重解针对平面已知模板和视野截断，需区别于深度遮挡mask。"
+      ],
+      "id": "H15",
+      "score": 7,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1007/s11263-022-01579-8",
+      "title": "SRT3D: A Sparse Region-Based 3D Object Tracking Approach for the Real World",
+      "authors": [
+        "Manuel Stoiber",
+        "Martin Pfanne",
+        "Klaus H. Strobl",
+        "Rudolph Triebel",
+        "Alin Albu-Schäffer"
+      ],
+      "year": 2022,
+      "doi": "10.1007/s11263-022-01579-8",
+      "arxiv": "2110.12715",
+      "url": "https://link.springer.com/article/10.1007/s11263-022-01579-8",
+      "score_parts": [
+        2,
+        3,
+        2
+      ],
+      "score_reason": "稀疏区域位姿跟踪、多尺度优化和遮挡建模有直接方法启发，非目标特定逼近调度。",
+      "status": "full_text_html_reviewed",
+      "locations": [
+        "§1.3",
+        "§4.4 Occlusion Modeling",
+        "§5.1 RBOT",
+        "§5.2 OPT"
+      ],
+      "supported": [
+        "仅区域观测的稀疏对应线概率模型；显式已知遮挡mask用于排除对应线。",
+        "§5.1失效后以真值重新初始化。"
+      ],
+      "reported_limits": [
+        "§5.1评测需正确初始位姿，失效以真值重启。",
+        "§5.2对轴对称对象加强旋转正则化，因为几何不能约束某些旋转。"
+      ],
+      "inference_limits": [
+        "含真值重启的tracking success不可直接与自主恢复或完整序列覆盖率比较。本文恢复指标须独立记录无需真值重启的连续失败长度。"
+      ],
+      "id": "H16",
+      "score": 7,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/IROS55552.2023.10341961",
+      "title": "Fusing Visual Appearance and Geometry for Multi-modality 6DoF Object Tracking",
+      "authors": [
+        "Manuel Stoiber",
+        "Mariam Elsayed",
+        "Anne E. Reichert",
+        "Florian Steidle",
+        "Dongheui Lee",
+        "Rudolph Triebel"
+      ],
+      "year": 2023,
+      "doi": "10.1109/IROS55552.2023.10341961",
+      "arxiv": "2302.11458",
+      "url": "https://arxiv.org/pdf/2302.11458",
+      "score_parts": [
+        2,
+        4,
+        3
+      ],
+      "score_reason": "近年关键点纹理、多区域与几何统一位姿融合直接最接近本文联合观测概念。",
+      "status": "full_text_reviewed",
+      "locations": [
+        "§III-B p3 Eqs4–7",
+        "§III-C pp3–4",
+        "§III-D p4",
+        "§IV-C p6",
+        "References [16] p8"
+      ],
+      "supported": [
+        "联合depth、texture和多region概率，通过汇总梯度/Hessian估计位姿。",
+        "关键帧2D描述子匹配3D模型点，Tukey损失处理异常；多区域考虑物体内部差异。"
+      ],
+      "reported_limits": [
+        "纹理残差不确定度及Tukey常量为用户参数；方法使用前一位姿附近区域和关键帧。"
+      ],
+      "inference_limits": [
+        "统一坐标下互补观测与鲁棒融合已有明确先例；本文只能以尺度/可见性调度和多层重解这一任务组合为差异，不能宣称首创。"
+      ],
+      "id": "H17",
+      "score": 9,
+      "has_full_text": true,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1016/j.aei.2024.102788",
+      "title": "A multi-feature fusion-based pose tracking method for industrial object with visual ambiguities",
+      "authors": [
+        "Nengbin Lv",
+        "Delong Zhao",
+        "Feifei Kong",
+        "Zhangmao Xu",
+        "Fuzhou Du"
+      ],
+      "year": 2024,
+      "doi": "10.1016/j.aei.2024.102788",
+      "url": "https://www.sciencedirect.com/science/article/pii/S1474034624004361",
+      "score_parts": [
+        2,
+        4,
+        3
+      ],
+      "score_reason": "按实时观测状态自适应多特征融合，最新强比较候选，防止泛化创新主张。",
+      "status": "publisher_abstract_intro_and_section_snippets_only",
+      "full_text_attempts": [
+        "Unpaywall is_oa=false,no locations"
+      ],
+      "locations": [
+        "Publisher abstract and introduction",
+        "Proposed method section snippet"
+      ],
+      "supported": [
+        "出版社摘要和引言明确统计颜色＋几何边缘、按残差和匹配率分配权重、局部/非局部混合优化。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "‘首次自适应多特征融合’不可成立。全文未得，不判断其是否含本文同样的整体→中心区域回退，不使用性能数字。"
+      ],
+      "id": "H18",
+      "score": 9,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1109/EUVIP53989.2022.9922671",
+      "title": "ITER-Tag: An Adaptable Framework for Robust Uncoded Fiducial Marker Detection and Identification",
+      "authors": [
+        "Laura Gonçalves Ribeiro",
+        "Olli J. Suominen",
+        "Sari Peltonen",
+        "Emilio Ruiz Morales",
+        "Atanas Gotchev"
+      ],
+      "year": 2022,
+      "doi": "10.1109/EUVIP53989.2022.9922671",
+      "url": "https://researchportal.tuni.fi/en/publications/iter-tag-an-adaptable-framework-for-robust-uncoded-fiducial-marke/",
+      "score_parts": [
+        2,
+        2,
+        2
+      ],
+      "score_reason": "少量非编码点和部分遮挡六自由度靶标定位可参考；工业部署与本文任务差异较大。",
+      "status": "abstract_screened_possible_relevance",
+      "locations": [
+        "Author institution abstract"
+      ],
+      "supported": [
+        "少量无编码标记适应不同布局，检测/识别后求6DoF，研究一定程度的遮挡。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "保留后续候选，未深读不用于具体恢复链比较。"
+      ],
+      "potential_full_text_url_not_read": "https://trepo.tuni.fi/bitstream/handle/10024/148035/978-952-03-2882-5.pdf?isAllowed=y&sequence=5",
+      "id": "H19",
+      "score": 6,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。"
+    },
+    {
+      "key": "10.1016/j.imavis.2025.105821",
+      "title": "PACMAN: Rapid identification of keypoint patch-based fiducial marker in occluded environments",
+      "authors": [
+        "Taewook Park",
+        "Geunsik Bae",
+        "Woojae Shin",
+        "Meraj Mammadov",
+        "Jaemin Seo",
+        "Heejung Shin",
+        "Hyondong Oh"
+      ],
+      "year": 2026,
+      "doi": "10.1016/j.imavis.2025.105821",
+      "url": "https://www.sciencedirect.com/science/article/pii/S0262885625004093",
+      "score_parts": [
+        3,
+        2,
+        2
+      ],
+      "score_reason": "最新人工关键点标记遮挡检测，避免综述只含老文；全文机制暂不可核验。",
+      "status": "publisher_indexed_abstract_only",
+      "locations": [
+        "Publisher indexed abstract",
+        "Author lab publication list J82"
+      ],
+      "full_text_attempts": [
+        "Publisher full text unavailable",
+        "Unpaywall is_oa=false,no locations"
+      ],
+      "supported": [
+        "标题与原始摘要表明面向遮挡环境的关键点patch标记及快速识别。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "只可作为最新遮挡靶标检测候选，不比较具体PnP/区域回退；期刊正式年2026，DOI含2025不能当出版年。"
+      ],
+      "metadata_note": "Crossref原始DOI注册元数据核验：正式期刊2026年1月，第六作者Heejung Shin；实验室页缩写存在歧义，以Crossref为准。",
+      "id": "H20",
+      "score": 7,
+      "has_full_text": false,
+      "source": "targeted_web_search_and_verified_reference_traversal",
+      "review_date": "2026-09-30",
+      "score_rubric": "任务相关性0–3 + 方法相关性0–4 + 比较价值0–3（阅读优先级，非质量评分）",
+      "paper_difference": "以本文已知模板跨尺度/可见性调度及层次化重解为工作差异，原创性和性能仍需最近文献及独立真值实验核验。",
+      "metadata_source": "https://api.crossref.org/works/10.1016/j.imavis.2025.105821"
+    }
+  ],
+  "citation_edges": [
+    {
+      "from": "10.1109/IROS.2016.7759617",
+      "to": "10.1109/ICRA.2011.5979561",
+      "evidence": "AprilTag2 §I p1及Ref[3]末页真实核验",
+      "type": "backward_reference",
+      "depth": 1
+    },
+    {
+      "from": "10.1109/ICCV.2017.164",
+      "to": "10.1109/IROS.2016.7759617",
+      "evidence": "ChromaTag References [33] p10",
+      "type": "backward_reference",
+      "depth": 1
+    },
+    {
+      "from": "10.1109/ICCV.2017.164",
+      "to": "10.2312/PE/VMV/VMV10/041-048",
+      "evidence": "ChromaTag §2 p2 and References [21] p9",
+      "type": "backward_reference",
+      "depth": 1
+    },
+    {
+      "from": "10.1016/j.imavis.2019.06.007",
+      "to": "10.1109/CVPR.2011.5995544",
+      "evidence": "STag References [17] pp26–27",
+      "type": "backward_reference",
+      "depth": 1
+    },
+    {
+      "from": "10.1016/j.imavis.2019.06.007",
+      "to": "10.1016/j.patcog.2014.01.005",
+      "evidence": "STag References [11] p26",
+      "type": "backward_reference",
+      "depth": 1
+    },
+    {
+      "from": "10.1109/IROS55552.2023.10341961",
+      "to": "arxiv:2203.05334",
+      "evidence": "ICG+ §I p1 + References [16] p8",
+      "type": "backward_reference",
+      "depth": 1
+    }
+  ],
+  "synthesis": {
+    "safe_claims": [
+      "多特征互补的核心思想已见边缘纹理联合跟踪、混合几何表示和多模态概率联合位姿估计。",
+      "人工靶标部分可见处理有边界恢复、编码冗余、多标记布局恢复和拓扑条件检测等路线。",
+      "这些路线有各自条件限制；‘所有已有方法要求完整靶标’并不成立。"
+    ],
+    "paper_focus": [
+      "本文候选差异是无人机逼近中投影尺度与整体/中心可见性变化驱动的策略组织，而非传统算子单独创新。",
+      "层次恢复可写成联合观测失败后轮廓子集重解，再中心子区域按尺度重分类；需与STag省略内圆精化、CALTag漏点恢复等明确区分。",
+      "每项机制的收益需由固定单路、仅调度、无回退及完整框架消融证明，并报告失败长度、错误接受和6DoF真值误差。"
+    ]
+  }
+}

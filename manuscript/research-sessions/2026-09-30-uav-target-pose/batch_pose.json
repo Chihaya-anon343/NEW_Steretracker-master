@@ -1,0 +1,780 @@
+{
+  "topic": "平面位姿歧义、时序候选选择、尺度相关可靠性；融合背景",
+  "reviewed_on": "2026-09-30",
+  "scoring": "task 0-3, method 0-4, comparison 0-3；相关性评分，不评价研究质量",
+  "notes": [
+    "全文状态表示可访问且已核对相关章节，不表示逐字阅读全部附录。",
+    "背景文献评分5-6，保留元数据但不据此作具体机制评价。",
+    "所有引用边由正文参考文献核对；不以搜索相似性推断引用。",
+    "原文限制与本项目的分析推断分别记录。"
+  ],
+  "papers": [
+    {
+      "key": "Lepetit2009EPnP",
+      "title": "EPnP: An Accurate O(n) Solution to the PnP Problem",
+      "authors": [
+        "Vincent Lepetit",
+        "Francesc Moreno-Noguer",
+        "Pascal Fua"
+      ],
+      "year": 2009,
+      "venue": "International Journal of Computer Vision 81:155-166",
+      "doi": "10.1007/s11263-008-0152-6",
+      "primary_url": "https://www.epfl.ch/labs/cvlab/software/multi-view-stereo/epnp/",
+      "full_text_url": "https://www.tugraz.at/fileadmin/user_upload/Institute/ICG/Images/team_lepetit/publications/lepetit_ijcv08.pdf",
+      "score_parts": [
+        2,
+        4,
+        2
+      ],
+      "score": 8,
+      "reason": "系统使用的通用PnP基础；必须避免把平面歧义说成EPnP特有。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "作者版本PDF第6页Sec3式(9)，第10页Sec5.1.2；正式期刊页码请用出版社版本映射。",
+      "supports": "可处理n>=4的平面和非平面点；内部也有多组候选按重投影选择；平面实验承认GN精化不能解决其余歧义案例。",
+      "source_limitations": "Sec5.1.2中平面实验误差对未受歧义影响的解统计，另报告异常解比例。",
+      "inference_for_project": "冷启动EPnP属于既有算法；不能由较小重投影误差推断较小真值姿态误差。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Collins2014IPPE",
+      "title": "Infinitesimal Plane-Based Pose Estimation",
+      "authors": [
+        "Toby Collins",
+        "Adrien Bartoli"
+      ],
+      "year": 2014,
+      "venue": "International Journal of Computer Vision 109:252-286",
+      "doi": "10.1007/s11263-014-0725-5",
+      "primary_url": "https://doi.org/10.1007/s11263-014-0725-5",
+      "full_text_url": "https://3dvar.com/Collins2014Infinitesimal.pdf",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score": 10,
+      "reason": "平面两解、弱透视和候选评价的直接理论依据。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "p253 Sec1/1.1，p254 Q1-Q6，pp255-257 Sec2；参考文献pp285-286。",
+      "supports": "小平面或远距弱透视条件下两候选均可与噪声相容；IPPE一至两物理有效解，旋转歧义与平移唯一性有特定理论条件；候选精化取最小重投影为常用流程。",
+      "source_limitations": "Sec1.3假定相机已标定且畸变预处理；一般几何退化下不能唯一恢复。",
+      "inference_for_project": "IPPE提供候选而非对真实姿态的保证；尺度门限不增加独立几何信息。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Schweighofer2006RPP",
+      "title": "Robust Pose Estimation from a Planar Target",
+      "authors": [
+        "Gerald Schweighofer",
+        "Axel Pinz"
+      ],
+      "year": 2006,
+      "venue": "IEEE TPAMI 28(12):2024-2030",
+      "doi": "10.1109/TPAMI.2006.252",
+      "primary_url": "https://ieeexplore.ieee.org/document/1717461/",
+      "abstract_url": "https://pubmed.ncbi.nlm.nih.gov/17108375/",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score": 10,
+      "reason": "经典平面局部极小歧义论文。",
+      "status": "relevant_abstract_only",
+      "has_full_text": false,
+      "oa_check": "Unpaywall已查询，best_oa_location为空；CiteSeer技术报告PDF搜索可发现但打开失败，不当成正式2006全文。",
+      "evidence_location": "正式摘要；详细解释通过IPPE等已得全文交叉核对。",
+      "supports": "摘要研究透视相机平面歧义，指出两局部极小也可存在于近距及宽视角场景。",
+      "source_limitations": "未获取正式全文，不提取详细模型和数值结果。",
+      "inference_for_project": "不能把歧义仅归因远距或某一种求解器。",
+      "read_level": "abstract_or_metadata_only",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null,
+      "unpaywall_check": {
+        "accessed_on": "2026-09-30",
+        "doi": "10.1109/TPAMI.2006.252",
+        "best_oa_location": null,
+        "status": "request_succeeded_no_best_oa_location",
+        "contact_email_recorded": false
+      }
+    },
+    {
+      "key": "Chng2020Clique",
+      "title": "Resolving Marker Pose Ambiguity by Robust Rotation Averaging with Clique Constraints",
+      "authors": [
+        "Shin-Fang Ch'ng",
+        "Naoya Sogi",
+        "Pulak Purkait",
+        "Tat-Jun Chin",
+        "Kazuhiro Fukui"
+      ],
+      "year": 2020,
+      "venue": "ICRA:9680-9686",
+      "doi": "10.1109/ICRA40945.2020.9196902",
+      "arxiv": "1909.11888",
+      "primary_url": "https://sfchng.github.io/publication/conference-manuscript/",
+      "full_text_url": "https://arxiv.org/pdf/1909.11888",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score": 10,
+      "reason": "直接反证最小重投影即正确姿态，代表多视图消歧。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "预印本p1 Fig1/式(1)-(2)；p2 Related work与SecII；pp3-4 SecIV；p7 References[12]-[14]。",
+      "supports": "Fig1展示较小重投影候选仍错误；以多标记多视图一致性及团约束旋转平均选择候选。",
+      "source_limitations": "SecII静态多标记、标定相机，SecIII要求共视多重图连通；Related work指出时序过滤依赖连续观测。",
+      "inference_for_project": "与单靶标在线候选竞争场景不同，但证明仅凭重投影排序不足；不能声称本文解决同样的全局消歧任务。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Wu2012Motion",
+      "title": "Stable Pose Estimation with a Motion Model in Real-Time Application",
+      "authors": [
+        "Po-Chen Wu",
+        "Jui-Hsin Lai",
+        "Ja-Ling Wu",
+        "Shao-Yi Chien"
+      ],
+      "year": 2012,
+      "venue": "ICME:314-319",
+      "doi": "10.1109/ICME.2012.176",
+      "primary_url": "https://scholars.lib.ntu.edu.tw/entities/publication/94869574-a23d-4740-a3da-fd686b384f91",
+      "full_text_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/icme2012_spe/icme2012_spe.pdf",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score": 10,
+      "reason": "时序预测选两姿态候选的最接近先例。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "pp317-318 Sec4.1-4.2/Fig7；p318 Sec5.1参数；p319参考文献。",
+      "supports": "运动模型Kalman预测后选择与预测相似的候选，并滤波减少跳变与抖动。",
+      "source_limitations": "Sec5.1过程与测量噪声参数经验设定；Intro对预测合理性作条件性描述。",
+      "inference_for_project": "时序选解并非新增原则；须强调当前观测可替换陈旧seed的具体规则，不能把平滑直接等同准确。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Wu2014AnalyticalMotion",
+      "title": "Stable Pose Tracking from a Planar Target with an Analytical Motion Model in Real-time Applications",
+      "authors": [
+        "Po-Chen Wu",
+        "Yao-Hung Tsai",
+        "Shao-Yi Chien"
+      ],
+      "year": 2014,
+      "venue": "IEEE MMSP",
+      "doi": "10.1109/MMSP.2014.6958793",
+      "primary_url": "https://doi.org/10.1109/MMSP.2014.6958793",
+      "full_text_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score": 10,
+      "reason": "同时涉及平面候选、运动预测与图像面积相关测量方差，必须比较。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "PDF第3-4页SecIII.B/Fig6-7；第4-5页SecIV；第6页References[7]-[8]。",
+      "supports": "建立角度测量标准差与标记面积的反幂关系，并将分析运动模型用于候选选择与Kalman处理。",
+      "source_limitations": "SecIII.B通过Blender和棋盘辅助获取评价参考、对其记录的数据拟合；参数与数据依赖需独立验证。",
+      "inference_for_project": "图像尺度影响可靠性与时序选候选均已有先例；本文跨度阈值是残差验收规则而非该方差模型。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Ferraz2014CEPPnP",
+      "title": "Leveraging Feature Uncertainty in the PnP Problem",
+      "authors": [
+        "Luis Ferraz",
+        "Xavier Binefa",
+        "Francesc Moreno-Noguer"
+      ],
+      "year": 2014,
+      "venue": "BMVC paper065:1-13",
+      "doi": null,
+      "primary_url": "https://bmva-archive.org.uk/bmvc/2014/files/paper065.pdf",
+      "full_text_url": "https://bmva-archive.org.uk/bmvc/2014/files/paper065.pdf",
+      "score_parts": [
+        2,
+        4,
+        2
+      ],
+      "score": 8,
+      "reason": "特征异方差与位姿求解可靠性基础。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "pp4-6 Sec3.2-3.3；p8 Fig3平面/非平面合成，pp9-10真实图像实验。",
+      "supports": "以观测协方差构建近似最大似然PnP，真实图像通过视角敏感性预估特征噪声。",
+      "source_limitations": "Sec3.3明确真实图像特征协方差估计仍难；依赖参考视角及噪声模型。",
+      "inference_for_project": "若BC/AKAZE混合点都等权，应承认与统计异方差加权不同；不能将尺度门限称作最大似然验收。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Urban2016MLPnP",
+      "title": "MLPnP – A Real-Time Maximum Likelihood Solution to the Perspective-n-Point Problem",
+      "authors": [
+        "Steffen Urban",
+        "Jens Leitloff",
+        "Stefan Hinz"
+      ],
+      "year": 2016,
+      "venue": "ISPRS Annals III-3:131-138",
+      "doi": "10.5194/isprs-annals-III-3-131-2016",
+      "arxiv": "1607.08112",
+      "primary_url": "https://isprs-annals.copernicus.org/articles/III-3/131/2016/index.html",
+      "full_text_url": "https://arxiv.org/pdf/1607.08112",
+      "score_parts": [
+        2,
+        4,
+        2
+      ],
+      "score": 8,
+      "reason": "实时协方差感知PnP及内部精度评价的代表。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "预印本p2 Introduction，pp2-4 Sec3，p5 Sec4.2。",
+      "supports": "将二维点协方差传播到单位射线切空间，构造最大似然解并估计位姿精度。",
+      "source_limitations": "估计依据给定观测随机模型；真实实验为头戴鱼眼轨迹。",
+      "inference_for_project": "精度估计与求解器候选门限不同；不能据本文小目标验收规则宣称优于协方差感知求解。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Vakhitov2021Uncertainty",
+      "title": "Uncertainty-Aware Camera Pose Estimation from Points and Lines",
+      "authors": [
+        "Alexander Vakhitov",
+        "Luis Ferraz Colomina",
+        "Antonio Agudo",
+        "Francesc Moreno-Noguer"
+      ],
+      "year": 2021,
+      "venue": "CVPR:4657-4666",
+      "doi": "10.1109/CVPR46437.2021.00463",
+      "arxiv": "2107.03890",
+      "primary_url": "https://www.iri.upc-csic.es/publications/show/2495",
+      "full_text_url": "https://arxiv.org/pdf/2107.03890",
+      "score_parts": [
+        2,
+        4,
+        2
+      ],
+      "score": 8,
+      "reason": "同时建模二维与三维不确定性及残差精化，提供可靠性边界。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "pp3-4 Sec3.1-3.3；p5 Sec3.5-3.6；pp7-8 Tables1-3；pp9-10 References[6],[20],[40]。",
+      "supports": "二维和三维特征噪声传播到残差协方差；提供EPnPU/DLSU与协方差感知精化。",
+      "source_limitations": "假设零均值Gaussian噪声及一定独立性；部分协方差近似需要平均深度或初始姿态；数据为KITTI/TUM视觉里程计。",
+      "inference_for_project": "不把其一般场景收益数字转用到无人机靶标；跨度门限是较轻量的工程规则，不是完整不确定性传播。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Adamek2023Variance",
+      "title": "Analytical Models for Pose Estimate Variance of Planar Fiducial Markers for Mobile Robot Localisation",
+      "authors": [
+        "Roman Adámek",
+        "Martin Brablc",
+        "Patrik Vávra",
+        "Barnabás Dobossy",
+        "Martin Formánek",
+        "Filip Radil"
+      ],
+      "year": 2023,
+      "venue": "Sensors 23(12):5746",
+      "doi": "10.3390/s23125746",
+      "primary_url": "https://www.mdpi.com/1424-8220/23/12/5746",
+      "full_text_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10300747/",
+      "score_parts": [
+        3,
+        4,
+        3
+      ],
+      "score": 10,
+      "reason": "标记投影面积/视角相关方差与自适应EKF的近期直接先例。",
+      "status": "relevant",
+      "has_full_text": true,
+      "access_note": "PMC/MDPI直接打开有时触发验证，全文章节经网页索引缓存及作者仓库PDF内容核对；不将打不开页面标为下载成功。",
+      "evidence_location": "Sec4.2/Fig5-6；Sec5.1-5.3式(8)；Sec6.4-6.5；Sec7；Data Availability。",
+      "supports": "方差随面积、观察角度与距离变化，并用于EKF观测噪声设置。",
+      "source_limitations": "面向2D机器人相关三个自由度；Sec7模型当前基于静态相机，动态运动模糊需后续扩展；数据受隐私限制不可得。",
+      "inference_for_project": "面积只是一项代理变量；不可只凭面积断言每帧可靠性，项目仍应评价视角/模糊影响。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Wang2023MarkerSLAM",
+      "title": "A Robust Planar Marker-Based Visual SLAM",
+      "authors": [
+        "Zhoubo Wang",
+        "Zhenhai Zhang",
+        "Wei Zhu",
+        "Xuehai Hu",
+        "Hongbin Deng",
+        "Guang He",
+        "Xiao Kang"
+      ],
+      "year": 2023,
+      "venue": "Sensors 23(2):917",
+      "doi": "10.3390/s23020917",
+      "primary_url": "https://www.mdpi.com/1424-8220/23/2/917",
+      "full_text_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/",
+      "score_parts": [
+        3,
+        4,
+        2
+      ],
+      "score": 9,
+      "reason": "多关键帧候选筛选、初始化/重定位恢复近期代表。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "Sec2；Sec4.1-4.3式(9)及M2M目标；References[19],[20],[23]。",
+      "supports": "已有方法已采用多图候选选择及初始化、关键帧、重定位增强；通过标记间旋转一致性确定标记姿态。",
+      "source_limitations": "标记SLAM任务，依赖多标记共视及关键帧姿态；作者对Ch'ng方法实时性评价为其论文中的判断，不等于本文实测。",
+      "inference_for_project": "本文单靶标局部策略回退区别于地图恢复，但不能笼统声称现有方法不处理失败。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Kim2024MultiMarker",
+      "title": "Enhancing Pose Estimation Using Multiple Graphical Markers with Spatial and Temporal Outlier Detection",
+      "authors": [
+        "Doyoung Kim",
+        "Jae Hwan Bong",
+        "Seongkyun Jeong"
+      ],
+      "year": 2024,
+      "venue": "Applied Sciences 14(22):10225",
+      "doi": "10.3390/app142210225",
+      "primary_url": "https://www.mdpi.com/2076-3417/14/22/10225",
+      "full_text_url": "https://www.mdpi.com/2076-3417/14/22/10225",
+      "score_parts": [
+        3,
+        3,
+        2
+      ],
+      "score": 8,
+      "reason": "无人机相机实验、空间/时间异常检测，与可靠性验收有比较价值。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "Sec3.2式(7)-(8)，Sec3.3式(9)-(10)，Sec3.4；Sec4实验。",
+      "supports": "固定多ArUco阵列用相对几何一致性和移动平均旋转差剔除异常，再平均剩余观测。",
+      "source_limitations": "依赖已知多标记几何与预设阈值；把突变定义为异常的机制见Sec3.3。",
+      "inference_for_project": "分析推断：真实快速旋转也可能触发其时间阈值；本文若强调快速运动，应给轨迹消融，不做无实测优劣结论。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Terzakis2020SQPnP",
+      "title": "A Consistently Fast and Globally Optimal Solution to the Perspective-n-Point Problem",
+      "authors": [
+        "George Terzakis",
+        "Manolis Lourakis"
+      ],
+      "year": 2020,
+      "venue": "ECCV:478-494",
+      "doi": "10.1007/978-3-030-58452-8_28",
+      "primary_url": "https://www.ecva.net/papers/eccv_2020/papers_ECCV/html/1969_ECCV_2020_paper.php",
+      "score_parts": [
+        1,
+        3,
+        2
+      ],
+      "score": 6,
+      "reason": "一般PnP全局优化背景，本文不提出新PnP算法。",
+      "status": "possibly_relevant_background",
+      "has_full_text": false,
+      "evidence_location": "官方摘要",
+      "supports": "一般PnP可覆盖共面配置；只作为已有求解器范围背景。",
+      "source_limitations": "未全文审查其全局目标和假设。",
+      "inference_for_project": "数值目标全局最优和真实物理解正确是不同命题。",
+      "read_level": "abstract_or_metadata_only",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。"
+    },
+    {
+      "key": "Lu2000LHM",
+      "title": "Fast and Globally Convergent Pose Estimation from Video Images",
+      "authors": [
+        "Chien-Ping Lu",
+        "Gregory D. Hager",
+        "Eric Mjolsness"
+      ],
+      "year": 2000,
+      "venue": "IEEE TPAMI 22(6):610-622",
+      "doi": "10.1109/34.862199",
+      "primary_url": "https://doi.org/10.1109/34.862199",
+      "full_text_url": "https://computableplant.ics.uci.edu/papers/2000/LuHagerMjolsness.pdf",
+      "score_parts": [
+        1,
+        3,
+        2
+      ],
+      "score": 6,
+      "reason": "迭代正交姿态估计基础，对本文主线辅助。",
+      "status": "possibly_relevant_background",
+      "has_full_text": true,
+      "evidence_location": "摘要及引言，非深入提取",
+      "supports": "以物空间共线性误差构造迭代求解。",
+      "source_limitations": "未深读全部证明，不能把globally convergent转写为所有含噪平面真实姿态保证。",
+      "inference_for_project": "引用目的限于迭代求解背景。",
+      "read_level": "background_full_text_available_not_deep_read",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。"
+    },
+    {
+      "key": "Oberkampf1996Planar",
+      "title": "Iterative Pose Estimation Using Coplanar Feature Points",
+      "authors": [
+        "Daniel Oberkampf",
+        "Daniel F. DeMenthon",
+        "Larry S. Davis"
+      ],
+      "year": 1996,
+      "venue": "Computer Vision and Image Understanding 63(3):495-511",
+      "doi": "10.1006/cviu.1996.0037",
+      "primary_url": "https://doi.org/10.1006/cviu.1996.0037",
+      "score_parts": [
+        2,
+        2,
+        2
+      ],
+      "score": 6,
+      "reason": "历史共面迭代方法，由IPPE/Wang全文引用核对，保留背景。",
+      "status": "possibly_relevant_background",
+      "has_full_text": false,
+      "evidence_location": "IPPE Sec2及References、Wang2023 References[18]",
+      "supports": "仅用于历史文献关系，不由二手概述替代原文详细结论。",
+      "source_limitations": "未获取全文。",
+      "inference_for_project": "无需在引言详细讲算法。",
+      "read_level": "abstract_or_metadata_only",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。"
+    },
+    {
+      "key": "Rijlaarsdam2022Encoding",
+      "title": "A novel encoding element for robust pose estimation using planar fiducials",
+      "authors": [
+        "David D. W. Rijlaarsdam",
+        "Martin Zwick",
+        "J. M. (Hans) Kuiper"
+      ],
+      "year": 2022,
+      "venue": "Frontiers in Robotics and AI 9:838128",
+      "doi": "10.3389/frobt.2022.838128",
+      "primary_url": "https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2022.838128/full",
+      "full_text_url": "https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2022.838128/pdf",
+      "score_parts": [
+        3,
+        2,
+        2
+      ],
+      "score": 7,
+      "reason": "通过改变靶标信息维度改善平面姿态的替代路线。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "Sec1、Sec2、Sec4 Discussion",
+      "supports": "编码构件提供等价突起的虚拟空间点，支持加入额外几何信息的路线。",
+      "source_limitations": "须制作专门构件；传感器与标记设计不同。",
+      "inference_for_project": "本文保留既有平面模板时不能宣称消除几何信息不足；该论文可用于说明硬件/标记设计替代路线。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Meza2021MarkerPose",
+      "title": "MarkerPose: Robust Real-Time Planar Target Tracking for Accurate Stereo Pose Estimation",
+      "authors": [
+        "Jhacson Meza",
+        "Lenny A. Romero",
+        "Andres G. Marrugo"
+      ],
+      "year": 2021,
+      "venue": "CVPR Workshops:1282-1290",
+      "doi": "10.1109/CVPRW53098.2021.00141",
+      "arxiv": "2105.00368",
+      "primary_url": "https://openaccess.thecvf.com/content/CVPR2021W/LXCV/html/Meza_MarkerPose_Robust_Real-Time_Planar_Target_Tracking_for_Accurate_Stereo_Pose_CVPRW_2021_paper.html",
+      "full_text_url": "https://arxiv.org/pdf/2105.00368",
+      "score_parts": [
+        2,
+        3,
+        2
+      ],
+      "score": 7,
+      "reason": "平面靶标双目学习特征定位替代路线。",
+      "status": "relevant",
+      "has_full_text": true,
+      "evidence_location": "Sec3方法/立体三角化；Sec4机器人验证",
+      "supports": "三圆平面目标，SuperPoint类检测与椭圆分割获得亚像素点，立体几何计算姿态。",
+      "source_limitations": "指定三圆目标与立体相机、机器人/超声应用评价；不评价本文跨尺度回退链。",
+      "inference_for_project": "对比双目靶标姿态路线时有价值，不能从其摘要宣传语写所有无标记方法不足。",
+      "read_level": "relevant_sections_full_text",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": null
+    },
+    {
+      "key": "Sola2017ESKF",
+      "title": "Quaternion kinematics for the error-state Kalman filter",
+      "authors": [
+        "Joan Solà"
+      ],
+      "year": 2017,
+      "venue": "arXiv technical report",
+      "doi": null,
+      "arxiv": "1711.02508",
+      "primary_url": "https://arxiv.org/abs/1711.02508",
+      "full_text_url": "https://arxiv.org/pdf/1711.02508",
+      "score_parts": [
+        1,
+        3,
+        2
+      ],
+      "score": 6,
+      "reason": "ESKF惯性后端基础，非视觉策略贡献。",
+      "status": "possibly_relevant_background",
+      "has_full_text": true,
+      "evidence_location": "Sec5.3-5.4 pp53-61；Sec6 pp62-65",
+      "supports": "名义状态、误差传播、校正注入与reset框架。",
+      "source_limitations": "本次仅核对相关基础章节，未以此证明延迟视觉回放正确性。",
+      "inference_for_project": "普通ESKF应归既有技术，且融合持续输出不等于视觉观测持续有效。",
+      "read_level": "background_full_text_available_not_deep_read",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。"
+    },
+    {
+      "key": "Weiss2011ModularVI",
+      "title": "Real-Time Metric State Estimation for Modular Vision-Inertial Systems",
+      "authors": [
+        "Stephan Weiss",
+        "Roland Siegwart"
+      ],
+      "year": 2011,
+      "venue": "ICRA:4531-4537",
+      "doi": null,
+      "repository_doi": "10.3929/ethz-a-010025261",
+      "primary_url": "https://www.research-collection.ethz.ch/handle/20.500.11850/43138",
+      "score_parts": [
+        1,
+        3,
+        2
+      ],
+      "score": 6,
+      "reason": "模块化视觉惯性融合背景；IEEE正式DOI未核对故不填。",
+      "status": "possibly_relevant_background",
+      "has_full_text": false,
+      "evidence_location": "机构库元数据",
+      "supports": "本次只核对元数据；不据此描述历史回放算法。",
+      "source_limitations": "未全文提取。",
+      "inference_for_project": "如需独立融合相关工作，应继续深读时延处理原始文献。",
+      "read_level": "abstract_or_metadata_only",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。"
+    },
+    {
+      "key": "Wang2025LidarVI",
+      "title": "Tightly-coupled lidar-inertial localization with visual landmarks in operational scenarios",
+      "authors": [
+        "Gongcheng Wang",
+        "Zexin Cao",
+        "Xin Lv",
+        "Han Wang",
+        "Chong Wang",
+        "Pengchao Ding",
+        "Weidong Wang"
+      ],
+      "year": 2025,
+      "venue": "Industrial Robot 52(5):760-769",
+      "doi": "10.1108/IR-10-2024-0485",
+      "primary_url": "https://doi.org/10.1108/IR-10-2024-0485",
+      "abstract_url": "https://www.sciencedirect.com/org/science/article/pii/S0143991X25000236",
+      "score_parts": [
+        1,
+        3,
+        2
+      ],
+      "score": 6,
+      "reason": "近期额外传感器约束消歧路线，任务距本文单靶标链较远。",
+      "status": "possibly_relevant_background",
+      "has_full_text": false,
+      "evidence_location": "出版社摘要与2025卷期作者页",
+      "supports": "仅概括激光/惯性/视觉标记紧耦合及附加约束路线。",
+      "source_limitations": "未获取全文，不引用具体机理、实验数字。",
+      "inference_for_project": "非直接必要引文；可从主稿删去，保留检索记录。",
+      "read_level": "abstract_or_metadata_only",
+      "source": "primary_web_search_and_verified_reference_traversal",
+      "exclude_reason": "背景相关但未达到全文深读优先级；正文仅在必要时保留。"
+    }
+  ],
+  "verified_citation_edges": [
+    {
+      "from": "Collins2014IPPE",
+      "to": "Lepetit2009EPnP",
+      "location": "References p285",
+      "evidence_url": "https://3dvar.com/Collins2014Infinitesimal.pdf"
+    },
+    {
+      "from": "Collins2014IPPE",
+      "to": "Schweighofer2006RPP",
+      "location": "References p286",
+      "evidence_url": "https://3dvar.com/Collins2014Infinitesimal.pdf"
+    },
+    {
+      "from": "Chng2020Clique",
+      "to": "Schweighofer2006RPP",
+      "location": "References[12] preprint p7",
+      "evidence_url": "https://arxiv.org/pdf/1909.11888"
+    },
+    {
+      "from": "Chng2020Clique",
+      "to": "Collins2014IPPE",
+      "location": "References[13] preprint p7",
+      "evidence_url": "https://arxiv.org/pdf/1909.11888"
+    },
+    {
+      "from": "Chng2020Clique",
+      "to": "Wu2012Motion",
+      "location": "References[14] preprint p7",
+      "evidence_url": "https://arxiv.org/pdf/1909.11888"
+    },
+    {
+      "from": "Wu2014AnalyticalMotion",
+      "to": "Wu2012Motion",
+      "location": "References[8] PDF p6",
+      "evidence_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf"
+    },
+    {
+      "from": "Wu2014AnalyticalMotion",
+      "to": "Schweighofer2006RPP",
+      "location": "References[7] PDF p6",
+      "evidence_url": "https://media.ee.ntu.edu.tw/personal/pcwu/research/mmsp2014_spe/mmsp2014_spe.pdf"
+    },
+    {
+      "from": "Vakhitov2021Uncertainty",
+      "to": "Ferraz2014CEPPnP",
+      "location": "References[6] preprint p9",
+      "evidence_url": "https://arxiv.org/pdf/2107.03890"
+    },
+    {
+      "from": "Vakhitov2021Uncertainty",
+      "to": "Lepetit2009EPnP",
+      "location": "References[20] preprint p9",
+      "evidence_url": "https://arxiv.org/pdf/2107.03890"
+    },
+    {
+      "from": "Vakhitov2021Uncertainty",
+      "to": "Urban2016MLPnP",
+      "location": "References[40] preprint p10",
+      "evidence_url": "https://arxiv.org/pdf/2107.03890"
+    },
+    {
+      "from": "Wang2023MarkerSLAM",
+      "to": "Schweighofer2006RPP",
+      "location": "References[19]",
+      "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/"
+    },
+    {
+      "from": "Wang2023MarkerSLAM",
+      "to": "Collins2014IPPE",
+      "location": "References[20]",
+      "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/"
+    },
+    {
+      "from": "Wang2023MarkerSLAM",
+      "to": "Chng2020Clique",
+      "location": "References[23]",
+      "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9865496/"
+    }
+  ],
+  "synthesis": {
+    "safe_claim": "面向本项目小尺度平面靶标、策略切换和局部观测变化，组织尺度相关验收及冷启动/时序候选竞争；其收益由本项目真实真值轨迹消融验证。",
+    "not_novel_by_itself": [
+      "使用EPnP/IPPE或迭代PnP",
+      "按重投影误差选择候选",
+      "根据时序预测选择平面候选",
+      "以投影面积刻画误差随尺度变化",
+      "ESKF融合及惯性传播"
+    ],
+    "unsupported_claims": [
+      "首次提出时序候选选择",
+      "首次发现小目标误差较大",
+      "最小重投影一定正确",
+      "尺度容差消除平面歧义",
+      "平面歧义是EPnP独有",
+      "平滑输出等同于准确或可靠"
+    ],
+    "experiment_needs": [
+      "固定像素门限/跨度门限，seed-only/冷启动/竞争两因素独立消融",
+      "真值深度误差与轨迹冻结持续长度",
+      "误接受率与输出覆盖率一并报告",
+      "小尺度、倾角、快速运动、模糊和遮挡分组",
+      "候选误差近似相同场景不要只用重投影评价"
+    ]
+  },
+  "queries": [
+    "EPnP Accurate O n Solution PnP problem Lepetit Moreno Noguer Fua pdf",
+    "Infinitesimal plane based pose estimation Collins Bartoli 2014 pdf",
+    "Robust pose estimation from a planar target Schweighofer Pinz 2006 pdf",
+    "planar pose estimation ambiguity uncertainty small marker temporal selection 2024 2025 paper",
+    "site.epfl.ch EPnP Lepetit Moreno Noguer Fua pdf 2009",
+    "site.cv-foundation.org uncertainty PnP Ferraz Binefa Moreno Noguer 2014",
+    "planar marker pose ambiguity temporal prior 2024 2025 2026",
+    "uncertainty aware PnP point covariance Vakhitov 2021 pdf",
+    "\"EPnP\" \"lepetit_ijcv\" pdf",
+    "\"Analytical Models for Pose Estimate Variance\" authors PMC",
+    "\"Robust Pose Estimation from a Planar Target\" filetype:pdf -citeseerx -3dvar -semanticscholar",
+    "\"Resolving Marker Pose Ambiguity\" 2020 DOI",
+    "\"EPnP: An Accurate\" pdf",
+    "\"Schweighofer\" \"Pinz\" \"planar\" pdf tugraz",
+    "\"Leveraging Feature Uncertainty\" Ferraz 2014",
+    "\"MLPnP\" \"Urban\" \"Hinz\" 2016",
+    "\"Stable pose estimation with a motion model in real-time application\" DOI",
+    "\"Robust Pose Estimation from a Planar Target\" \"schweighofer2006\"",
+    "\"Analytical Models for Pose Estimate Variance\" fulltext",
+    "\"Enhancing Pose Estimation Using Multiple Graphical Markers\" authors",
+    "\"Quaternion kinematics for the error-state Kalman filter\" Sola 2017",
+    "\"Efficient Handling of Out-of-Sequence Measurements\" Bar Shalom 2004",
+    "\"Globally Optimal Solution\" \"Perspective-n-Point\" Terzakis Lourakis 2020",
+    "\"A Robust Planar Marker-Based Visual SLAM\" authors",
+    "\"Efficient handling of out-of-sequence measurements in linear dynamic systems\" DOI",
+    "\"Tightly-coupled lidar-inertial localization with visual landmarks\" authors",
+    "\"Real-time metric state estimation\" \"Weiss\" DOI",
+    "\"Fast and Globally Convergent Pose Estimation\" \"Lu\" \"Hager\" \"Mjolsness\"",
+    "\"A novel encoding element for robust pose estimation\" authors DOI",
+    "\"Stable Pose Tracking from a Planar Target\" \"10.1109\"",
+    "\"Stable Pose Tracking from a Planar Target\" DOI MMSP 2014",
+    "\"A novel encoding element\" \"Authors\"",
+    "\"Real-Time Metric State Estimation for Modular Vision-Inertial Systems\" 2011 DOI",
+    "\"MarkerPose\" \"Meza\" authors 2021",
+    "\"Uncertainty-Aware Camera Pose Estimation From Points and Lines\" \"10.1109\"",
+    "\"A Consistently Fast and Globally Optimal\" \"10.1007\"",
+    "\"Fast and Globally Convergent Pose Estimation\" \"10.1109\"",
+    "\"A novel encoding element for robust pose estimation using planar fiducials\" Frontiers"
+  ],
+  "query_source": "web search；此处记录真实执行检索式，不提供不可得的数据库命中计数。"
+}

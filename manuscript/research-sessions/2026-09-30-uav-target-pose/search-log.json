@@ -1,0 +1,968 @@
+[
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ01",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "STag A Stable Fiducial Marker System paper pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ02",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "CALTag High Precision Fiducial Markers Camera Calibration pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ03",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "ChromaTag Colored Marker Fast Detection paper pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ04",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "hybrid model based tracking texture edges pose estimation robust occlusion paper"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ05",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "AprilTag robust flexible visual fiducial system Olson 2011 pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ06",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "Pressigout Marchand Real-time hybrid tracking edge texture information 2007 pdf INRIA"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ07",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "RUNE Tag high accuracy fiducial marker strong occlusion resilience 2011 pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ08",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "CCTag Detection identification reliable color blind circular fiducial tag under challenging conditions pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ09",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "site.inria.fr Pressigout Marchand hybrid tracking texture edges 2007 pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ10",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "TopoTag robust scalable topological fiducial marker system CVPR 2019"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ11",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "AprilTag 2 efficient robust fiducial detection Wang Olson 2016 pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ12",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "Deep ChArUco dark noisy images corners paper CVPR 2019"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ13",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Real-time Hybrid Tracking\" \"hal\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ14",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"RUNE-Tag\" pdf site:unive.it"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ15",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"HybridPose\" \"Song\" \"2020\" CVPR"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ16",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Detection and Accurate Localization\" \"Calvet\" arxiv"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ17",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "M3T multi region modality multi body 3D tracking 2023 paper pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ18",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "region texture based 6d object tracking 2024 robust edge texture paper"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ19",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "robust fiducial marker detection occlusion OILUtag 2024 paper"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ20",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Pressigout\" \"2007\" \"lagadic\" pdf"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ21",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Fusing Visual Appearance and Geometry\" Stoiber 2023"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ22",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"A multi-feature fusion-based pose tracking\" authors DOI"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ23",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN: Rapid identification\" authors DOI"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ24",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"ITER-Tag\" \"2022\" authors DOI"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ25",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"SRT3D\" \"2022\" DOI"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ26",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"LFTag\" \"Smith\" 2020"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ27",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Automatic generation and detection of highly reliable\" \"10.1016\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ28",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Designing highly reliable fiducial markers\" Fiala DOI"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ29",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"SRT3D\" \"Stoiber\" \"doi\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ30",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"LFTag\" \"Authors\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ31",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN\" \"Taewook\" \"Geunsik\" marker"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ32",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Real-time Hybrid Tracking\" \"pdf\" Marchand"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ33",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"TopoTag\" \"10.1109\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ34",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"ChromaTag\" \"10.1109\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ35",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN\" \"105821\" \"Park\""
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ36",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"Automatic generation and detection\" \"Garrido\" site:sciencedirect.com"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ37",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"PACMAN: Rapid identification\" \"105821\" authors year"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ38",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"TopoTag\" site:herohuyongtao.github.io"
+    }
+  },
+  {
+    "batch": "batch_hybrid.json",
+    "entry": {
+      "id": "HQ39",
+      "source": "web__run.search_query",
+      "date": "2026-09-30",
+      "query": "\"ChromaTag\" site:ieeexplore.ieee.org/document"
+    }
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "EPnP Accurate O n Solution PnP problem Lepetit Moreno Noguer Fua pdf"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "Infinitesimal plane based pose estimation Collins Bartoli 2014 pdf"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "Robust pose estimation from a planar target Schweighofer Pinz 2006 pdf"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "planar pose estimation ambiguity uncertainty small marker temporal selection 2024 2025 paper"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "site.epfl.ch EPnP Lepetit Moreno Noguer Fua pdf 2009"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "site.cv-foundation.org uncertainty PnP Ferraz Binefa Moreno Noguer 2014"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "planar marker pose ambiguity temporal prior 2024 2025 2026"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "uncertainty aware PnP point covariance Vakhitov 2021 pdf"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"EPnP\" \"lepetit_ijcv\" pdf"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Analytical Models for Pose Estimate Variance\" authors PMC"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Robust Pose Estimation from a Planar Target\" filetype:pdf -citeseerx -3dvar -semanticscholar"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Resolving Marker Pose Ambiguity\" 2020 DOI"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"EPnP: An Accurate\" pdf"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Schweighofer\" \"Pinz\" \"planar\" pdf tugraz"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Leveraging Feature Uncertainty\" Ferraz 2014"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"MLPnP\" \"Urban\" \"Hinz\" 2016"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Stable pose estimation with a motion model in real-time application\" DOI"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Robust Pose Estimation from a Planar Target\" \"schweighofer2006\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Analytical Models for Pose Estimate Variance\" fulltext"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Enhancing Pose Estimation Using Multiple Graphical Markers\" authors"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Quaternion kinematics for the error-state Kalman filter\" Sola 2017"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Efficient Handling of Out-of-Sequence Measurements\" Bar Shalom 2004"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Globally Optimal Solution\" \"Perspective-n-Point\" Terzakis Lourakis 2020"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"A Robust Planar Marker-Based Visual SLAM\" authors"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Efficient handling of out-of-sequence measurements in linear dynamic systems\" DOI"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Tightly-coupled lidar-inertial localization with visual landmarks\" authors"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Real-time metric state estimation\" \"Weiss\" DOI"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Fast and Globally Convergent Pose Estimation\" \"Lu\" \"Hager\" \"Mjolsness\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"A novel encoding element for robust pose estimation\" authors DOI"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Stable Pose Tracking from a Planar Target\" \"10.1109\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Stable Pose Tracking from a Planar Target\" DOI MMSP 2014"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"A novel encoding element\" \"Authors\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Real-Time Metric State Estimation for Modular Vision-Inertial Systems\" 2011 DOI"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"MarkerPose\" \"Meza\" authors 2021"
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Uncertainty-Aware Camera Pose Estimation From Points and Lines\" \"10.1109\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"A Consistently Fast and Globally Optimal\" \"10.1007\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"Fast and Globally Convergent Pose Estimation\" \"10.1109\""
+  },
+  {
+    "batch": "batch_pose.json",
+    "entry": "\"A novel encoding element for robust pose estimation using planar fiducials\" Frontiers"
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "2309.08769 Lee Choi Bretl multi-scale rotorcraft landing marker",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "UAV landing nested multiscale fiducial markers pose estimation paper",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "无人机 降落 多尺度 嵌套 标记 位姿 论文",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"2309.08769\" \"10.2514\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Multi-resolution visual fiducial\" authors",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Fractal markers\" \"pose estimation\" Romero Ramirez",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous Landing Guidance\" \"57\" Authors",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Hierarchical fiducial marker design\" pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"A hierarchical vision-based localization\" pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Flexible Layouts for Fiducial Tags\" pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"The Use of Multi-Scale\" \"2024\" \"doi\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Fractal markers\" site:uco.es pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Hierarchical fiducial marker\" Wang Lu Zhong pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"无人机自主降落视觉标识设计及位姿测量方法\" 仪器仪表学报",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"基于阶层标识\" filetype:pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "site:mdpi.com/2504-446X/9/1/57 \"2.\" \"3.\" \"4.\" \"Mu\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "site:mdpi.com/1424-8220/24/5/1645 \"2.\" \"3.\" authors",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "site:mdpi.com/2079-9292/7/5/68 \"4.1\" \"4.2\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"22150\" \"pdf\" \"张咪\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous Landing of Quadrotor\" \"Multi-Level\" \"Zhang\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous Landing Guidance for Quad-UAVs\" \"Mu\" \"2.\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"A Hierarchical Vision-Based UAV Localization for an Open Landing\" Authors DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Flexible Layouts for Fiducial Tags\" \"nested\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous Landing of Quadrotor Unmanned Aerial Vehicles Based on Multi-Level Marker\" -site:eurekamag.com",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous Landing Guidance for Quad-UAVs\" \"Lei\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"HArCo\" \"2015\" \"10.1109\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"无人机自主降落视觉标识设计及位姿测量方法\" site:yqyb.cn",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Fractal Markers\" \"Romero\" \"uco.es/investiga\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"无人机自主降落视觉标识\" \"10.19650\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous Landing Guidance for Quad-UAVs\" filetype:pdf",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"A Hierarchical Vision-Based UAV\" site:mdpi-res.com",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Embedded ArUco\" Khazetdinov DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Remote Marker-Based Tracking\" \"PMC\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"基于阶层标识的无人机自主精准降落系统\" \"下载\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Recursive ArUco\" \"10.3390\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"10.1109/SIBCON50419.2021.9438855\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous tracking and landing method\" \"Drones\" \"703\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Hierarchical Embedded ArUco Markers for Precise Positioning\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Fiducial markers for pose estimation\" Kalaitzakis 2021 DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"无人机自主降落视觉标识设计及位姿测量方法\" \"doi\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Tape-Shaped, Multiscale\" author DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Autonomous landing algorithm\" \"fractal marker\" DOI",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Multi-resolution visual fiducial\" \"Yu\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Tape-Shaped, Multiscale, and Continuous-Readable\" \"by\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"LightDenseYOLO\" \"Nguyen\" \"doi\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"面向无人机自主着陆的视觉感知与位姿估计方法综述\" \"马宁\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "batch_scale.json",
+    "entry": {
+      "query": "\"Recursive ArUco\" \"24 August 2026\"",
+      "date": "2026-09-30",
+      "provider": "web search",
+      "purpose": "候选发现或元数据/全文核对"
+    }
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "Fast Explicit Diffusion accelerated features AKAZE"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "contour texture pose tracking planar object hybrid features"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "无人机 多层标记 视觉定位 自主降落 位姿 航空学报"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "recursive ArUco multi scale UAV landing 2026"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "Fractal Markers Muñoz Salinas Romero Ramirez Medina Carnicer 2019 IEEE Access 169905 DOI"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "ArUco Speeded Up Detection of Squared Fiducial Markers Garrido Jurado 2014 2018 DOI"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "\"10.1177/1550147718800655\""
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "\"10.3390/s24051645\""
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "\"The Use of Multi-Scale Fiducial\" AIAA 2024 doi"
+  },
+  {
+    "batch": "main-records.json",
+    "entry": "\"Recursive ArUco\" \"70\" 2026"
+  }
+]

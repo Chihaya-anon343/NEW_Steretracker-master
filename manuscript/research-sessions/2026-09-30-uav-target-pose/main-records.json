@@ -1,0 +1,200 @@
+{
+  "date": "2026-09-30",
+  "queries": [
+    "Fast Explicit Diffusion accelerated features AKAZE",
+    "contour texture pose tracking planar object hybrid features",
+    "无人机 多层标记 视觉定位 自主降落 位姿 航空学报",
+    "recursive ArUco multi scale UAV landing 2026",
+    "Fractal Markers Muñoz Salinas Romero Ramirez Medina Carnicer 2019 IEEE Access 169905 DOI",
+    "ArUco Speeded Up Detection of Squared Fiducial Markers Garrido Jurado 2014 2018 DOI",
+    "\"10.1177/1550147718800655\"",
+    "\"10.3390/s24051645\"",
+    "\"The Use of Multi-Scale Fiducial\" AIAA 2024 doi",
+    "\"Recursive ArUco\" \"70\" 2026"
+  ],
+  "note": "保留可确切还原的真实检索式；其他正文原文定位操作由逐篇URL与节页记录支持。不是全部网络请求的逐条日志。",
+  "papers": [
+    {
+      "title": "基于复合地标导航的动平台四旋翼飞行器自主优化降落技术",
+      "authors": [
+        "邢伯阳",
+        "潘峰",
+        "王位",
+        "冯肖雪"
+      ],
+      "year": 2019,
+      "doi": "10.7527/S1000-6893.2018.22601",
+      "venue": "航空学报 40(6):322601",
+      "primary_url": "https://hkxb.buaa.edu.cn/CN/10.7527/S1000-6893.2018.22601",
+      "score_parts": [
+        3,
+        3,
+        2
+      ],
+      "score": 8,
+      "reason": "无人机混合地标定位直接相关；用于中文应用背景，不评价未获得全文的细节。",
+      "status": "primary_abstract_reviewed",
+      "read_level": "primary_abstract",
+      "has_full_text": false,
+      "locations": [
+        "出版页摘要",
+        "出版页引用信息",
+        "参考文献[17]、[19]"
+      ],
+      "supported": [
+        "采用圆环与二维码构成复合地标，配合平台运动状态估计进行着陆。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "只支持原始摘要明述的方法类别；不据此评价精度、范围或恢复机制缺失。"
+      ],
+      "review_date": "2026-09-30"
+    },
+    {
+      "title": "Fast Explicit Diffusion for Accelerated Features in Nonlinear Scale Spaces",
+      "authors": [
+        "Pablo F. Alcantarilla",
+        "Jesús Nuevo",
+        "Adrien Bartoli"
+      ],
+      "year": 2013,
+      "doi": "10.5244/C.27.13",
+      "venue": "Proceedings of the British Machine Vision Conference:13.1–13.11",
+      "primary_url": "https://www.bmva-archive.org.uk/bmvc/2013/Papers/paper0013/index.html",
+      "full_text_url": "https://encov.ip.uca.fr/publications/pubfiles/2013_Alcantarilla_etal_BMVC_akaze.pdf",
+      "score_parts": [
+        1,
+        4,
+        2
+      ],
+      "score": 7,
+      "reason": "项目局部纹理检测器的基础来源；用于归属常规技术。",
+      "status": "full_text_reviewed",
+      "read_level": "relevant_sections_full_text",
+      "has_full_text": true,
+      "locations": [
+        "§3 FED及非线性尺度空间",
+        "§3.2 M-LDB描述子",
+        "§4实验"
+      ],
+      "supported": [
+        "以FED加速非线性尺度空间；使用M-LDB二进制描述子。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "使用AKAZE不是新的描述子；原文不提供本任务跨尺度调度的验证。"
+      ],
+      "review_date": "2026-09-30"
+    },
+    {
+      "title": "UcoSLAM: Simultaneous localization and mapping by fusion of keypoints and squared planar markers",
+      "authors": [
+        "Rafael Muñoz-Salinas",
+        "Rafael Medina-Carnicer"
+      ],
+      "year": 2020,
+      "doi": "10.1016/j.patcog.2019.107193",
+      "venue": "Pattern Recognition 101:107193",
+      "primary_url": "https://doi.org/10.1016/j.patcog.2019.107193",
+      "full_text_url": "https://arxiv.org/pdf/1902.03729",
+      "score_parts": [
+        2,
+        4,
+        3
+      ],
+      "score": 9,
+      "reason": "自然特征与人工标记联合定位的直接先例；SLAM范围与固定靶标不同。",
+      "status": "full_text_reviewed",
+      "read_level": "relevant_sections_full_text",
+      "has_full_text": true,
+      "locations": [
+        "§3系统总览，PDF第4–5页",
+        "§4.2.2联合关键点/标记角点位姿估计，PDF第7–8页",
+        "§4.4地图优化，PDF第8–9页",
+        "§4.7失败后重定位，PDF第9页"
+      ],
+      "supported": [
+        "在统一SLAM系统中结合关键点和方形平面标记。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "不能由视觉线索联合本身证明本文首次；此文构图任务不等价于已知模板相对位姿。"
+      ],
+      "version_note": "阅读arXiv作者稿，引用2020正式期刊；正文仅使用稳定的方法类别，不搬用未映射版本的实验数字。",
+      "review_date": "2026-09-30"
+    },
+    {
+      "title": "A Robust and Modular Multi-Sensor Fusion Approach Applied to MAV Navigation",
+      "authors": [
+        "Simon Lynen",
+        "Markus W. Achtelik",
+        "Stephan Weiss",
+        "Margarita Chli",
+        "Roland Siegwart"
+      ],
+      "year": 2013,
+      "doi": "10.1109/IROS.2013.6696917",
+      "venue": "IEEE/RSJ International Conference on Intelligent Robots and Systems:3923–3929",
+      "primary_url": "https://doi.org/10.1109/IROS.2013.6696917",
+      "full_text_url": "https://www.pure.ed.ac.uk/ws/portalfiles/portal/17220481/Lynen_et_al_2013_A_Robust_and_Modular_Mutli_Sensor_Fusion.pdf",
+      "score_parts": [
+        2,
+        3,
+        2
+      ],
+      "score": 7,
+      "reason": "定位延迟测量回退和重传播的直接先例，限定项目ESKF适配贡献。",
+      "status": "full_text_reviewed",
+      "read_level": "relevant_sections_full_text",
+      "has_full_text": true,
+      "locations": [
+        "§IV-A历史环形缓冲",
+        "§IV-B延迟更新与后续重传播；PDF含封面，第4–5页"
+      ],
+      "supported": [
+        "使用历史状态缓冲在对应测量时刻更新，并重传播后续状态/更新。"
+      ],
+      "reported_limits": [],
+      "inference_limits": [
+        "本文IMU-only重放不能包装为新的延迟估计理论；雷达更新重放边界需另行说明。"
+      ],
+      "review_date": "2026-09-30"
+    },
+    {
+      "title": "Quaternion kinematics for the error-state Kalman filter",
+      "authors": [
+        "Joan Solà"
+      ],
+      "year": 2017,
+      "id": "arxiv:1711.02508",
+      "primary_url": "https://arxiv.org/abs/1711.02508",
+      "full_text_url": "https://arxiv.org/html/1711.02508",
+      "score": 6,
+      "read_level": "background_full_text_available_not_deep_read",
+      "has_full_text": true,
+      "locations": [
+        "误差状态滤波及旋转扰动推导"
+      ],
+      "supported": [
+        "名义状态和误差状态分离、旋转扰动参数化的基础推导。"
+      ],
+      "review_date": "2026-09-30"
+    }
+  ],
+  "citation_edges": [
+    {
+      "from": "10.7527/s1000-6893.2018.22601",
+      "to": "10.1007/s11263-008-0152-6",
+      "type": "backward_reference",
+      "depth": 1,
+      "evidence": "原始出版页参考文献[17]"
+    },
+    {
+      "from": "10.7527/s1000-6893.2018.22601",
+      "to": "10.1109/iros.2013.6696917",
+      "type": "backward_reference",
+      "depth": 1,
+      "evidence": "原始出版页参考文献[19]"
+    }
+  ]
+}

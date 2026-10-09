@@ -1,0 +1,10 @@
+{
+  "unique_candidates": 67,
+  "score_at_least_7": 53,
+  "full_text_relevant_sections": 36,
+  "full_text_available": 38,
+  "manuscript_references": 25,
+  "citation_edges": 34,
+  "crossref_successes": 21,
+  "queries_recorded": 134
+}
