@@ -75,8 +75,7 @@
   },
 
   "strategies": {
-    "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, >= akaze_min -> AKAZE, else BinaryCorner",
-    "akaze_min_area": 40001,
+    "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, else BinaryCorner",
     "tiny_max_area": 400,
     "dual_trigger_area": 490000,
     "stereo_mono_fallback": false,
@@ -87,15 +86,13 @@
       "class1_min_area": 100,
       "roi_expand_ratio": 1,
       "min_expand_pixels": 1,
-      "akaze_min_area": 4000000,
       "tiny_max_area": 400
     },
 
-    "akaze_gpnp": {
+    "board_template": {
       "template_path": "data/big/img_1.png",
       "template_real_width_mm": 500.0,
       "template_real_height_mm": 500.0,
-      "scale": 0.5,
       "gpnp_min_pts": 4,
       "use_initial_pnp": true
     },
@@ -123,12 +120,9 @@
     },
 
     "dual_roi": {
-      "_comment": "双ROI class1 拓展像素 + AKAZE scale",
+      "_comment": "双ROI class1 拓展像素",
       "secondary_expand_pixels": 50,
-      "class1_fallback_enabled": true,
-      "akaze": {
-        "scale": 1
-      }
+      "class1_fallback_enabled": true
     }
   }
 }

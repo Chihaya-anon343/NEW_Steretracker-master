@@ -94,11 +94,11 @@ int main(int argc, char** argv) {
     double baseline = fs["camera"]["baseline_mm"];
 
     // 板模板参数（Dual-ROI BC 模板派生与物理尺寸来源）
-    std::string template_path = fs["strategies"]["akaze_gpnp"]["template_path"];
-    double tw = fs["strategies"]["akaze_gpnp"]["template_real_width_mm"];
-    double th = fs["strategies"]["akaze_gpnp"]["template_real_height_mm"];
-    int min_pts = fs["strategies"]["akaze_gpnp"]["gpnp_min_pts"];
-    bool use_init_pnp = static_cast<int>(fs["strategies"]["akaze_gpnp"]["use_initial_pnp"]) != 0;
+    std::string template_path = fs["strategies"]["board_template"]["template_path"];
+    double tw = fs["strategies"]["board_template"]["template_real_width_mm"];
+    double th = fs["strategies"]["board_template"]["template_real_height_mm"];
+    int min_pts = fs["strategies"]["board_template"]["gpnp_min_pts"];
+    bool use_init_pnp = static_cast<int>(fs["strategies"]["board_template"]["use_initial_pnp"]) != 0;
 
     // BinaryCorner 策略参数
     BinaryCornerExtractor::Config binary_cfg;

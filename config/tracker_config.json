@@ -99,8 +99,7 @@
   },
 
   "strategies": {
-    "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, >= akaze_min -> AKAZE, else BinaryCorner",
-    "akaze_min_area": 200001,
+    "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, else BinaryCorner",
     "tiny_max_area": 900,
     "dual_trigger_area": 200000,
     "stereo_mono_fallback": false,
@@ -111,15 +110,13 @@
       "class1_min_area": 100,
       "roi_expand_ratio": 1,
       "min_expand_pixels": 1,
-      "akaze_min_area": 4000000,
       "tiny_max_area": 400
     },
 
-    "akaze_gpnp": {
+    "board_template": {
       "template_path": "data/clean_target2.png",
       "template_real_width_mm": 400,
       "template_real_height_mm": 400,
-      "scale": 1,
       "gpnp_min_pts": 4,
       "use_initial_pnp": true
     },
@@ -147,17 +144,14 @@
     },
 
     "dual_roi": {
-      "_comment": "双ROI class1 拓展像素 + AKAZE scale; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭); tier1_only=消融开关, true=屏蔽Tier2/Tier3/短路仅保留合并解算; class0/class1_points_path=人工标注点txt (class0空=approxPolyDP自动推导, class1空=Tier1b联合解算停用); joint_match_gate_px=Tier1b NN匹配门限",
+      "_comment": "双ROI class1 拓展像素; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭); tier1_only=消融开关, true=屏蔽Tier2/Tier3/短路仅保留合并解算; class0/class1_points_path=人工标注点txt (class0空=approxPolyDP自动推导, class1空=Tier1b联合解算停用); joint_match_gate_px=Tier1b NN匹配门限",
       "secondary_expand_pixels": 0,
       "class1_fallback_enabled": true,
       "primary_span_ratio": 0.98,
       "tier1_only": false,
       "class0_points_path": "scripts/class0_points.txt",
       "class1_points_path": "scripts/class1_points.txt",
-      "joint_match_gate_px": 12,
-      "akaze": {
-        "scale": 1
-      }
+      "joint_match_gate_px": 12
     }
   }
 }

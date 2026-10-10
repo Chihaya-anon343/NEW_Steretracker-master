@@ -35,7 +35,7 @@
 | 库 | 版本 | 用途 |
 |----|------|------|
 | C++ | 17 | 语言标准 |
-| OpenCV | 4.x | AKAZE、光流、PnP、图像处理、GUI |
+| OpenCV | 4.x | PnP、图像处理、GUI |
 | Eigen | 3.x | 线性代数、GPNP LM 优化 |
 | ONNX Runtime | - | YOLO 模型推理 |
 
@@ -70,10 +70,9 @@ TrackerBase                              (include/tracker/TrackerBase.hpp)
 │   └── 单目追踪器 (EPnP, 无立体)
 │
 ├── StereoTracker                        (include/tracker/StereoTracker.hpp)
-│   └── 双目追踪器 (GPnP + 光流 + MAD)
+│   └── 双目追踪器 (GPnP, 双目)
 
 FeatureExtractor                          (include/feature/FeatureExtractor.hpp)
-├── AkazeGpnpExtractor                   (include/feature/AkazeGpnpExtractor.hpp)
 ├── BinaryCornerExtractor                (include/feature/BinaryCornerExtractor.hpp)
 └── TinyTargetExtractor                  (include/feature/TinyTargetExtractor.hpp)
 ```
@@ -114,7 +113,7 @@ main() main.cpp:22-272
 │
 ├─ 阶段5: YOLO + Tracker 创建 (lines 157-187)
 │   YoloConfig → YoloRoiProvider (内部持有 YoloDetector + RoiGenerator)
-│   StereoTracker 构造 (内部预创建3个提取器 + dual_akaze + 3个PnP求解器 + MAD滤波器)
+│   StereoTracker 构造 (内部预创建2个提取器 + 3个PnP求解器)
 │   mono_mode时设置 MonoConfig
 │
 ├─ 阶段6: 帧循环 (lines 192-261)
@@ -171,44 +170,58 @@ main() main.cpp:22-272
 ```cpp
 struct PipelineResult {
     // === 特征点 ===
-    std::vector<cv::KeyPoint> kp_left;              // 左图关键点 (ROI坐标)
-    std::vector<cv::KeyPoint> kp_right;             // 右图关键点 (仅双目填充, 单目为空)
+    std::vector<cv::KeyPoint> kp_left;              // 左图关键点/角点 (ROI坐标)
+    int n_kp_left{0};
 
-    // === 匹配结果 (左右立体匹配) ===
-    std::vector<cv::Point2f> pts_left_match;        // 立体匹配成功的左图点 (ROI坐标)
-    std::vector<cv::Point2f> pts_right_match;       // 立体匹配成功的右图点 (ROI坐标)
-
-    // === 模板匹配结果 (图像点↔模板关键点/角点的对应关系) ===
-    std::vector<cv::Point2f> pts_template_match;    // 与ptm_left_match对应的模板点坐标
+    // === 模板匹配 (图像点↔模板角点的对应关系) ===
+    std::vector<cv::Point2f> pts_left_match;        // 左图匹配点 (ROI坐标)
+    std::vector<cv::Point2f> pts_template_match;    // 对应模板点坐标
     std::vector<cv::DMatch> good_matches;           // DMatch: queryIdx=左图点索引, trainIdx=模板点索引
-
-    // === 光流追踪 ===
-    std::vector<cv::Point2f> pts_left_good;         // 光流追踪成功的左图点
-    std::vector<cv::Point2f> pts_right_good;        // 光流追踪成功的右图点
-    std::vector<float> disparity;                   // 各匹配点的视差值
-
-    // === 状态标志 ===
-    bool success = false;                           // 特征提取是否成功
-    int n_kp_left = 0;                              // 左图关键点数量
-    int n_matched = 0;                              // 立体匹配成功数量
-    int n_projected = 0;                            // 立体投影成功数量
-    int n_template_match = 0;                       // 模板匹配成功数量 (即 good_matches.size())
+    int n_template_match{0};
 
     // === 位姿 (PnP求解后回填) ===
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
-    Eigen::Vector3d t = Eigen::Vector3d::Zero();
-    bool gpnp_success = false;
+    Eigen::Matrix3d R{Eigen::Matrix3d::Identity()};
+    Eigen::Vector3d t{Eigen::Vector3d::Zero()};
+    bool gpnp_success{false};
+    int gpnp_n_pts{0};
+    bool success{false};                            // 流水线整体成功 (提取 + PnP)
+    std::string strategy_name;                      // 本帧胜出策略名 (如 "BinaryCorner", "TinyTarget")
+    double quat_w{1.0}, quat_x{0.0}, quat_y{0.0}, quat_z{0.0};  // 符号连续化四元数 (finalizePose 填充)
+    double rot_deg_unwrapped{0.0};                  // 累计 unwrapped 旋转角 (度)
 
-    // === 计时 (毫秒) ===
-    double total_time_ms = 0.0;
+    // === 帧元数据 ===
+    cv::Mat left_color, right_color;
+    bool is_first_frame{false};
+    bool fallback_used{false};
+    bool is_class1{false};                          // class1-only 回退帧标志
+    int n_matched{0};
+    int n_projected{0};
 
-    // === 额外标志 (用于Dual-ROI合并) ===
-    bool is_class1 = false;                         // class1-only 回退帧标志 (同时用于 LogEntry)
+    // === ROI 偏移 (映射回全图) ===
+    int left_roi_offset_x{0}, left_roi_offset_y{0};
+    int right_roi_offset_x{0}, right_roi_offset_y{0};
+
+    // === 时序连贯性观测 (TrackerBase::fillTemporalMeta 填充) ===
+    bool warm_start_used{false};
+    GateStatus gate_status{GateStatus::NotApplicable};
+    int seed_age{0};
+    bool sticky_hold{false};
+    std::string nominated_strategy;
+    std::string switch_reason;
+
+    // === 耗时 (ms) ===
+    std::map<std::string, double> timing;           // 阶段 → 毫秒
+    double extract_ms{0.0};                         // 特征提取总耗时 (含退化链 / Dual-ROI 两路)
+    double pnp_ms{0.0};                             // 位姿解算总耗时
+
+    double total_time_ms() const;                   // 各阶段耗时求和
 };
 ```
 
+> ⚠️ 结构体仍保留一批**已废弃字段**（`pts_left_good`/`pts_right_good`/`disparity`/`pts_right_projected`/`valid_mask` 等），原由 AKAZE 的光流/立体投影/MAD 链路填充，现已随这些模块移除而恒为空，仅用于向后兼容，不再被任何提取器或 PnP 求解器读取。
+
 **坐标约定**:
-- `kp_left`、`pts_left_match`、`pts_left_good` 存储**ROI裁剪后的局部坐标**
+- `kp_left`、`pts_left_match` 存储**ROI裁剪后的局部坐标**
 - 调用方在提取后负责 `+= cv::Point2f(roi.x, roi.y)` 恢复全图坐标
 - `pts_template_match` 为模板图像坐标，由 `TemplateData::pts_3d` 查找3D对应
 
@@ -216,51 +229,47 @@ struct PipelineResult {
 
 ```cpp
 struct TemplateData {
-    // AKAZE 模板 (描述子匹配用)
-    std::vector<cv::KeyPoint> keypoints;            // 模板AKAZE关键点
-    cv::Mat descriptors;                            // 模板AKAZE描述子 (N×61, CV_8U)
-    std::vector<Eigen::Vector3d> pts_3d;            // 对应3D点 (Z=0平面)
-    cv::Mat gray_image;                             // 模板灰度图 (用于prepareDualBcTemplate)
+    cv::Mat gray_image;                             // 板模板灰度图 (prepareDualBcTemplate 用, cv::imread 载入)
+    std::vector<Eigen::Vector3d> pts_3d;            // 模板坐标系下的 3D 坐标 (mm)
+    int template_width{0};
+    int template_height{0};
 
-    // BinaryCorner / TinyTarget 模板 (形状匹配用)
-    std::vector<std::vector<cv::Point2f>> corners;  // 24个角度的角点列表
-    std::vector<float> angles;                      // 24个角度值 (0°, 15°, ..., 345°)
-    std::vector<cv::Mat> image_bool;                // 24个角度的二值mask (50×50)
-
-    // 几何信息
-    float real_width_mm = 0.0f;                     // 模板物理宽度 mm
-    float real_height_mm = 0.0f;                    // 模板物理高度 mm
+    // --- BinaryCorner / TinyTarget 模板支持 (单角度) ---
+    cv::Mat image;                                  // 原始模板 PNG 图像 (灰度)
+    cv::Mat image_bool;                             // 预计算二值掩膜 (image > 127)
+    std::vector<cv::Point2f> corners;               // 从 .txt 读取的角点坐标
+    int angle{0};                                   // 旋转角度 (度, 从文件名解析)
 };
 ```
 
-**三种使用场景**:
+**使用场景**（每个提取器内部持有 `std::vector<TemplateData> templates_`，共 24 个角度 0°~345°，每元素为单角度模板）:
 
 | 提取器 | 使用的模板字段 | 3D点来源 |
 |--------|---------------|---------|
-| AKAZE | keypoints + descriptors + pts_3d | pts_3d[trainIdx] |
-| BinaryCorner | corners + angles + image_bool | 0°模板角点 × pixel_to_meter_scale × 1000 |
-| TinyTarget | image_bool + angles (IoU匹配) | 硬编码4个3D点: (±half, ±half, 0) |
-| Dual-ROI BC | — | prepareDualBcTemplate() 从AKAZE模板灰度图提取 |
+| BinaryCorner | image_bool + corners (IoU匹配) | 0°模板角点 × pixel_to_meter_scale × 1000 |
+| TinyTarget | image_bool (IoU匹配) | 硬编码4个3D点: (±half, ±half, 0) |
+| Dual-ROI BC | gray_image | prepareDualBcTemplate() 从板模板灰度图提取 |
 
 ### 3.3 其他关键类型
 
-| 类型 | 文件:行 (Types.hpp) | 用途 |
-|------|---------------------|------|
-| `StereoCameraParams` | 28-47 | K, K_inv, R_rl, t_rl, focal_length, baseline |
-| `TrackerConfig` | 50-68 | 策略配置: scale, gpnp_min_pts, use_initial_pnp, 面积阈值等 |
-| `FeatureSet` | 66-71 | AKAZE提取输出: keypoints, descriptors, points |
-| `TrackResult` | 163-175 | 光流追踪输出: pts_left_good, pts_right_good, disparity, fb_error |
-| `ProjectionResult` | 178-188 | 立体投影输出: pts_right_projected, valid_mask |
-| `MatchResult` | 191-200 | 模板匹配输出: good_matches, pts_left_match, pts_template_match |
-| `PoseEstimate` | 203-210 | PnP输出: R, t, success, num_points |
-| `GPNPMonitor` | 213-225 | GPNP优化监控: initial_cost, final_cost, iterations |
-| `LogEntry` | 228-242 | 单帧日志: frame, timestamp, is_first, fallback, n_kp, n_match, n_proj, n_tmpl, disp_median, gpnp, total_ms, timing, strategy_name, is_class1, t/rvec |
-| `TrackingState` | 245-258 | 帧间缓存: R_prev, t_prev, has_cache, frame_count, logs |
-| `RoiRect` | 291-302 | ROI矩形: x, y, width, height; valid() = width>0 && height>0 |
-| `RoiGroup` | 305-315 | 双ROI组: primary, secondary, is_dual |
-| `Detection` | 374-378 | YOLO检测框: class_id, confidence, bbox (Rect2f) |
-| `YoloConfig` | 327-342 | YOLO配置: model_path, device_type, conf_threshold |
-| `MadFilterResult` | 318-324 | MAD滤波输出: filtered_points, filter_mask, degraded |
+| 类型 | 用途 |
+|------|------|
+| `StereoCameraParams` | K, K_inv, R_rl, t_rl, focal_length, baseline |
+| `TemporalConfig` | 时序连贯性配置 (位姿链 + 运动门控 + 策略粘滞 + 面积 EMA) |
+| `TrackerConfig` | 策略配置: gpnp_min_pts, use_initial_pnp, 模板尺寸, 面积阈值, 双ROI参数, temporal |
+| `TemplateData` | 单角度模板: gray_image, pts_3d, image_bool, corners, angle |
+| `MatchResult` | 模板匹配输出: good_matches, pts_left_match, pts_template_match (pose_compare SIFT 用) |
+| `PoseEstimate` | PnP输出: R, t, success, num_points |
+| `PoseSeed` | 位姿链热启动种子 (上帧成功位姿) |
+| `GateStatus` | 运动门控结果状态码 |
+| `GPNPMonitor` | GPNP优化监控: initial_cost, final_cost, iterations |
+| `LogEntry` | 单帧日志: frame, timestamp, fallback, strategy_name, is_class1, t/rvec, quat, gate_status 等 |
+| `PipelineResult` | 单帧聚合结果 (见 §3.1) |
+| `TrackingState` | 帧间缓存: R_prev, t_prev, has_cache, frame_count, logs |
+| `RoiRect` | ROI矩形: x, y, width, height; valid() = width>0 && height>0 |
+| `RoiGroup` | 双ROI组: primary, secondary, is_dual, is_class1 |
+| `Detection` | YOLO检测框: class_id, confidence, bbox (Rect2f) |
+| `YoloConfig` | YOLO配置: model_path, device_type, conf_threshold, iou_threshold |
 
 ### 3.4 Status 枚举
 
@@ -288,9 +297,8 @@ enum class DeviceType {
 
 ```cpp
 enum class StrategyType {
-    Akaze,
-    BinaryCorner,
-    TinyTarget
+    BinaryCorner,   ///< Otsu 二值轮廓角点提取 + GPNP
+    TinyTarget      ///< 超分辨率 minAreaRect 四点提取 + solvePnP
 };
 ```
 
@@ -307,11 +315,9 @@ enum class StrategyType {
        ↓
   ┌─ 有 class0 ─────────────────────────────────────┐
   │                                                  │
-  │  面积 ≤ tiny_max_area (800)     → State 1 远     │
-  │  801 ≤ 面积 ≤ 40000             → State 2 中     │
-  │  40001 ≤ 面积 < 490000          → State 3 中近    │
-  │  面积 ≥ 490000 && 无 class1     → State 3 中近    │
-  │  面积 ≥ 490000 && 有 class1     → State 4 近     │
+  │  面积 ≤ tiny_max_area           → State 1 远 (TinyTarget)   │
+  │  面积 >  tiny_max_area           → State 2/3 中/中近 (BinaryCorner) │
+  │  面积 ≥ dual_trigger_area && 有 class1 → State 4 近 (Dual-ROI) │
   │                                                  │
   ├─ 无 class0 && 有 class1 ─────────────────────────┤
   │  面积 ≥ class1_min_area        → State 5 极近    │
@@ -321,70 +327,71 @@ enum class StrategyType {
       → SKIP 帧 (不触发任何策略，不进入退化链)         │
 ```
 
+> ⚠️ AKAZE 档移除后，原 State 2/3 的面积分界（`akaze_min_area`）已删除，State 2 与 State 3 统一由 BinaryCorner 处理，单 ROI 策略链折叠为两带（BinaryCorner → TinyTarget）。策略档位选择（BC vs TT）在 `TrackerBase::configureStrategyChain()` 中按 `tiny_max_area` 完成，不在 `RoiGenerator`。
+
 ### 4.2 关键面积阈值常量
 
 | 常量 | 类型 | 默认值 | 位置 (main.cpp读取) | 含义 |
 |------|------|--------|---------------------|------|
-| `tiny_max_area` | int | 800 | strategies.tiny_max_area | State 1/2 分界 |
-| `akaze_min_area` | int | 40001 | strategies.akaze_min_area | State 2/3 分界 |
+| `tiny_max_area` | int | 800 | strategies.tiny_max_area | BC/TT 档位分界 |
 | `dual_trigger_area` | int | 490000 | strategies.dual_roi | State 3/4 分界 (700×700) |
 | `class1_min_area` | int | — | strategies.close_range | State 5 class1最小面积 |
-| `akaze_min_area_class1` | int | 0 | strategies.close_range.akaze_min_area | class1-only 专用 AKAZE 阈值 (0=回退到通用值) |
 | `tiny_max_area_class1` | int | 0 | strategies.close_range.tiny_max_area | class1-only 专用 TinyTarget 阈值 |
 
 > ⚠️ **这些值为早期测试占位值**。在实际部署场景中必须重新标定。修改方法：
 > 1. `config/tracker_config.json` 中修改对应值
-> 2. `configureStrategyChain()` 中使用的阈值来自 `akaze_min_area_` 和 `tiny_max_area_` 成员变量
+> 2. 档位选择阈值来自 `TrackerBase` 的 `tiny_max_area_` / `tiny_max_area_class1_` 成员变量
 
 ### 4.3 策略链配置: configureStrategyChain()
 
 ```cpp
 // include/tracker/TrackerBase.hpp protected方法
-// StereoTracker构造中调用，每帧根据ROI面积重新配置
+// 每帧在 process()/processMono() 中 ROI 裁剪后、特征提取前调用
 
-void configureStrategyChain(int roi_area, bool is_class1 = false) {
-    // 选择阈值：class1 专用阈值 > 0 时使用，否则回退到通用阈值
-    int akaze_thresh = is_class1 && akaze_min_area_class1_ > 0
-        ? akaze_min_area_class1_ : akaze_min_area_;
-    int tiny_thresh  = is_class1 && tiny_max_area_class1_ > 0
-        ? tiny_max_area_class1_  : tiny_max_area_;
+// 档位: 1=TinyTarget(远) 2=BinaryCorner(中)
+int nominateBand(int roi_area, bool is_class1) const {
+    // class1 专用阈值 > 0 时使用，否则回退通用阈值 (effectiveThresholds)
+    if (roi_area > effectiveThresholds(is_class1)) return 2;  // BinaryCorner
+    return 1;                                                  // TinyTarget
+}
 
-    if (roi_area >= akaze_thresh || roi_area == 0) {
-        extractor_ = akaze_extractor_.get();           // 主策略: AKAZE
-        fallback_extractors_ = {binary_extractor_.get(), tiny_extractor_.get()};
-    } else if (roi_area > tiny_thresh) {
-        extractor_ = binary_extractor_.get();           // 主策略: BC
-        fallback_extractors_ = {tiny_extractor_.get()};
+void applyBandChain(int band, bool is_class1) {
+    fallback_extractors_.clear();
+    if (band == 2) {
+        extractor_ = binary_extractor_.get();                  // 主策略: BC
+        fallback_extractors_.push_back(tiny_extractor_.get()); // 退化: TT
     } else {
-        extractor_ = tiny_extractor_.get();             // 主策略: TT
-        fallback_extractors_ = {};
+        extractor_ = tiny_extractor_.get();                    // 主策略: TT
+        // 无退化 (TT 是链终点)
     }
 }
 ```
 
 **调用时机**: 每帧在 `process()`/`processMono()` 中 ROI 裁剪后、特征提取前调用。
 
-**特殊处理**: `roi_area == 0` (传入nullptr ROI→全图回退) 走 AKAZE 链。
+**时序连贯性 (`temporal.enabled`)**: 提名档位经 `resolveLockedStrategy()` 粘滞状态机（迟滞 + 去抖 + 越级硬切）后，再交给 `applyBandChain()`；粘滞压低档位时会补齐向上的回退链（避免 TT 单点终结）。
+
+**特殊处理**: `roi_area == 0`（传入 nullptr ROI）在 process 入口即判帧失败，不会到达此处（原 AKAZE 全图回退路径已移除）。
 
 ### 4.4 五状态总览表
 
 | State | 名称 | 条件 | 主提取器 | 双目Pose | 单目Pose | Warm-start | 退化链 |
 |-------|------|------|----------|----------|----------|-----------|--------|
-| 1 | 远 | ≤800 px² | TinyTarget | solvePnP ITERATIVE | MonoPnP EPnP/IPPE | ❌ | 无→终止 |
-| 2 | 中 | 801~40000 | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | TT |
-| 3 | 中近 | 40001~489999 | AKAZE | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | BC→TT |
-| 4 | 近 | ≥490000+class1 | Dual-ROI (BC+AK) | InitialPnP→GPnP + BC-only 回退 | MonoPnP + BC-only 回退 | ✅ 双目 | BC-only → class1 (BC→TT) |
+| 1 | 远 | ≤tiny_max | TinyTarget | solvePnP ITERATIVE | MonoPnP EPnP/IPPE | ❌ | 无→终止 |
+| 2 | 中 | >tiny_max, <dual_trigger | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | TT |
+| 3 | 中近 | 同 State 2 (AKAZE 档已移除) | BinaryCorner | InitialPnP→GPnP | MonoPnP EPnP/IPPE | ✅ 双目 | TT |
+| 4 | 近 | ≥dual_trigger+class1 | Dual-ROI (BC(class0)+class1标注点) | InitialPnP→GPnP + BCJ联合 | MonoPnP + BCJ联合 | ✅ 双目 | class1 (BC→TT) |
 | 5 | 极近 | 无class0+有class1 | 按面积重分类 | 按重分类 | 按重分类 | 按重分类 | 按重分类 |
 
 ### 4.5 退化后备链
 
 ```
-AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarget  ──失败──→ 终止
+BinaryCorner  ──失败──→  TinyTarget  ──失败──→ 终止
 ```
 
 | 规则 | 说明 |
 |------|------|
-| Dual-ROI (State 4) | 独立并行路径，不进入 AKAZE→BC→TT 链；自身有三级退化链（合并 → BC-only → class1 BC→TT，见 §9.14 之二） |
+| Dual-ROI (State 4) | 独立并行路径，不进入 BC→TT 链；自身有三级退化链（Tier1 BC(class0) → Tier1b BCJ联合 → class1 BC→TT，见 §9.14 之二） |
 | YOLO 无检测 | 直接 skip 帧，不触发退化链 |
 | State 5 回退 | class 1 重分类后重新走 State 1~4 策略链 |
 | 退化链由 `configureStrategyChain()` 一次性配置 | 调用方只需遍历 `fallback_extractors_` 列表 |
@@ -400,117 +407,25 @@ AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarg
 // include/feature/FeatureExtractor.hpp
 class FeatureExtractor {
 public:
-    virtual std::string name() const = 0;
-    virtual PipelineResult extract(
-        const cv::Mat& left_gray, const cv::Mat& right_gray,
-        const cv::Mat& left_color, const cv::Mat& right_color) = 0;
-    virtual PipelineResult extractMono(
-        const cv::Mat& gray, const cv::Mat& color);  // 默认调用 extract(gray,empty,color,empty)
+    virtual std::string name() const = 0;           // "BinaryCorner" / "TinyTarget"
+    virtual StrategyType strategyType() const = 0;  // 退化去重 + PnP 路由
+    virtual void setTemplateData(const std::string& template_dir,
+                                 double real_width_mm, double real_height_mm) = 0;
+    virtual PipelineResult extract(const cv::Mat& left_gray, const cv::Mat& right_gray,
+                                   const cv::Mat& left_color, const cv::Mat& right_color) = 0;
+    virtual PipelineResult extractMono(const cv::Mat& gray, const cv::Mat& color);  // 默认回退 extract
+    virtual const TemplateData& templateData() const = 0;
+    virtual void setUseClass1(bool v) {}            // 切换 class0/class1 3D 尺寸 (仅 BC/TT)
 };
 ```
 
-`name()` 返回值: "AKAZE_GPNP", "BinaryCorner", "TinyTarget" — 用于 PnP 路由和退化去重。
+`name()` 返回值: "BinaryCorner", "TinyTarget" — 用于 PnP 路由和退化去重。
 
-### 5.2 State 3: AKAZE_GPNP 提取器
+### 5.2 State 3: AKAZE_GPNP 提取器（已移除）
 
-**类**: `AkazeGpnpExtractor` (include/feature/AkazeGpnpExtractor.hpp, src/feature/AkazeGpnpExtractor.cpp)
-
-**内部组件**:
-- `AkazeExtractor` — 纯 AKAZE 检测与描述子计算
-- `OpticalFlowTracker` — Lucas-Kanade 光流 + Forward-Backward 校验
-- `StereoProjector` — 视差→深度→右图重投影
-- `TemplateMatcher` — 三阶段模板匹配 (Ratio Test → Cross-Check → Homography RANSAC)
-
-**双目 extract() 全流水线**:
-
-```
-输入: left_gray, right_gray (ROI裁剪后的灰度图)
-      left_color, right_color (ROI裁剪后的彩色图，仅可视化用)
-
-[Step 1] AkazeExtractor::extract()
-  ├─ 若 scale < 1.0: resize(INTER_LINEAR) 降采样
-  ├─ detectAndCompute(AKAZE, NORM_HAMMING) → 61字节二值描述子
-  └─ 坐标 × (1.0/scale) 还原到原始ROI尺寸
-  → PipelineResult.kp_left, PipelineResult.kp_right (=kp_left初始值)
-
-[Step 2] OpticalFlowTracker::track()
-  输入: left_gray, right_gray, kp_left
-  ├─ calcOpticalFlowPyrLK(L→R)
-  ├─ calcOpticalFlowPyrLK(R→L) (反向)
-  └─ Forward-Backward 误差校验: FB_error < 1.0px
-  → TrackResult{pts_left_good, pts_right_good, disparity, fb_error, num_valid}
-
-[Step 3] StereoProjector::project()
-  输入: pts_left_good, pts_right_good, disparity, K, baseline
-  ├─ 深度 = focal_length * baseline / disparity
-  ├─ 3D点反投影: X = (u-cx)*Z/fx, Y = (v-cy)*Z/fy, Z = depth
-  ├─ 3D点变换到右相机: P_right = R_rl^T * (P_left - t_rl)
-  └─ 右图投影: (u', v') = project(P_right, K)
-  → ProjectionResult{pts_right_projected, valid_mask}
-
-[Step 4] TemplateMatcher::match() 三阶段
-  输入: kp_left, descriptors_left, template_kp, template_desc
-
-  Stage 1 — Ratio Test (TemplateMatcher.cpp:48-76):
-    knnMatch(L→T, k=2, NORM_HAMMING)
-    Lowe's ratio: dist[0] < 0.75 × dist[1]
-    <4 matches → 提前返回
-
-  Stage 2 — Cross-Check (cpp:78-112):
-    knnMatch(T→L, k=2) + ratio test
-    对称验证: T→L映射回L→T同一索引
-    <4 → 提前返回
-
-  Stage 3 — Homography RANSAC (cpp:114-148):
-    findHomography(L_pts, T_pts, RANSAC, 5.0px)
-    H为空 → 返回Stage2结果
-    仅保留inlier
-
-  → MatchResult{good_matches, pts_left_match, pts_template_match, num_matches}
-
-[Step 5] 填充结果
-  ├─ kp_left, kp_right
-  ├─ pts_left_match, pts_right_match (filtered by stereo matching + MAD)
-  ├─ pts_template_match (from template matching)
-  ├─ good_matches
-  ├─ pts_left_good, pts_right_good (光流成功点)
-  ├─ disparity
-  ├─ success = (num_matches >= gpnp_min_pts 默认3)
-  └─ n_kp_left, n_matched, n_projected, n_template_match
-```
-
-**单目 extractMono() 简化流程**:
-
-```
-同双目但跳过:
-  ✗ OpticalFlowTracker (无光流)
-  ✗ StereoProjector (无立体投影)
-  ✗ MAD 视差滤波
-  ✗ pts_right 系列字段为空
-
-保留:
-  ✓ AKAZE 检测 + 描述子
-  ✓ 三阶段模板匹配
-  ✓ PipelineResult 中仅填充左侧字段
-```
-
-**模板预计算** `setTemplateData()` (cpp:33-45):
-
-```
-AkazeExtractor(scale=1.0)  // 全分辨率
-→ detectAndCompute(template_gray)
-→ 每个关键点: 3D = (kp.x/tw * real_w_mm - real_w_mm/2, kp.y/th * real_h_mm - real_h_mm/2, 0)
-  (中心化: 以模板物理中心为原点)
-→ TemplateData.keypoints[i] ↔ TemplateData.pts_3d[i]
-```
-
-**PnP时3D点查找** (processMono/process中):
-
-```cpp
-// 对每个 good_match:
-matched_pts_3d.push_back(template_.pts_3d[m.trainIdx]);
-// trainIdx 直接索引到模板关键点列表
-```
+> **2026-10 已完全移除**：AKAZE 档及其依赖链（`AkazeExtractor`、`AkazeGpnpExtractor`、`OpticalFlowTracker`、`MadDisparityFilter`、`StereoProjector`）已删除。原 State 2/3 面积分界（`akaze_min_area`）随之删除，State 2 与 State 3 统一由 BinaryCorner 处理（见 §5.3），单 ROI 策略链折叠为两带 BinaryCorner → TinyTarget。
+>
+> `TemplateMatcher`（三阶段描述子匹配）仅保留给 pose_compare 的 SIFT 提取器使用，主跟踪链路不再引用。
 
 ### 5.3 State 2: BinaryCorner 提取器
 
@@ -678,124 +593,73 @@ struct Config {
 
 ### 5.5 State 4: Dual-ROI 混合
 
-**触发**: class0面积 ≥ 490000 && class1存在
+**触发**: class0面积 ≥ dual_trigger_area(默认490000) && class1存在
 
-**组件**: 同时使用两个提取器:
-- `binary_extractor_` → class0 的边缘角点 (primary)
-- `dual_akaze_extractor_` → class1 的中心纹理 (secondary, 不同 scale)
+**组件**: `binary_extractor_` (class0 边缘角点, primary) + class1 人工标注点
+(`dual_c1_tmpl_corners_`/`dual_c1_tmpl_pts3d_`, 来自 `dual_roi.class1_points_path`)
 
 **双目 processDualRoi() 流程**:
 
 ```
 [Step 0] prepareDualBcTemplate() (一次性, 首次调用执行):
-  从 AKAZE 模板灰度图提取 BinaryCorner 角点
-  ├─ Otsu 二值化模板灰度图
-  ├─ findContours → 最大面积
-  ├─ approxPolyDP 二分搜索 → N角点 (N = binary_extractor_ 上次角点数, 默认10)
+  从板模板灰度图 (template_.gray_image) 提取 BinaryCorner 角点
+  ├─ 若 dual_roi.class0_points_path 非空: 直接 readCorners() 读人工标注点
+  ├─ 否则: Otsu 二值化模板灰度图 → findContours → 最大面积 → approxPolyDP 二分搜索
   ├─ reorderByGeometry → dual_bc_tmpl_corners_
   └─ 3D点: (x/tw)*real_w_mm - real_w_mm/2, (y/th)*real_h_mm - real_h_mm/2, Z=0
-     (real_w/real_h = strategies.akaze_gpnp.template_real_width_mm/height_mm,
-      与 AKAZE 模板 3D 点同源同尺度且同样中心化, 故可与 template_.pts_3d 混合进同一次 PnP)
+     (real_w/real_h = strategies.board_template.template_real_width_mm/height_mm,
+      板系中心化)
   → dual_bc_tmpl_corners_ + dual_bc_tmpl_pts3d_
+  另读 dual_roi.class1_points_path → dual_c1_tmpl_corners_ + dual_c1_tmpl_pts3d_
+  (Tier1b 联合解算用)
 
-[Step 0.5] 巨型 primary 短路 (2026-09 新增, 单双目同语义):
-  条件: dual_roi.primary_span_ratio > 0 && class1_fallback_enabled &&
+[Step 0.5] 巨型 primary 短路 (单双目同语义):
+  条件: dual_roi.primary_span_ratio > 0 && class1_fallback_enabled && !tier1_only &&
         primary.width ≥ img.cols × ratio && primary.height ≥ img.rows × ratio
         (ratio 默认 0.99; 物理意义 = 目标外角点已出视野, BC 全图角点必败,
-         Tier1/2 的 PnP 必失败, 而全图级 BC 提取极耗时)
-  触发 → 跳过 class0 裁剪 + Step 2~4 + Tier1/2, 直接执行 Tier3 class1 链
-  (c0 子图保持空, 合并/BC-only 相关变量保持失败初值; 关闭 Tier3 开关时不短路)
+         Tier1 的 PnP 必失败, 而全图级 BC 提取极耗时)
+  触发 → 跳过 class0 裁剪 + Tier1, 直接执行 Tier3 class1 链
+  (c0 子图保持空; 关闭 Tier3 开关时不短路)
 
-[Step 1] 裁剪4个子图 (c0 两张在短路时跳过):
-  left_class0 = left_img(primary_roi)
-  right_class0 = right_img(primary_roi)
-  left_class1 = left_img(secondary_roi_expanded)
-  right_class1 = right_img(secondary_roi_expanded)
+[Step 1] 裁剪子图 (c0 两张在短路时跳过):
+  left_c0 / right_c0 = primary_roi
+  left_c1 / right_c1 = secondary_roi_expanded (class1)
 
-[Step 2] 并行提取 (短路时跳过):
-  result_bc = binary_extractor_->extract(left_class0, right_class0, ...)
-  result_ak = dual_akaze_extractor_->extract(left_class1, right_class1, ...)
-  (左右独立的BC + AKAZE含光流/投影/匹配)
+[Step 2] BC(class0) 提取 (短路时跳过):
+  result_bc = binary_extractor_->extract(left_c0, right_c0, ...)
+  (class1 部分不再用 AKAZE, 退化时由 Tier3 class1 链的 BC 接管)
 
-[Step 3] 合并 (短路时跳过):
-  // AK的所有点 += secondary→primary的偏移量
-  result_ak 所有坐标 += (sec.x - pri.x, sec.y - pri.y)
-
-  // 角度检查 + BC重排 (cpp:1584-1611)
-  若 |matched_angle| > 0.5°:
-    用 reorderByGeometry 重排 bc_pts3d 副本
-
-  // BC贡献 (cpp:1613-1620):
-  for i in result_bc.pts_left_match:
-    merged_2d += result_bc.pts_left_match[i]
-    merged_3d += dual_bc_tmpl_pts3d_[i]
-
-  // AK贡献 (cpp:1622-1631):
-  for each good_match in result_ak:
-    merged_2d += result_ak.pts_left_match[i]
-    merged_3d += ak_template.pts_3d[trainIdx]
-
-  total_use < 4 → 返回失败
+[Step 3] BC 角点 ↔ 板系 3D 对应 (严格数量守卫):
+  角点数 ≠ 模板点数 → c0 侧整体剔除 (前缀 min 配对是错位对应)
+  合并 c0 点 + dual_bc_tmpl_pts3d_
 
 [Step 4] 恢复全图坐标:
-  merged_pts_2d += (primary_roi.x, primary_roi.y)
+  merged_pts += (primary_roi.x, primary_roi.y)
 
-[Step 5] PnP (三级退化链, 由 `config.dual_roi.class1_fallback_enabled` 控制第 3 级;
-          短路帧 Tier1/2 直接视为失败, Tier3 成为唯一路径):
-  Tier1 合并解算: GPnP (双目) 或 MonoPnP (单目); merged < 4 点时跳过
-  失败 → Tier2 BC-only 回退: 合并数组前缀 bc_total(≥4) 个 BC 角点
-        + dual_bc_tmpl_pts3d_ 重解 (双目走 solveBcPnpChain,
-        单目走 mono_pnp_.solve)
-        成功 → strategy_name="DualRoi_BC", LogEntry.fallback=true
-  仍失败 → Tier3 class1 退化链 (2026-09 新增): secondary ROI (class1) 上
-        setUseClass1(true) 后依次 BC → TT (提取失败或 PnP 失败均降级;
-        双目 solveBcPnpChain/runTinyTargetPnP 显式传 class1 3D, 单目
-        MonoPnP 冷启动不 seed); 成功 → strategy_name="DualRoi_C1BC"/
-        "DualRoi_C1TT", LogEntry.fallback=true, result.is_class1=true;
-        仍失败 → 整帧失败
+[Step 5] PnP (三级退化链):
+  Tier1  BC(class0) 解算: GPnP(双目) 或 MonoPnP(单目); merged < 4 点时跳过
+         成功 → strategy_name="DualRoi_BC" (纯 c0)
+  Tier1b BCJ 联合解算 (Tier1 成功且 class1 标注点 ≥4 时): class0 + class1 标注点
+         NN 匹配 (门限 dual_roi.joint_match_gate_px), 匹配对多于 Tier1 时 GPnP(P0 warm)
+         联合重解, 失败回退 InitialPnP+GPnP, 再失败保留 Tier1 位姿 (不落入 Tier3)
+         成功 → strategy_name="DualRoi_BCJ"
+  Tier1 失败 → Tier3 class1 退化链: secondary ROI (class1) 上 setUseClass1(true)
+         后依次 BC → TT (提取失败或 PnP 失败均降级; 全程冷启动)
+         成功 → strategy_name="DualRoi_C1BC"/"DualRoi_C1TT", result.is_class1=true
+         仍失败 → 整帧失败
 ```
 
-### 5.6 光流追踪器 OpticalFlowTracker
-
-**类**: `OpticalFlowTracker` (include/feature/OpticalFlowTracker.hpp, src/feature/OpticalFlowTracker.cpp)
-
-```
-track(left_gray, right_gray, pts_left):
-  ├─ calcOpticalFlowPyrLK(L→R)
-  ├─ calcOpticalFlowPyrLK(R→L) (反向验证)
-  └─ 对每个点:
-      FB_error = norm(pt_original - pt_back)
-      if FB_error < 1.0px: 保留
-  → TrackResult{pts_left_good, pts_right_good, disparity, fb_error, num_valid}
-```
-
-**仅用于双目 AKAZE 策略**。单目模式下不调用。
-
-### 5.7 MAD 视差滤波器 MadDisparityFilter
-
-**类**: `MadDisparityFilter` (include/feature/MadDisparityFilter.hpp, src/feature/MadDisparityFilter.cpp)
-
-```
-filter(disparity, inlier_mask):
-  ├─ median_disparity = median(disparities)
-  ├─ MAD = median(|di - median|)
-  └─ 保留: |di - median| ≤ 3.0 × MAD
-  → MadFilterResult{filtered_points, filter_mask, degraded}
-```
-
-**仅用于双目 AKAZE 策略**，在 GPnP 优化前对立体匹配点做离群值剔除。
-
-### 5.8 模板匹配器 TemplateMatcher
+### 5.6 模板匹配器 TemplateMatcher (仅 pose_compare 使用)
 
 **类**: `TemplateMatcher` (include/matching/TemplateMatcher.hpp, src/matching/TemplateMatcher.cpp)
 
-三阶段匹配流水线已在 §5.2 中详细描述。关键参数:
+三阶段匹配流水线 (Ratio Test → Cross-Check → Homography RANSAC)。**主定位链 (Steretracker) 已不再使用**——原 AKAZE 描述子匹配随 AKAZE 移除而删除，现仅由 `SiftKeypointExtractor` (pose_compare 对比 pipeline) 使用。描述子距离范数参数化：`norm_type` 默认 `NORM_HAMMING` (AKAZE 二值，已废弃)，SIFT 场景传 `NORM_L2`。
 
 | 参数 | 值 | 含义 |
 |------|-----|------|
 | Lowe's ratio | 0.75 | dist[0] < 0.75 × dist[1] |
 | Homography RANSAC threshold | 5.0 px | 内点判定距离阈值 |
-| 描述子距离度量 | NORM_HAMMING | AKAZE 二值描述子 |
+| 描述子距离度量 | NORM_L2 (SIFT) | 浮点描述子距离 |
 | 最低匹配数 | 4 | 低于此值提前返回 |
 
 ---
@@ -902,24 +766,21 @@ solve(pts_2d, pts_3d, K):
 
 ```cpp
 // StereoTracker.cpp
-std::pair<bool, PoseEstimate> dispatchPnP(FeatureExtractor* ext, PipelineResult& result, bool is_first) {
-    std::string n = ext->name();
-    if (n == "AKAZE_GPNP")     return runAkazePnP(result, is_first);
-    if (n == "BinaryCorner")   return runBinaryCornerPnP(result, is_first);
-    if (n == "TinyTarget")     return runTinyTargetPnP(result);
+std::pair<bool, PoseEstimate> dispatchPnP(FeatureExtractor* ext, PipelineResult& result) {
+    // 3D 模板按当前策略 ext 解析 (退化链中 ext 可不同于成员 extractor_)
+    const auto& pnp_pts_3d = ext->templateData().pts_3d;
+    switch (ext->strategyType()) {
+        case StrategyType::BinaryCorner:
+            return runBinaryCornerPnP(result, pnp_pts_3d);
+        case StrategyType::TinyTarget:
+            return runTinyTargetPnP(result, pnp_pts_3d);
+        default:
+            return {false, PoseEstimate{}};
+    }
 }
 ```
 
 **TinyTarget 特殊处理**: 仅用 `solvePnP(ITERATIVE)` 不经过 RANSAC 也不做 warm-start。
-
-### 6.7 MAD 滤波在 PnP 中的应用
-
-仅在 `runAkazePnP()` 中：PnP 前对立体匹配点做 MAD 视差滤波，剔除异常值后再传入 GPnP:
-
-```cpp
-auto mad_result = mad_filter_.filter(disparity, inlier_mask);
-// 仅用 mad_result.filtered_points 做 GPnP 优化
-```
 
 ### 6.8 ESKF 多源信息融合 (适配层)
 
@@ -1128,53 +989,60 @@ struct SensorPacket {
     // ========== 策略参数 ==========
     "strategies": {
         // 面积阈值 (⚠️ 占位值, 需重新标定)
-        "akaze_min_area": 40001,       // State 2/3 分界
-        "tiny_max_area": 800,          // State 1/2 分界
+        "tiny_max_area": 800,          // BC/TT 档位分界 (原 State 1/2)
+        "dual_trigger_area": 490000,   // State 3/4 分界 (700×700)
+        "stereo_mono_fallback": false, // 单侧检测 → 单目降级
 
-        // AKAZE 策略 (template_real_* 同时是 Dual-ROI BC 模板 3D 点的尺寸来源)
-        "akaze_gpnp": {
-            "template_path": "data/big/img_1.png",   // 模板图像路径
-            "template_real_width_mm": 500.0,         // 模板物理宽度 mm (棋盘格靶标)
+        // 板模板 (BoardTemplate, 原 akaze_gpnp 改名)
+        "board_template": {
+            "template_path": "data/big/img_1.png",   // 板模板图像路径
+            "template_real_width_mm": 500.0,         // 模板物理宽度 mm (Dual-ROI BC 模板 3D 点尺寸来源)
             "template_real_height_mm": 500.0,        // 模板物理高度 mm
-            "scale": 1,                // 检测前降采样
             "gpnp_min_pts": 4,         // GPnP最低点数
             "use_initial_pnp": true    // 首帧使用InitialPnP
         },
 
         // BinaryCorner 策略
         "binary_corner": {
+            "template_dir": "data/NewMuBan(reordered)", // 模板目录
             "corners": 10,             // 目标角点数
             "kernel_size": 3,          // 形态学核
-            "scale": 1.0,              // 提取前放大
-            "target_size": 100,        // 标准化尺寸
-            "pixel_to_meter_scale": 0.5,
-            "roi_pad_pixels": 0
+            "corner_scale": 3.0,       // 提取前放大 (映射 Config::scale)
+            "target_width": 100,       // 标准化宽度
+            "target_height": 100,      // 标准化高度
+            "pixel_to_meter_scale_class0": 0.0059, // class0 像素→米
+            "pixel_to_meter_scale_class1": 0.00046,// class1 像素→米
+            "roi_pad_pixels": 3
         },
 
         // TinyTarget 策略
         "tiny_target": {
-            "target_size": 50,         // 标准化尺寸
+            "template_dir": "data/NewMuBan(reordered)", // 模板目录
+            "target_width": 50,        // 标准化宽度
+            "target_height": 50,       // 标准化高度
             "scale_factor": 4.0,       // 超分倍数
-            "square_size_m": 0.05,     // 目标边长 m
-            "roi_pad_pixels": 0
+            "square_size_m_class0": 0.295, // class0 目标边长 m
+            "square_size_m_class1": 0.017, // class1 目标边长 m
+            "roi_pad_pixels": 5
         },
 
         // Dual-ROI 策略
         "dual_roi": {
-            "trigger_area": 490000,    // 触发面积 (700×700)
             "secondary_expand_pixels": 10,  // class1 ROI外扩
-            "akaze_scale": 0.5,        // class1 AKAZE scale
-            "class1_fallback_enabled": true,  // 第3级退化: 合并与BC-only均失败后在class1 ROI上跑 BC→TT 链
-            "primary_span_ratio": 0.99 // 巨型primary短路: primary边长覆盖画幅≥该比例 → 跳过Tier1/2直接class1链 (<=0关闭)
+            "class1_fallback_enabled": true,// Tier3 退化: Tier1 失败后在class1 ROI上跑 BC→TT 链
+            "primary_span_ratio": 0.99,     // 巨型primary短路: primary边长覆盖画幅≥该比例 → 跳过Tier1直接class1链 (<=0关闭)
+            "tier1_only": false,            // 消融开关: true=屏蔽Tier3/短路, 仅保留Tier1
+            "class0_points_path": "scripts/class0_points.txt", // 人工标注class0点 (空=approxPolyDP自动推导)
+            "class1_points_path": "scripts/class1_points.txt", // 人工标注class1点 (空=Tier1b停用)
+            "joint_match_gate_px": 12       // Tier1b NN匹配门限
         },
 
         // State 5 回退
         "close_range": {
             "enabled": true,
             "class1_min_area": 100,
-            "roi_expand_ratio": 0.1,
-            "min_expand_pixels": 10,
-            "akaze_min_area": 40001,     // class1-only 专用 AKAZE 阈值 (0=使用默认)
+            "roi_expand_ratio": 1,
+            "min_expand_pixels": 1,
             "tiny_max_area": 400          // class1-only 专用 TinyTarget 阈值 (0=使用默认)
         }
     },
@@ -1207,9 +1075,9 @@ struct SensorPacket {
 ### 9.1 ⚠️ 陷阱1: Dual-ROI 完全脱离策略链 (EARLY RETURN)
 
 ```cpp
-// processMono() 中 (cpp:1796-1800)
+// MonoTracker::process() 中 (src/tracker/MonoTracker.cpp:952-957)
 if (left_group && left_group->is_dual) {
-    result = processDualRoiMono(left_img, *left_group, visualize);
+    result = processDualRoi(left_img, *left_group, visualize);
     state_.frame_count++;
     return result;  // <-- EARLY RETURN, 不执行 configureStrategyChain!
 }
@@ -1217,12 +1085,13 @@ if (left_group && left_group->is_dual) {
 
 **影响**:
 - Dual-ROI 不调用 `configureStrategyChain()`
-- 不进入退化后备链 (AKAZE→BC→TT)，但有自身三级退化链（见 §9.14 之二）：Tier1 合并解算 → Tier2 BC-only 重解 → Tier3 class1 (BC→TT) 链
-- 独立使用 `binary_extractor_` + `dual_akaze_extractor_` (不是 `akaze_extractor_`)
-- Tier2 **BC-only 回退**（2026-09 新增）：切合并数组前缀 `bc_total`（≥4）个外层 BC 角点 + `dual_bc_tmpl_pts3d_`，走 BC 策略的 PnP 链重解；成功后 `strategy_name = "DualRoi_BC"`、日志 `fallback=true`
-- Tier3 **class1 退化链**（2026-09 新增）：Tier2 仍失败时在 secondary ROI 上 `setUseClass1(true)` 后依次 BC → TT（State 5 同款 class1 3D 尺寸机制，`runDualRoiClass1Chain()`），冷启动 PnP；成功后 `strategy_name = "DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`。受 `dual_roi.class1_fallback_enabled` 控制（默认开）。BC/TT 均失败才整帧失败
+- 不进入退化后备链 (BC→TT)，但有自身三级退化链（见 §9.14 之二）：Tier1 BC(class0) 解算 → Tier1b BCJ 联合解算 → Tier3 class1 (BC→TT) 链
+- 使用 `binary_extractor_` (class0) + class1 人工标注点 (`dual_c1_tmpl_corners_`/`dual_c1_tmpl_pts3d_`)，不再有 `dual_akaze_extractor_`
+- Tier1 **BC(class0) 解算**：纯 c0 角点 + `dual_bc_tmpl_pts3d_`；成功后 `strategy_name = "DualRoi_BC"`
+- Tier1b **BCJ 联合解算**（2026-09 新增）：Tier1 成功后用 class0 + class1 标注点 NN 匹配（门限 `joint_match_gate_px`）联合重解；成功后 `strategy_name = "DualRoi_BCJ"`
+- Tier3 **class1 退化链**：Tier1 失败时在 secondary ROI 上 `setUseClass1(true)` 后依次 BC → TT（State 5 同款 class1 3D 尺寸机制，`runDualRoiClass1Chain()`），冷启动 PnP；成功后 `strategy_name = "DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`。受 `dual_roi.class1_fallback_enabled` 控制（默认开）。BC/TT 均失败才整帧失败
 - Tier3 的 3D 模板坐标系为 class1 系（非板系），依赖"class1 图案与靶标板同心"假设（与 State 5 语义一致）
-- **巨型 primary 短路**（2026-09 新增，单双目同语义）：`primary.width/height ≥ 画幅 × dual_roi.primary_span_ratio`（默认 0.99）且 Tier3 开关开启时，目标外角点已出视野 → BC 全图角点与 Tier1/2 的 PnP 必败，直接跳过 class0 裁剪与 Tier1/2，Tier3 class1 链成为唯一路径。典型场景：近距离下 class0 ROI≈全图（Tier1 成功面积上限与短路分界在实测数据中完美分隔）。`primary_span_ratio ≤ 0` 关闭短路
+- **巨型 primary 短路**（单双目同语义）：`primary.width/height ≥ 画幅 × dual_roi.primary_span_ratio`（默认 0.99）且 Tier3 开关开启时，目标外角点已出视野 → BC 全图角点与 Tier1 的 PnP 必败，直接跳过 class0 裁剪与 Tier1，Tier3 class1 链成为唯一路径。`primary_span_ratio ≤ 0` 关闭短路
 
 ### 9.2 ⚠️ 陷阱2: 单目模式无 warm-start
 
@@ -1233,13 +1102,13 @@ if (left_group && left_group->is_dual) {
 // 单目无: pose = mono_pnp_.solve(pts_2d, pts_3d, K)  // 无初始猜测
 ```
 
-### 9.3 ⚠️ 陷阱3: 单目模式无光流、无立体投影、无MAD
+### 9.3 ⚠️ 陷阱3: 单目模式无立体匹配
 
 单目 `processMono()` 调用各提取器的 `extractMono()`，其内部：
-- ❌ 不执行光流追踪
-- ❌ 不执行立体投影
-- ❌ 不执行 MAD 视差滤波
-- ❌ `PipelineResult` 中 `pts_right_*` 全部为空
+- ❌ `PipelineResult` 中 `pts_right_*` 全部为空（无立体匹配）
+- ✅ 位姿由 `MonoPnPSolver` (EPnP/IPPE) 解算，无 GPnP 交叉射线约束
+
+> 原 AKAZE 的"光流追踪 / 立体投影 / MAD 视差滤波"已随 AKAZE 移除而**全局删除**（双目也不再执行），不再是单目独有的退化面。
 
 ### 9.4 ⚠️ 陷阱4: YOLO 无检测 → skip 帧 (不触发退化)
 
@@ -1270,16 +1139,15 @@ result = tracker.process(left, right, visualize, plg, prg);
 - 仅当 class 0 面积 ≥ 490000 且存在 class 1 时进入 State 4
 - class 1 回退 (State 5) 仅在 class 0 消失时触发
 
-### 9.6 ⚠️ 陷阱6: Dual-ROI 中 BC 与 AK 的偏移处理
+### 9.6 ⚠️ 陷阱6: Dual-ROI 坐标偏移
 
 ```cpp
 // BC 在 primary ROI (class 0) 中提取 → 坐标相对于 primary_roi
-// AK 在 secondary ROI (class 1) 中提取 → 坐标相对于 secondary_roi
-// 合并前需要将 AK 坐标偏移:
-ak_pts += (secondary_roi.x - primary_roi.x, secondary_roi.y - primary_roi.y)
-
-// 合并后再统一偏移到全图:
+// 解算前统一偏移到全图:
 merged_pts += (primary_roi.x, primary_roi.y)
+
+// Tier3 class1 链在 secondary ROI (class1) 上提取 → 偏移到全图:
+c1_pts += (secondary_roi.x, secondary_roi.y)
 ```
 
 ### 9.7 ⚠️ 陷阱7: prepareDualBcTemplate() 仅执行一次
@@ -1287,12 +1155,12 @@ merged_pts += (primary_roi.x, primary_roi.y)
 ```cpp
 void StereoTracker::prepareDualBcTemplate() {
     if (dual_bc_template_ready_) return;  // <-- 一次性
-    // ... 从 AKAZE 模板灰度图提取 BC 角点
+    // ... 从板模板灰度图 (template_.gray_image) 提取 BC 角点
     dual_bc_template_ready_ = true;
 }
 ```
 
-修改 AKAZE 模板后需手动重置 `dual_bc_template_ready_`。
+修改板模板图或 `class0_points_path` 标注后需手动重置 `dual_bc_template_ready_`。
 
 ### 9.8 ⚠️ 陷阱8: 坐标空间约定
 
@@ -1318,7 +1186,7 @@ void StereoTracker::prepareDualBcTemplate() {
 ```cpp
 // 当 State 5 回退时，BC/TT 提取器被告知 is_class1=true
 // 3D 点尺寸计算使用 class 1 的物理尺寸而非 class 0
-// 见 TinyTargetExtractor: square_size_m 可能不同
+// 见 TinyTargetExtractor: square_size_m_class0/class1 可能不同
 ```
 
 ### 9.11 ⚠️ 陷阱11: color 矩阵是引用共享，visualize=false 时可能为空 (2026-09)
@@ -1329,7 +1197,7 @@ void StereoTracker::prepareDualBcTemplate() {
 
 下游使用约定（违反会崩溃或画错）：
 - 从 color 取 ROI 子图前必须判空：`color.empty() ? color : color(rect)`（crop 守护）
-- 三个提取器的 `extract()`/`extractMono()` 对 color 参数**仅透传赋值**（`result.left_color = color`），绝不读像素——空 Mat 安全
+- 两个提取器 (BC/TT) 的 `extract()`/`extractMono()` 对 color 参数**仅透传赋值**（`result.left_color = color`），绝不读像素——空 Mat 安全
 - 可视化画图处一律先 `clone()` 再画（如 `[Viz]` 坐标轴叠加），且都在 `if (visualize && ...)` 分支内
 - MonoTracker 单目主链为 ROI 级 cvtColor（`cvtColor(img(roi), gray_roi)`），Dual-ROI 帧对 c0/c1 子图分别按 ROI 转灰度；无 ROI 全图回退路径需全图灰度，故 StereoTracker::process 保留全图 cvtColor
 
@@ -1337,12 +1205,10 @@ void StereoTracker::prepareDualBcTemplate() {
 
 | 成员变量 | 类型 | 用途 |
 |----------|------|------|
-| `akaze_extractor_` | `unique_ptr<AkazeGpnpExtractor>` | State 3 主策略 (含光流+投影) |
-| `dual_akaze_extractor_` | `unique_ptr<AkazeGpnpExtractor>` | State 4 class1 部分 (不同 scale) |
-| `binary_extractor_` | `unique_ptr<BinaryCornerExtractor>` | State 2 主策略 + State 4 class0 部分 |
-| `tiny_extractor_` | `unique_ptr<TinyTargetExtractor>` | State 1 主策略 + 退化后备 |
+| `binary_extractor_` | `unique_ptr<BinaryCornerExtractor>` | 单 ROI 主策略 (中/中近) + Dual-ROI class0 部分 |
+| `tiny_extractor_` | `unique_ptr<TinyTargetExtractor>` | 单 ROI 远距策略 + 退化后备 + Dual-ROI class1 链 TT 段 |
 
-> `akaze_extractor_` 和 `dual_akaze_extractor_` 是**两个不同的实例**，参数不同（scale, min_pts 等）。Dual-ROI 用的是 `dual_akaze_extractor_`。
+> AKAZE 档移除后仅剩这两个提取器实例；Dual-ROI 的 class1 部分改用 class1 人工标注点 (`dual_c1_tmpl_corners_`/`dual_c1_tmpl_pts3d_`)，不再有独立提取器实例。
 
 ### 9.13 ⚠️ 陷阱12: BC/TT 调试快照受 setDebugCapture 控制，热路径日志无 endl (2026-09)
 
@@ -1359,47 +1225,45 @@ tiny_extractor_->setDebugCapture(visualize);
 
 ### 9.14 退化全景 ⚠️
 
-系统中共有 **13 类退化/fallback 机制**，按触发层级从高到低排列：
+系统中共有 **10 类退化/fallback 机制**，按触发层级从高到低排列：
 
 #### 一、策略主退化链（最高层，跨策略降级）
 
 由 `configureStrategyChain()` 每帧配置，`process()`/`processMono()` 中的 fallback 循环驱动。退化方向始终**单向**，不可逆。
 
 ```
-AKAZE_GPNP (State 3) ──失败──→ BinaryCorner (State 2) ──失败──→ TinyTarget (State 1) ──失败──→ 终止（无位姿输出）
+BinaryCorner (State 2/3) ──失败──→ TinyTarget (State 1) ──失败──→ 终止（无位姿输出）
 ```
 
 | 退化步骤 | 触发条件 | 降级目标 |
 |---------|---------|---------|
-| AKAZE → BC | `success == false` 或 `n_kp_left < 3`（单目：提取成功但单目 PnP 失败同上，2026-09 起） | BinaryCorner |
-| BC → TT | 同上 | TinyTarget |
+| BC → TT | `success == false` 或 `n_kp_left < 3`（单目：提取成功但单目 PnP 失败同上，2026-09 起） | TinyTarget |
 | TT → 终止 | 同上 | 帧输出失败，无位姿 |
 
 > 退化不跨面积区间折返（如 TT 失败不会回到 BC）。
 > 单目 PnP 在链循环内逐策略执行（`MonoTracker::process` / `StereoTracker::processMono`，与双目 `dispatchPnP` 同语义）；2D/3D 按 `good_matches[i] ↔ pts_left_match[i]` 平行序配对——BC approxPolyDP 近似命中时角点数可多于模板角点（如 11 vs 10），尾部无匹配角点被自然剔除，不再因 2D/3D 数量不等被 MonoPnP 拒解。
 
-#### 二、Dual-ROI (State 4) — 独立路径 + 巨型 primary 短路 + 三级退化链（短路与 Tier3 均为 2026-09 新增）
+#### 二、Dual-ROI (State 4) — 独立路径 + 巨型 primary 短路 + 三级退化链
 
 ```
-Dual-ROI (BC + AK 并行提取) ──合并解算失败──→ BC-only 重解──仍失败──→ class1 链 (BC→TT) ──仍失败──→ 终止
-                              (Tier2, DualRoi_BC)         (Tier3, DualRoi_C1BC/C1TT)
+Dual-ROI (BC class0) ──Tier1 失败──→ class1 链 (BC→TT) ──仍失败──→ 终止
+                     (Tier3, DualRoi_C1BC/C1TT)
 ```
 
 | 退化情况 | 触发条件 | 行为 |
 |---------|---------|------|
-| **巨型 primary 短路** (2026-09 新增) | `primary.width/height ≥ 画幅 × dual_roi.primary_span_ratio`(默认0.99) 且 Tier3 开关开启 | **跳过 class0 裁剪 + Tier1/2**（全图级 BC 提取与必败的 PnP 不再付费），Tier3 class1 链成为唯一路径；verbose 输出 `[DualRoi] primary spans frame ... skip Tier1/2` |
-| 合并点数不足 | `total_use < 4` | **跳过合并解算**（不再早退整帧），落入 Tier2（BC 前缀 <4 自然不触发）/ Tier3 |
-| 合并 PnP 失败 (Tier1→Tier2) | 双目: InitialPnP+GPnP(默认深度) 全失败; 单目: MonoPnP 全候选失败 | **BC-only 回退**: 合并数组前缀 `[0, bc_total)` 即 BC 贡献（与 `dual_bc_tmpl_pts3d_` 一一对应），切片后重解；双目走 `solveBcPnpChain()`（InitialPnP→GPnP→回退），单目走 `mono_pnp_.solve()` |
-| BC 回退仍失败 (Tier2→Tier3) | BC-only PnP 链失败 且 `dual_roi.class1_fallback_enabled` | **class1 退化链** `runDualRoiClass1Chain()`: secondary ROI (class1, 已按 `secondary_expand_pixels` 外扩) 裁剪图上，`setUseClass1(true)` 后依次 BC → TT；提取失败（`!success || n_kp<3`）或 PnP 失败均降级下一级。双目: `solveBcPnpChain` / `runTinyTargetPnP` 显式传 class1 3D 模板；单目: `MonoPnP` 冷启动（不用板系 seed）。成功后 `strategy_name="DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`、`LogEntry.fallback=true` |
+| **巨型 primary 短路** | `primary.width/height ≥ 画幅 × dual_roi.primary_span_ratio`(默认0.99) 且 Tier3 开关开启 | **跳过 class0 裁剪 + Tier1**（全图级 BC 提取与必败的 PnP 不再付费），Tier3 class1 链成为唯一路径；verbose 输出 `[DualRoi] primary spans frame ... skip Tier1` |
+| 角点数不足 | `total_use < 4` | **跳过 Tier1 解算**（不再早退整帧），落入 Tier3 |
+| Tier1 BC(class0) PnP 失败 | 双目: InitialPnP+GPnP(默认深度) 全失败; 单目: MonoPnP 全候选失败 | **class1 退化链**（若 `dual_roi.class1_fallback_enabled`） |
+| Tier1b BCJ 联合解算 | Tier1 成功且 class1 标注点 ≥4 时 | class0+class1 标注点 NN 匹配 (门限 `joint_match_gate_px`) 联合重解，失败保留 Tier1 位姿；成功后 `strategy_name="DualRoi_BCJ"` |
+| class1 链 (Tier3) | Tier1 失败 且 `dual_roi.class1_fallback_enabled` | **class1 退化链** `runDualRoiClass1Chain()`: secondary ROI (class1, 已按 `secondary_expand_pixels` 外扩) 上 `setUseClass1(true)` 后依次 BC → TT；提取失败（`!success || n_kp<3`）或 PnP 失败均降级下一级。双目: `solveBcPnpChain` / `runTinyTargetPnP` 显式传 class1 3D 模板；单目: `MonoPnP` 冷启动（不用板系 seed）。成功后 `strategy_name="DualRoi_C1BC"/"DualRoi_C1TT"`、`result.is_class1=true`、`LogEntry.fallback=true` |
 | class1 链仍失败 | BC、TT 均失败 | 整帧失败，终止 |
-| BC/AK 单边提取失败 | 一侧 `pts_left_match` 为空 | 不必然失败：另一侧点数 ≥4 时合并点集即为其子集，正常解算 |
 | BC 模板角度偏差 | `|matched_angle| > 0.5°` | 用 `reorderByGeometry` 重排 3D 点（修正，不算退化） |
 
-> BC-only 回退的额外收益：AK 点无立体匹配时右图点用左图坐标占位（视差=0），毒化 GPnP 交叉射线残差——BC-only 子集的右点来自 BC 真实右图角点，天然剔除该毒化源。
-> Tier3 的 3D 模板坐标系是 **class1 系**（class1 模板质心为原点），与 Tier1/2 的板系不同——依赖"class1 图案与靶标板同心"假设（与 State 5 语义一致）；`finalizePose` 会把 class1 系位姿写入帧间缓存，同心假设成立时对下帧 warm-start 无害。
+> Tier3 的 3D 模板坐标系是 **class1 系**（class1 模板质心为原点），与 Tier1 的板系不同——依赖"class1 图案与靶标板同心"假设（与 State 5 语义一致）；`finalizePose` 会把 class1 系位姿写入帧间缓存，同心假设成立时对下帧 warm-start 无害。
 > Tier3 依赖 class1 尺寸配置：`binary_corner.pixel_to_meter_scale_class1`（>0）与 `tiny_target.square_size_m_class1`。
-> 成功后标记：Tier2 `strategy_name="DualRoi_BC"`、Tier3 `"DualRoi_C1BC"/"DualRoi_C1TT"`，均 `LogEntry.fallback=true`；verbose 输出 `[BC-fallback]` / `[class1-chain:...]`。
-> 代码证据：Dual-ROI 走 **EARLY RETURN**（不调用 `configureStrategyChain()`，不进入 AKAZE→BC→TT fallback 循环）；Tier2 实现在 `processDualRoi` 第 9b 步 / `MonoTracker::processDualRoi` 第 8b 步，Tier3 在第 9c 步 / 第 8c 步（`runDualRoiClass1Chain()`）。
+> 成功后标记：Tier1 `strategy_name="DualRoi_BC"`、Tier1b `"DualRoi_BCJ"`、Tier3 `"DualRoi_C1BC"/"DualRoi_C1TT"`，后两者 `LogEntry.fallback=true`；verbose 输出 `[class1-chain:...]`。
+> 代码证据：Dual-ROI 走 **EARLY RETURN**（不调用 `configureStrategyChain()`，不进入 BC→TT fallback 循环）；Tier1b 在 `processDualRoi` 第 6b 步，Tier3 在第 9c 步（`runDualRoiClass1Chain()`）。
 
 #### 三、State 5 极近 — class1 回退重分类
 
@@ -1425,7 +1289,7 @@ class0 丢失 + class1 存在 + 面积 ≥ class1_min_area
 
 > YOLO 无检测 **不是退化**，不进入策略退化链。退化链仅在 "有 ROI 但特征提取失败" 时触发。
 
-#### 五、AKAZE 模板匹配 — 三阶段子退化
+#### 五、模板匹配 — 三阶段子退化（仅 pose_compare SIFT 使用）
 
 `TemplateMatcher::match()` 内部三阶段：
 
@@ -1434,6 +1298,8 @@ Stage 1 (Ratio Test, Lowe=0.75) ──<4 matches──→ 直接失败
 Stage 2 (Cross-Check)           ──<4 matches──→ 直接失败
 Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结果（不算完全失败）
 ```
+
+> 主定位链 (Steretracker) 已不再使用——原 AKAZE 描述子匹配已随 AKAZE 移除而删除。
 
 #### 六、BinaryCorner — 内部子退化
 
@@ -1452,29 +1318,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | 最大域选择 | BC 规则（触边排除 + 全贴边回退全局最大），多域时取面积最大 | 内部面积最大者胜出，其余丢弃；全贴边时回退全局最大 |
 | 策略链终点 | TT 失败 | **无 further fallback**，输出空位姿 |
 
-#### 八、光流追踪 — 点级退化（仅双目 AKAZE）
-
-| 退化 | 触发条件 | 行为 |
-|------|---------|------|
-| FB 校验失败 | `Forward-Backward error ≥ 1.0px` | 该点被丢弃 |
-| 全部点丢弃 | 所有点 FB 失败 | `num_valid = 0`，AKAZE 立体匹配失败 |
-
-#### 九、MAD 视差滤波 — 点集退化（仅双目 AKAZE）
-
-| 退化 | 触发条件 | 行为 |
-|------|---------|------|
-| 离群值剔除 | `|disp_i - median| > 3.0 × MAD` | 该点从 GPnP 输入中移除 |
-| 点集退化标记 | 大量点被剔除 | `MadFilterResult::degraded = true` |
-
-> 调用位置：`runAkazePnP()` 中 GPnP 优化前。
-
-#### 十、立体投影 — 点级退化
-
-| 退化 | 触发条件 | 行为 |
-|------|---------|------|
-| 深度异常 | `disparity ≤ 0` 或投影后超出图像边界 | `valid_mask[i] = false`，该点丢弃 |
-
-#### 十一、PnP 求解器退化
+#### 八、PnP 求解器退化
 
 | 求解器 | 退化步骤 | 触发条件 | 降级行为 |
 |--------|---------|---------|---------|
@@ -1489,18 +1333,18 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 | MonoPnPSolver | 4点 seeded 全候选未过相对容差 | clamp(5%×2D跨度,1,8)px 下 SeedITER/冷ITER/IPPE 均无效 | 回退旧平坦 8px seeded→冷解路径 (2026-09 棘轮冻结修复) |
 | TinyTarget solvePnP | 无 RANSAC，无 warm-start | ITERATIVE 失败 | 直接 `gpnp_success = false` |
 
-#### 十二、ROI 输入层退化
+#### 九、ROI 输入层退化
 
 | 情况 | 行为 |
 |------|------|
-| ROI 为 nullptr（`RoiGroup::valid() == false`） | `roi_area = 0` → 走 AKAZE 链（全图回退） |
+| ROI 为 nullptr（`RoiGroup::valid() == false`） | 帧失败（无有效左 ROI → 直接失败；全图回退已随 AKAZE 链移除） |
 | Debug 手动 ROI 无效（尺寸 ≤ 0） | 回退到 YOLO 检测（如果可用） |
 
-#### 十三、Dual-ROI BC 模板退化
+#### 十、Dual-ROI BC 模板退化
 
 | 退化 | 触发条件 | 行为 |
 |------|---------|------|
-| 模板未就绪 | 首次调用 `prepareDualBcTemplate()` | 现场从 AKAZE 模板灰度图提取 BC 角点（一次性） |
+| 模板未就绪 | 首次调用 `prepareDualBcTemplate()` | 现场从板模板灰度图提取 BC 角点（一次性） |
 | 灰度图二值化无连通域 | Otsu 后无有效区域 | `dual_bc_template_ready_` 为 true 但角点为空的边缘情况 |
 
 #### 退化全景图
@@ -1520,25 +1364,15 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
          │
    ┌──┬──┼──┬────┐
    │  │  │  │    │
-  St1 St2 St3  St4 (BC∥AK 独立路径)
+  St1 St2 St3  St4 (独立路径)
    │  │  │  │    │
-   TT BC AKAZE  BC∥AK ──合并失败→BC-only重解──仍失败→class1链(BC→TT)──仍失败→终止
+   TT BC  BC   BC(class0) ──Tier1失败→class1链(BC→TT)──仍失败→终止
    │  │  │  │    (Tier3: DualRoi_C1BC/DualRoi_C1TT, 受 class1_fallback_enabled 控制)
-   │  │  │  │    (primary 铺满画幅 ≥ primary_span_ratio → 短路 Tier1/2, 直接 class1 链)
+   │  │  │  │    (primary 铺满画幅 ≥ primary_span_ratio → 短路 Tier1, 直接 class1 链)
    │  │  │
-   │  │  ├─RatioTest<4→失败
-   │  │  ├─CrossCheck<4→失败
-   │  │  ├─Homography空→回退Stage2
-   │  │  ├─光流FB≥1px→丢弃点
-   │  │  ├─MAD滤波→剔除离群点
-   │  │  └─立体投影异常→丢弃点
-   │  │
-   │  ├─连通域≤1→保留原图
-   │  ├─旋转回退→INTER_NEAREST
-   │  └─approxPolyDP→best_diff
+   │  └──┴──(BC 子退化: 连通域≤1→保留原图; 旋转回退→INTER_NEAREST; approxPolyDP→best_diff)
    │
-   ├─连通域<200→跳过
-   └─评分无合格→失败(终止)
+   └──(TT 子退化: 连通域<200→跳过; 评分无合格→失败[终止])
          │
     ──→ PnP 求解器层退化 (RANSAC/LM/校验)
 ```
@@ -1547,11 +1381,11 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 | 特征 | 说明 |
 |------|------|
-| **退化方向** | 始终单向：AKAZE → BC → TT，不可逆 |
-| **Dual-ROI 隔离** | State 4 不参与 AKAZE→BC→TT 链；有自身三级链：合并解算 → BC-only 重解（`DualRoi_BC`）→ class1 链 BC→TT（`DualRoi_C1BC/C1TT`），均失败才终止；primary 铺满画幅（≥ `primary_span_ratio`）时短路 Tier1/2 直接进 class1 链 |
+| **退化方向** | 始终单向：BC → TT，不可逆 |
+| **Dual-ROI 隔离** | State 4 不参与 BC→TT 链；有自身三级链：Tier1 BC(class0) → Tier1b BCJ 联合 → class1 链 BC→TT（`DualRoi_C1BC/C1TT`），均失败才终止；primary 铺满画幅（≥ `primary_span_ratio`）时短路 Tier1 直接进 class1 链 |
 | **YOLO vs 特征退化分离** | YOLO 无检测 = skip 帧（不触发策略链）；特征提取失败 = 策略退化；两者互不触发 |
-| **单目退化面窄** | 单目无光流、无立体投影、无 MAD、无 warm-start — 比双目退化面缩窄约 5 类 |
-| **子退化不跨模块** | BC 内部旋转回退不影响策略链选择；AKAZE 匹配阶段回退不改变策略 |
+| **单目退化面窄** | 单目无立体、无 warm-start — 比双目退化面缩窄 |
+| **子退化不跨模块** | BC 内部旋转回退不影响策略链选择 |
 | **终止即终止** | TT 失败后无进一步 fallback，输出空位姿 |
 | **永不成环** | 任何退化路径都不会形成循环——退化图是有向无环图 (DAG) |
 
@@ -1579,24 +1413,20 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 ### 10.3 Tracker 核心
 
-| 文件 | 关键方法 | 行号参考 |
-|------|---------|---------|
-| `include/tracker/TrackerBase.hpp` | initExtractors(), configureStrategyChain(), validateRoi(), finalizePose() | — |
-| `src/tracker/TrackerBase.cpp` | 上述方法的实现 | — |
-| `include/tracker/StereoTracker.hpp` | process(), processMono(), processDualRoi(), processDualRoiMono(), dispatchPnP() | — |
-| `src/tracker/StereoTracker.cpp` | **全部核心逻辑** (~2000行) | ctor:~30-90, configureStrategyChain:94-122, process:~480, processDualRoi:~1300, processDualRoiMono:1513-1771, processMono:1779-1954, prepareDualBcTemplate:954-1038, dispatchPnP:~200, runAkazePnP:~230, runBinaryCornerPnP:~350, runTinyTargetPnP:~430 |
+| 文件 | 关键方法 |
+|------|---------|
+| `include/tracker/TrackerBase.hpp` | initExtractors(), configureStrategyChain(), validateRoi(), finalizePose(), 档位状态机 (nominateBand/applyBandChain/resolveLockedStrategy) |
+| `src/tracker/TrackerBase.cpp` | 上述方法的实现 |
+| `include/tracker/StereoTracker.hpp` + `src/tracker/StereoTracker.cpp` | process(), processMono(), processDualRoi(), prepareDualBcTemplate(), runDualRoiClass1Chain(), dispatchPnP(), runBinaryCornerPnP(), solveBcPnpChain(), runTinyTargetPnP() |
+| `include/tracker/MonoTracker.hpp` + `src/tracker/MonoTracker.cpp` | process(), processDualRoi(), prepareDualBcTemplate(), runDualRoiClass1Chain() (单目链) |
 
 ### 10.4 特征提取
 
 | 文件 | 关键方法 |
 |------|---------|
 | `include/feature/FeatureExtractor.hpp` | 基类, StrategyType 枚举 |
-| `include/feature/AkazeExtractor.hpp` + `.cpp` | extract(), extractTemplate() — 纯AKAZE检测 |
-| `include/feature/AkazeGpnpExtractor.hpp` + `.cpp` | extract() (光流+投影+匹配), extractMono(), setTemplateData() |
 | `include/feature/BinaryCornerExtractor.hpp` + `.cpp` | extract(), extractMono(), extractFromBinary(), extractCornersFromContour(), extractLargestContour(), keepLargestRegion(), fillHoles(), smoothBoundary(), findBestMatch(), matchCorners(), reorderByGeometry() |
 | `include/feature/TinyTargetExtractor.hpp` + `.cpp` | extract(), extractMono(), extract4Corners(), matchTemplate(), selectBestComponent(), refineCorners(), orderPoints() |
-| `include/feature/OpticalFlowTracker.hpp` + `.cpp` | track() — LK光流+FB校验 |
-| `include/feature/MadDisparityFilter.hpp` + `.cpp` | filter() — MAD离群值剔除 |
 | `include/feature/AprilTagExtractor.hpp` + `.cpp` | **AprilTag Python sidecar 客户端** (pose_compare2 专用): fork/execvp+pipe 子进程管理、握手、请求/回包协议、位姿有效性校验 (见 §10.15) |
 | `include/feature/SiftKeypointExtractor.hpp` + `.cpp` | SIFT 特征提取 (pose_compare 专用) |
 
@@ -1610,9 +1440,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 ### 10.6 立体视觉
 
-| 文件 | 关键方法 |
-|------|---------|
-| `include/stereo/StereoProjector.hpp` + `.cpp` | project() — 视差→深度→右图重投影 |
+> 已移除：`StereoProjector` (视差→深度→右图重投影) 随 AKAZE 档一并删除。双目 GPnP 的交叉射线残差 (见 §6.2) 仍保留，但深度估算不再依赖独立的立体投影模块。
 
 ### 10.7 模板匹配
 
@@ -1637,9 +1465,7 @@ Stage 3 (Homography RANSAC, 5.0px) ──H为空──→ 回退到 Stage 2 结�
 
 ### 10.9 可视化
 
-| 文件 | 关键方法 |
-|------|---------|
-| `include/visualization/Visualizer.hpp` + `.cpp` | 多面板调试渲染 (Debug模式) |
+> 已移除：`Visualizer` (Debug 多面板调试渲染) 已删除；可视化改为 tracker 内联绘制 (坐标轴叠加 / 角点标注)，不再有独立模块。
 
 ### 10.10 工具
 
@@ -1759,18 +1585,15 @@ docker exec st_build bash -c "cd /work && ./build-pose/pose_compare2 config/comp
 
 | 常量 | 值 | 位置 | 说明 |
 |------|-----|------|------|
-| `tiny_max_area` | 800 | config/代码 | State 1/2 分界 |
-| `akaze_min_area` | 40001 | config/代码 | State 2/3 分界 |
+| `tiny_max_area` | 800 | config/代码 | BC/TT 档位分界 |
 | `dual_trigger_area` | 490000 | config/代码 | State 3/4 分界 (700×700) |
-| `primary_span_ratio` | 0.99 | strategies.dual_roi | 巨型 primary 短路阈值: 边长覆盖画幅 ≥ 该比例 → 跳过 Tier1/2 直接 class1 链 (≤0 关闭) |
+| `primary_span_ratio` | 0.99 | strategies.dual_roi | 巨型 primary 短路阈值: 边长覆盖画幅 ≥ 该比例 → 跳过 Tier1 直接 class1 链 (≤0 关闭) |
 | 最低特征点数 (PnP) | 4 (单目), 3 (双目) | 代码 | — |
-| Lowe's ratio | 0.75 | TemplateMatcher | AKAZE 匹配 |
-| Homography 阈值 | 5.0 px | TemplateMatcher | RANSAC 内点 |
-| LK FB 误差阈值 | 1.0 px | OpticalFlowTracker | 光流验证 |
-| MAD σ 系数 | 3.0 | MadDisparityFilter | 视差滤波 |
+| Lowe's ratio | 0.75 | TemplateMatcher | SIFT 匹配 (pose_compare) |
+| Homography 阈值 | 5.0 px | TemplateMatcher | RANSAC 内点 (pose_compare SIFT) |
 | 超分倍数 (TT) | 4.0 | TinyTarget | 小目标放大 |
-| Template target_size (BC) | 100 | BinaryCorner | 标准化尺寸 |
-| Template target_size (TT) | 50 | TinyTarget | 标准化尺寸 |
+| Template target_size (BC) | 100 | BinaryCorner | 标准化尺寸 (config: target_width/height) |
+| Template target_size (TT) | 50 | TinyTarget | 标准化尺寸 (config: target_width/height) |
 | RANSAC 迭代 (InitialPnP) | 300 | InitialPnPSolver | — |
 | RANSAC 置信度 | 0.99 | PnP Solvers | — |
 | RANSAC 重投影阈值 | 8.0 px | PnP Solvers | — |
@@ -1792,15 +1615,15 @@ docker exec st_build bash -c "cd /work && ./build-pose/pose_compare2 config/comp
 
 ### B.1 调整面积阈值
 
-修改 `config/tracker_config.json` 中 `strategies.akaze_min_area`、`strategies.tiny_max_area`、`strategies.dual_roi.trigger_area`。
+修改 `config/tracker_config.json` 中 `strategies.tiny_max_area`、`strategies.dual_trigger_area`。
 
 ### B.2 添加新的特征提取器
 
 1. 继承 `FeatureExtractor`，实现 `extract()` 和 `extractMono()`
 2. 在 `StrategyType` 枚举添加新类型
-3. 在 `StereoTracker` 构造函数中创建实例
-4. 修改 `configureStrategyChain()` 添加策略分发逻辑
-5. 修改 `dispatchPnP()` 添加 PnP 路由
+3. 在 `TrackerBase::initExtractors()` 中创建实例
+4. 修改 `configureStrategyChain()` (TrackerBase) 添加策略分发逻辑
+5. 修改 `dispatchPnP()` (StereoTracker) 添加 PnP 路由
 
 ### B.3 添加实时摄像头支持
 

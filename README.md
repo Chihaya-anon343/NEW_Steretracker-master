@@ -51,7 +51,7 @@
                            ▼              ▼
                     ┌──────────────────────┐  ┌──────────────────────┐
                     │  MonoTracker::process│  │StereoTracker::process│
-                    │  (EPnP, 无立体)      │  │(GPnP + 光流 + MAD)   │
+                    │  (EPnP, 无立体)      │  │(GPnP, 双目)          │
                     └──────────┬───────────┘  └──────────┬───────────┘
                                │                         │
                                └──────┬──────────────────┘
@@ -59,7 +59,7 @@
                     ┌──────────────────────────────────────┐
                     │ 五状态分级 (双眼共享判定)             │
                     │ State 1远 → 2中 → 3中近 → 4近 → 5极近 │
-                    │ 退化链: AKAZE → BC → TinyTarget 终止  │
+                    │ 退化链: BinaryCorner → TinyTarget 终止 │
                     │ Dual-ROI 独立路径 / 无检测 skip       │
                     └──────────────┬───────────────────────┘
                                    │
@@ -240,14 +240,16 @@ struct SensorPacket {
    按面积分级      State 5 极近     SKIP 帧
         │         (class1回退)
         │
-  ┌─────┼──────────┬──────────┐
-  │     │          │          │
- ≤800  801~40000  40001~      ≥490000
-  │     │       <490000       + 有 class1
-  │     │          │          │
-State1  State2   State3     State4
-  远      中      中近        近
-TinyT.  BC      AKAZE     Dual-ROI
+  ┌─────┼──────────────┐
+  │     │              │
+ ≤tiny_max   >tiny_max  ≥dual_trigger
+  │          (且<dual_  + 有 class1
+  │          trigger,    │
+  │          或≥dual_    │
+  │          trigger无c1)│
+State1      State2/3     State4
+  远         中/中近       近
+TinyT.      BC         Dual-ROI
 ```
 
 ### 4.3 五状态总览表
@@ -255,12 +257,12 @@ TinyT.  BC      AKAZE     Dual-ROI
 | State | 名称 | 条件 | 策略 | 双目 Pose | 单目 Pose |
 |-------|------|------|------|-----------|-----------|
 | **1 远** | Distant | 有 class0, 面积 ≤ tiny_max | TinyTarget | `cv::solvePnP(ITERATIVE)` | `MonoPnP(EPnP+IPPE)` |
-| **2 中** | Medium | 有 class0, 801~40000 | BinaryCorner | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
-| **3 中近** | Medium-Close | 有 class0, 40001~489999 或 ≥490000 无 class1 | AKAZE 单ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
-| **4 近** | Close | 有 class0 + class1, ≥490000 | Dual-ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
+| **2 中** | Medium | 有 class0, tiny_max < 面积 < dual_trigger (或 ≥dual_trigger 无 class1) | BinaryCorner | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
+| **3 中近** | Medium-Close | 同 State 2（AKAZE 档已移除） | BinaryCorner | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
+| **4 近** | Close | 有 class0 + class1, ≥dual_trigger | Dual-ROI | `InitialPnP→GPnP(warm)` | `MonoPnP(EPnP+IPPE)` |
 | **5 极近** | Very-Close | 无 class0 + 有 class1, ≥class1_min_area | 按面积重分类 | 按重分类 | 按重分类 |
 
-> ⚠️ **阈值说明**: `tiny_max_area` / `akaze_min_area` / `dual_trigger_area` 为早期测试遗留值，需在实际场景中重新标定。当前仅起占位作用，不影响系统架构。
+> ⚠️ **阈值说明**: `tiny_max_area` / `dual_trigger_area` 为早期测试遗留值，需在实际场景中重新标定。当前仅起占位作用，不影响系统架构。单 ROI 策略链已折叠为两带（BinaryCorner → TinyTarget），State 2 与 State 3 不再区分（原 AKAZE 档已移除）。
 
 ### 4.4 单 ROI 生成
 
@@ -274,7 +276,7 @@ TinyT.  BC      AKAZE     Dual-ROI
 **触发条件**: class 0 面积 > `dual_trigger_area` (占位值: 490000 px²)，且存在 class 1
 
 - **primary (class 0)**: 目标整体边缘 → BinaryCorner 提取
-- **secondary (class 1)**: 目标中心纹理 → AKAZE 提取
+- **secondary (class 1)**: 目标中心 → class1 联合解算（人工标注点 NN 匹配，`dual_roi.class1_points_path`；空则停用 Tier1b 联合解算）
 
 不满足时降级为单 ROI (class 0)。
 
@@ -291,10 +293,9 @@ TinyT.  BC      AKAZE     Dual-ROI
 | `close_range.class1_min_area` | class 1 最小面积阈值 |
 | `close_range.roi_expand_ratio` | ROI 外扩比例 |
 | `close_range.min_expand_pixels` | 最小外扩像素 |
-| `close_range.akaze_min_area` | class1-only 时的 AKAZE 策略阈值 (0=使用默认) |
 | `close_range.tiny_max_area` | class1-only 时的 TinyTarget 策略阈值 (0=使用默认) |
 
-> `close_range.akaze_min_area` 和 `close_range.tiny_max_area` 允许 class1-only 场景使用与 class0 不同的面积阈值来选择策略链。
+> `close_range.tiny_max_area` 允许 class1-only 场景使用与 class0 不同的面积阈值来选择策略链。
 
 ---
 
@@ -311,7 +312,6 @@ TinyT.  BC      AKAZE     Dual-ROI
 | **提取方法** | `extract()` (左右双路) | `extractMono()` (仅左图) |
 | **流程** | Otsu→模板匹配(IoU)→超分(×4)→连通域评分→minAreaRect→角度对齐 | 同双目但仅左图 |
 | **左右匹配** | 模板匹配 L↔R | — |
-| **视差滤波** | — | — |
 | **Pose** | `cv::solvePnP(ITERATIVE)` | `MonoPnPSolver(EPnP+IPPE)` |
 | **Warm-start** | ❌ | ❌ |
 | **退化** | 终止(无后备) | 终止(无后备) |
@@ -342,22 +342,11 @@ Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Ots
 1. 若 `use_initial_pnp=true`，运行 `InitialPnPSolver` (RANSAC 300 iter + ITERATIVE 精化)，成功 → GPNP warm-start
 2. 失败或 `use_initial_pnp=false` → 视差估算深度 `depth = f·b/median_disp`，clamp [50, 5000]
 
-### 5.3 State 3 中近 — AKAZE_GPNP
+### 5.3 State 3 中近 — BinaryCorner
 
-**适用场景**: 大尺寸/纹理丰富目标
+> AKAZE_GPNP 档已移除（2026-10）。原 State 2 / State 3 的面积分界（`akaze_min_area`）随之删除，两者现统一由 BinaryCorner 处理，单 ROI 策略链折叠为两带（BinaryCorner → TinyTarget）。State 3 与 State 2 使用完全相同的提取与解算流程（见 §5.2）。
 
-| 维度 | 双目 | 单目 |
-|------|------|------|
-| **提取方法** | `extract()` (resize×scale → AKAZE → 光流 → 投影 → 模板匹配) | `extractMono()` (resize×scale → AKAZE → 模板匹配) |
-| **光流** | ✅ LK L→R + FB校验(<1.0px) + MAD视差滤波 | ❌ |
-| **立体投影** | ✅ 视差→深度→右图重投影 | ❌ |
-| **MAD滤波** | ✅ (±3σ) | ❌ |
-| **模板匹配** | Ratio Test(0.75)→Cross-Check→Homography RANSAC(5.0px) | 同双目 |
-| **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP+IPPE)` |
-| **Warm-start** | ✅ 帧间缓存 | ❌ |
-| **退化** | → BinaryCorner → TinyTarget | → BinaryCorner → TinyTarget |
-
-> **State 3 中 class 1 的处理**: 即使 YOLO 同时检测到 class 0 和 class 1，若面积未达到 `dual_trigger_area`，仍走 AKAZE 单 ROI (class 0)，忽略 class 1。只有面积 ≥ `dual_trigger_area` 且有 class 1 时，才进入 State 4。
+> **State 3 中 class 1 的处理**: 即使 YOLO 同时检测到 class 0 和 class 1，若面积未达到 `dual_trigger_area`，仍走 BinaryCorner 单 ROI (class 0)，忽略 class 1。只有面积 ≥ `dual_trigger_area` 且有 class 1 时，才进入 State 4。
 
 ### 5.4 State 4 近 — Dual-ROI 混合
 
@@ -365,19 +354,20 @@ Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Ots
 
 | 维度 | 双目 | 单目 |
 |------|------|------|
-| **提取方法** | BC `extract()` : AK `extract()` 并行 | BC `extractMono()` : AK `extractMono()` 并行 |
-| **左右匹配** | BC: 模板匹配 L↔R / AK: LK光流 L→R | — |
-| **MAD滤波** | AK 侧 | — |
-| **合并** | BC角点 + AK关键点 → 统一 2D/3D 对应 | BC角点 + AK关键点 → 统一 2D/3D |
+| **提取方法** | BC `extract()` (class0) + class1 联合解算 | BC `extractMono()` (class0) + class1 联合解算 |
+| **左右匹配** | BC: 模板匹配 L↔R | — |
+| **合并** | BC角点(class0) + class1 标注点(NN匹配) → 统一 2D/3D | 同双目 |
 | **Pose** | `InitialPnP→GPnP(warm-start)` | `MonoPnP(EPnP+IPPE)` |
 | **Warm-start** | ✅ 帧间缓存 | ❌ |
-| **退化** | 独立路径，不参与退化链 | 独立路径，不参与退化链 |
+| **退化** | 三级退化链（合并 → BC-only → class1 链） | 三级退化链（合并 → BC-only → class1 链） |
 | **可视化** | 5 面板 | 3 面板 |
 
 **合并阶段的 3D 对应**:
 
 - **BC 贡献**: `pts_left_match[i]` ↔ `dual_bc_tmpl_pts3d_[i]`
-- **AK 贡献**: `pts_left_match[i]` ↔ `ak_pts3d[trainIdx]`
+- **class1 贡献**: 人工标注 class1 点 (Tier1b 联合解算, 经 `joint_match_gate_px` NN 门限匹配) ↔ `dual_c1_tmpl_pts3d_[i]`
+
+> AKAZE 档移除后，原「BC + AK 关键点」合并改为「BC(class0) + class1 人工标注点」联合解算（Tier1b），class1 标注点来源 `dual_roi.class1_points_path`（空则 Tier1b 停用）。
 
 ### 5.5 State 5 极近 — CloseRange 回退
 
@@ -388,7 +378,7 @@ Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Ots
 当主策略特征提取失败时，自动退化到低一级精度：
 
 ```
-AKAZE_GPNP  ──失败──→  BinaryCorner  ──失败──→  TinyTarget  (终止)
+BinaryCorner  ──失败──→  TinyTarget  (终止)
 ```
 
 | 说明 |
@@ -514,13 +504,11 @@ RANSAC PnP (300 iter, 8.0px → 0.99 confidence) → ITERATIVE 精化。为 GPnP
 
 | 策略 | 面板数 | 内容 |
 |------|--------|------|
-| AKAZE (双目) | 4 | 特征/立体/模板/坐标轴 |
 | BinaryCorner (双目) | 5 | 二值/轴系/模板/立体/重投影 |
 | TinyTarget (双目) | 标准 | solvePnP 输出 |
 | Dual-ROI (双目) | 5 | 双 ROI 合并 |
 | BinaryCorner (单目) | 6 | 二值/直立/轴系/模板/重投影 + overview |
 | TinyTarget (单目) | 3 | 轴系/重投影 + overview |
-| AKAZE (单目) | 3 | 轴系/匹配点 + overview |
 
 > 单目 BinaryCorner 模板面板（`mono_bc_template`）中，左图特征点与模板角点**按索引同色渲染**（第 i 个点在两侧同色），便于人工核对匹配对应关系；其余角点类面板（`mono_bc_binary`/`mono_bc_axes`/`mono_bc_reproj`）同样按索引着色。
 
@@ -533,8 +521,8 @@ RANSAC PnP (300 iter, 8.0px → 0.99 confidence) → ITERATIVE 精化。为 GPnP
 | 结构体 | 用途 |
 |--------|------|
 | `StereoCameraParams` | 相机内外参 (K, R_rl, t_rl, focal_length, baseline) |
-| `TrackerConfig` | 跟踪器配置 (面积阈值、LK参数、双ROI缩放等) |
-| `PipelineResult` | 单帧输出: 特征/光流/投影/匹配/位姿/计时/ROI偏移 |
+| `TrackerConfig` | 跟踪器配置 (面积阈值、模板尺寸、双ROI参数、时序连贯性) |
+| `PipelineResult` | 单帧输出: 特征点/模板匹配/位姿/计时/ROI偏移 |
 | `RoiRect` | ROI 矩形 (x, y, width, height) |
 | `RoiGroup` | 双ROI组 (primary + secondary + is_dual 标志) |
 | `PoseEstimate` | 位姿估计 (R, t, success, num_points) |
@@ -560,15 +548,13 @@ TrackerBase
 │   └── process() → mono_pnp_(MonoPnPSolver)
 │
 └── StereoTracker (默认)
-    └── process() → gpnp_solver_ + initial_pnp_ + mad_filter_
+    └── process() → gpnp_solver_ + initial_pnp_ + mono_pnp_
 ```
 
 | 维度 | 双目 | 单目 |
 |------|------|------|
 | 输入图像 | 左图 + 右图 | 仅左图 |
-| 光流追踪 | ✅ LK L→R + FB | ❌ |
-| 立体投影 | ✅ 视差→深度 | ❌ |
-| MAD 滤波 | ✅ | ❌ |
+| 立体匹配 | ✅ 左右角点/标注点对应 | ❌ |
 | Pose 求解器 | GPnP + InitialPnP | MonoPnP (EPnP+IPPE) |
 | Warm-start | ✅ | ❌ |
 | 五状态判定 | 相同 | 相同（共享 RoiGenerator） |
@@ -606,14 +592,12 @@ TrackerBase
 | `input_system.imu.type` | `"custom"` | `"simulated"` = 合成 IMU 源 (rate_hz/sigma_acc/sigma_gyro/bias) |
 | `input_system.altimeter.type` | `"can"` | `"simulated"` = 合成雷达源 (rate_hz/noise_m/inject_jump_every_s) |
 | `strategies.tiny_max_area` | 800 | State 1/2 分界 (占位值) |
-| `strategies.akaze_min_area` | 40001 | State 2/3 分界 (占位值) |
 | `strategies.dual_trigger_area` | 490000 | State 3/4 分界 (占位值) |
 | `strategies.close_range.enabled` | — | 启用 State 5 class1 回退 |
 | `strategies.close_range.class1_min_area` | — | class 1 最小面积 |
-| `strategies.close_range.akaze_min_area` | 0 | class1-only 专用 AKAZE 阈值 |
 | `strategies.close_range.tiny_max_area` | 0 | class1-only 专用 TinyTarget 阈值 |
 
-> ⚠️ 三个面积阈值为占位值，需在实际场景中标定后修正。
+> ⚠️ 面积阈值为占位值，需在实际场景中标定后修正。
 
 ### 模式对照速查表
 
@@ -634,7 +618,7 @@ TrackerBase
 
 | 函数 | 用途 | 校验 |
 |------|------|------|
-| `makeTrackerConfig(...)` | 构造跟踪器配置 | `0<scale≤1`, `gpnp≥3`, 面积阈值>0 |
+| `makeTrackerConfig(...)` | 构造跟踪器配置 | `gpnp≥3`, 模板尺寸>0, `tiny_max_area>0` |
 | `makeYoloConfig(...)` | 构造 YOLO 配置 | 路径非空, conf∈(0,1] |
 | `makeStereoCameraParams(K,R,t)` | 构造相机参数 | K标准内参, R det=1.0 |
 
@@ -655,7 +639,7 @@ TrackerBase
 
 | 库 | 用途 |
 |----|------|
-| OpenCV 4.x | AKAZE、光流、PnP、图像处理 |
+| OpenCV 4.x | 图像处理、PnP、模板匹配 |
 | Eigen 3.x | 线性代数、GPNP LM 优化 |
 | ONNX Runtime | YOLO 模型推理 |
 
@@ -737,14 +721,12 @@ Steretracker/
 ├── include/
 │   ├── common/                 # Types.hpp, Config.hpp, GeometryUtils.hpp
 │   ├── detection/              # YoloDetector, YoloDecode, YoloRoiProvider, RoiGenerator
-│   ├── feature/                # FeatureExtractor, AkazeGpnp, BinaryCorner, TinyTarget
+│   ├── feature/                # FeatureExtractor, BinaryCorner, TinyTarget
 │   ├── fusion/                 # EskfFusionManager (ESKF 多源融合适配层)
 │   ├── input/                  # InputProvider, IStereoImageSource, CameraSource, RingBuffer, SimulatedSensors
-│   ├── matching/               # TemplateMatcher
+│   ├── matching/               # TemplateMatcher (pose_compare SIFT 匹配用)
 │   ├── pose/                   # InitialPnPSolver, GPnPSolver, MonoPnPSolver
-│   ├── stereo/                 # StereoProjector
 │   ├── tracker/                # TrackerBase, MonoTracker, StereoTracker
-│   ├── visualization/          # Visualizer
 │   └── utils/                  # PoseUtils
 │
 ├── eskf/                       # ESKF 多源融合库 (header-only, 第三方)
