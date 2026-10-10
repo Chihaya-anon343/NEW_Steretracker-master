@@ -1,14 +1,14 @@
 # Class 0 Feature Points (manual annotation)
-# Image: data/clean_target.png
+# Image: data/clean_target2.png
 # Format: Corner_Index: X, Y
-# Image Size: 810x828
-Corner_0: 302.00, 131.00
-Corner_1: 683.00, 132.00
-Corner_2: 683.00, 285.00
-Corner_3: 501.00, 283.00
-Corner_4: 501.00, 544.00
-Corner_5: 683.00, 543.00
-Corner_6: 683.00, 697.00
-Corner_7: 119.00, 695.00
-Corner_8: 120.00, 544.00
-Corner_9: 302.00, 543.00
+# Image Size: 753x756
+Corner_0: 273.30, 94.13
+Corner_1: 272.65, 507.07
+Corner_2: 89.26, 507.26
+Corner_3: 89.79, 660.57
+Corner_4: 654.04, 660.07
+Corner_5: 653.83, 507.65
+Corner_6: 472.29, 507.32
+Corner_7: 472.14, 247.96
+Corner_8: 654.70, 247.97
+Corner_9: 653.85, 95.29

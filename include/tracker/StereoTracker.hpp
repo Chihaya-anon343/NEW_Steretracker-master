@@ -116,6 +116,8 @@ private:
     bool dual_bc_template_ready_{false};
     std::vector<cv::Point2f> dual_bc_tmpl_corners_;
     std::vector<Eigen::Vector3d> dual_bc_tmpl_pts3d_;
+    std::vector<cv::Point2f> dual_c1_tmpl_corners_;    ///< class1 人工标注模板角点 (模板像素坐标)
+    std::vector<Eigen::Vector3d> dual_c1_tmpl_pts3d_;  ///< class1 标注点板系 3D (与 corners 同序)
     InitialPnPSolver initial_pnp_;
     GPnPSolver gpnp_solver_;
     MadDisparityFilter mad_filter_;

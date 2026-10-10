@@ -82,6 +82,9 @@ struct TrackerConfig {
     bool dual_roi_class1_fallback{true}; ///< 双 ROI 第 3 级退化: 合并与 BC-only 均失败后在 class1 ROI 上跑 BC→TT 链
     double dual_roi_primary_span_ratio{0.99}; ///< 巨型 primary 短路: primary 边长覆盖画幅 ≥ 该比例 → 目标外角点出视野, 跳过 Tier1/2 直接 class1 链 (<=0 关闭)
     bool dual_roi_tier1_only{false};     ///< Dual-ROI 消融: true = 仅 Tier1 (屏蔽 Tier2/Tier3/巨型 primary 短路)
+    std::string dual_roi_class0_points_path; ///< Dual-ROI class0 人工标注点文件 (空=approxPolyDP 自动推导)
+    std::string dual_roi_class1_points_path; ///< Dual-ROI class1 人工标注点文件 (空=Tier1b 联合解算停用)
+    double dual_roi_joint_match_gate_px{12.0}; ///< Tier1b NN 匹配门限 (px, 投影预测点↔提取角点)
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
 };
 

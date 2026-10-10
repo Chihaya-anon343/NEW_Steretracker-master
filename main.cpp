@@ -161,12 +161,27 @@ int main(int argc, char** argv) {
     bool dual_class1_fallback = true;
     double dual_primary_span_ratio = 0.99;
     bool dual_tier1_only = false;
+    std::string dual_c0_points_path;
+    std::string dual_c1_points_path;
+    double dual_joint_gate_px = 12.0;
     cv::FileNode dual_node = fs["strategies"]["dual_roi"];
     if (!dual_node.empty()) {
         dual_expand = dual_node["secondary_expand_pixels"];
         {
             cv::FileNode c1fb = dual_node["class1_fallback_enabled"];
             if (!c1fb.empty()) dual_class1_fallback = static_cast<int>(c1fb) != 0;
+        }
+        {
+            cv::FileNode p0 = dual_node["class0_points_path"];
+            if (!p0.empty()) dual_c0_points_path = static_cast<std::string>(p0);
+        }
+        {
+            cv::FileNode p1 = dual_node["class1_points_path"];
+            if (!p1.empty()) dual_c1_points_path = static_cast<std::string>(p1);
+        }
+        {
+            cv::FileNode gate = dual_node["joint_match_gate_px"];
+            if (!gate.empty()) dual_joint_gate_px = static_cast<double>(gate);
         }
         {
             cv::FileNode span = dual_node["primary_span_ratio"];
@@ -479,6 +494,9 @@ int main(int argc, char** argv) {
     tracker_cfg.dual_roi_class1_fallback = dual_class1_fallback;
     tracker_cfg.dual_roi_primary_span_ratio = dual_primary_span_ratio;
     tracker_cfg.dual_roi_tier1_only = dual_tier1_only;
+    tracker_cfg.dual_roi_class0_points_path = dual_c0_points_path;
+    tracker_cfg.dual_roi_class1_points_path = dual_c1_points_path;
+    tracker_cfg.dual_roi_joint_match_gate_px = dual_joint_gate_px;
     tracker_cfg.temporal = temporal_cfg;
 
     try {
@@ -670,8 +688,10 @@ int main(int argc, char** argv) {
                     for (double d : result.disparity) abs_disp.push_back(std::abs(d));
                     std::cout << "  视差: " << computeMedian(std::move(abs_disp)) << "px";
                 }
+                // 耗时口径: 提取+解算两相之和 (与日志文件 extract_ms/pnp_ms 列一致,
+                // 跨退化链累加; 单/Dual 路径同口径可比)
                 std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
-                          << "  耗时: " << result.total_time_ms() << "ms";
+                          << "  耗时: " << (result.extract_ms + result.pnp_ms) << "ms";
                 if (result.success) {
                     std::cout << "  PnP t(mm)=[" << result.t.x() << ", "
                               << result.t.y() << ", " << result.t.z() << "]"

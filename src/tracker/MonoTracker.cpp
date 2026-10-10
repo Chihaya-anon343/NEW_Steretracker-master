@@ -9,6 +9,7 @@
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
+#include "utils/PoseUtils.hpp"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -63,64 +64,102 @@ void MonoTracker::prepareDualBcTemplate() {
 
     const cv::Mat& tmpl_img = akaze_extractor_->templateData().gray_image;
     if (tmpl_img.empty()) {
-        std::cerr << "[DualRoi] AKAZE template image empty, cannot prepare BC template" << "\n";
+        std::cerr << "[DualRoi] board template image empty, cannot prepare BC template" << "\n";
         dual_bc_template_ready_ = true;
         return;
     }
 
     int tw = tmpl_img.cols, th = tmpl_img.rows;
-
-    cv::Mat binary;
-    cv::threshold(tmpl_img, binary, 0, 255, cv::THRESH_OTSU | cv::THRESH_BINARY);
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    if (contours.empty()) {
-        std::cerr << "[DualRoi] No contours found in AKAZE template binary" << "\n";
-        dual_bc_template_ready_ = true;
-        return;
-    }
-
-    auto* largest = &contours[0];
-    for (auto& c : contours) {
-        if (cv::contourArea(c) > cv::contourArea(*largest)) largest = &c;
-    }
-
-    int target_n = binary_extractor_->lastCornersBeforeReorder().empty()
-        ? 10
-        : static_cast<int>(binary_extractor_->lastCornersBeforeReorder().size());
-    if (target_n < 3) target_n = 10;
-
-    double peri = cv::arcLength(*largest, true);
-    double lo = 0.0, hi = peri * 0.1;
-    std::vector<cv::Point2f> corners;
-    for (int iter = 0; iter < 25; ++iter) {
-        double mid = (lo + hi) * 0.5;
-        std::vector<cv::Point2f> approx;
-        cv::approxPolyDP(*largest, approx, mid, true);
-        int sz = static_cast<int>(approx.size());
-        if (sz < target_n) hi = mid;
-        else if (sz > target_n) lo = mid;
-        else { corners = approx; break; }
-    }
-    if (corners.size() != static_cast<size_t>(target_n)) {
-        double eps = (lo + hi) * 0.5;
-        cv::approxPolyDP(*largest, corners, eps, true);
-    }
-
-    if (corners.empty()) {
-        std::cerr << "[DualRoi] Failed to extract corners from AKAZE template" << "\n";
-        dual_bc_template_ready_ = true;
-        return;
-    }
-
-    cv::Point2f center(tw / 2.0f, th / 2.0f);
-    auto order = BinaryCornerExtractor::reorderByGeometry(corners, center, 0.0, -1.0);
-    dual_bc_tmpl_corners_.reserve(order.size());
-    for (int idx : order) dual_bc_tmpl_corners_.push_back(corners[idx]);
-
     double real_w = config_.template_real_width_mm;
     double real_h = config_.template_real_height_mm;
+
+    // ---- class0: 人工标注优先 (规范序: 中心=模板图中心, 与运行时 BC 约定一致) ----
+    bool c0_from_anno = false;
+    if (!config_.dual_roi_class0_points_path.empty()) {
+        auto anno = readCorners(config_.dual_roi_class0_points_path);
+        if (anno.size() >= 4) {
+            cv::Point2f center(tw / 2.0f, th / 2.0f);
+            auto order = BinaryCornerExtractor::reorderByGeometry(anno, center, 0.0, -1.0);
+            dual_bc_tmpl_corners_.reserve(order.size());
+            for (int idx : order) dual_bc_tmpl_corners_.push_back(anno[idx]);
+            c0_from_anno = true;
+        } else {
+            std::cerr << "[DualRoi] class0 annotation unusable (" << anno.size()
+                      << " pts): " << config_.dual_roi_class0_points_path
+                      << ", falling back to approxPolyDP" << "\n";
+        }
+    }
+
+    // ---- class0 回退: approxPolyDP 自动推导 (原逻辑) ----
+    if (dual_bc_tmpl_corners_.empty()) {
+        cv::Mat binary;
+        cv::threshold(tmpl_img, binary, 0, 255, cv::THRESH_OTSU | cv::THRESH_BINARY);
+
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        if (contours.empty()) {
+            std::cerr << "[DualRoi] No contours found in board template binary" << "\n";
+            dual_bc_template_ready_ = true;
+            return;
+        }
+
+        auto* largest = &contours[0];
+        for (auto& c : contours) {
+            if (cv::contourArea(c) > cv::contourArea(*largest)) largest = &c;
+        }
+
+        int target_n = binary_extractor_->lastCornersBeforeReorder().empty()
+            ? 10
+            : static_cast<int>(binary_extractor_->lastCornersBeforeReorder().size());
+        if (target_n < 3) target_n = 10;
+
+        double peri = cv::arcLength(*largest, true);
+        double lo = 0.0, hi = peri * 0.1;
+        std::vector<cv::Point2f> corners;
+        for (int iter = 0; iter < 25; ++iter) {
+            double mid = (lo + hi) * 0.5;
+            std::vector<cv::Point2f> approx;
+            cv::approxPolyDP(*largest, approx, mid, true);
+            int sz = static_cast<int>(approx.size());
+            if (sz < target_n) hi = mid;
+            else if (sz > target_n) lo = mid;
+            else { corners = approx; break; }
+        }
+        if (corners.size() != static_cast<size_t>(target_n)) {
+            double eps = (lo + hi) * 0.5;
+            cv::approxPolyDP(*largest, corners, eps, true);
+        }
+
+        if (corners.empty()) {
+            std::cerr << "[DualRoi] Failed to extract corners from board template" << "\n";
+            dual_bc_template_ready_ = true;
+            return;
+        }
+
+        cv::Point2f center(tw / 2.0f, th / 2.0f);
+        auto order = BinaryCornerExtractor::reorderByGeometry(corners, center, 0.0, -1.0);
+        dual_bc_tmpl_corners_.reserve(order.size());
+        for (int idx : order) dual_bc_tmpl_corners_.push_back(corners[idx]);
+    }
+
+    // ---- class1: 仅人工标注 (中心=class1 点集质心), 无回退 ----
+    if (!config_.dual_roi_class1_points_path.empty()) {
+        auto anno = readCorners(config_.dual_roi_class1_points_path);
+        if (anno.size() >= 4) {
+            cv::Point2f ctr(0.0f, 0.0f);
+            for (const auto& p : anno) { ctr.x += p.x; ctr.y += p.y; }
+            ctr *= 1.0f / static_cast<float>(anno.size());
+            auto order = BinaryCornerExtractor::reorderByGeometry(anno, ctr, 0.0, -1.0);
+            dual_c1_tmpl_corners_.reserve(order.size());
+            for (int idx : order) dual_c1_tmpl_corners_.push_back(anno[idx]);
+        } else {
+            std::cerr << "[DualRoi] class1 annotation unusable (" << anno.size()
+                      << " pts): " << config_.dual_roi_class1_points_path
+                      << ", Tier1b joint solve disabled" << "\n";
+        }
+    }
+
+    // ---- 像素 → 板系 3D (两组共用同一换算) ----
     const double cx = real_w / 2.0, cy = real_h / 2.0;
     dual_bc_tmpl_pts3d_.reserve(dual_bc_tmpl_corners_.size());
     for (const auto& c : dual_bc_tmpl_corners_) {
@@ -128,11 +167,19 @@ void MonoTracker::prepareDualBcTemplate() {
             c.x / static_cast<double>(tw) * real_w - cx,
             c.y / static_cast<double>(th) * real_h - cy, 0.0);
     }
+    dual_c1_tmpl_pts3d_.reserve(dual_c1_tmpl_corners_.size());
+    for (const auto& c : dual_c1_tmpl_corners_) {
+        dual_c1_tmpl_pts3d_.emplace_back(
+            c.x / static_cast<double>(tw) * real_w - cx,
+            c.y / static_cast<double>(th) * real_h - cy, 0.0);
+    }
 
     dual_bc_template_ready_ = true;
     if (verbose_console_)
-        std::cout << "[DualRoi] BC template prepared: " << dual_bc_tmpl_corners_.size()
-                  << " corners on AKAZE template (" << tw << "x" << th << ")"
+        std::cout << "[DualRoi] BC template ready: c0=" << dual_bc_tmpl_corners_.size()
+                  << " pts (" << (c0_from_anno ? "anno" : "auto")
+                  << ")  c1=" << dual_c1_tmpl_corners_.size() << " pts"
+                  << "  board=" << tw << "x" << th
                   << "  real_size=" << real_w << "x" << real_h << "mm"
                   << "\n";
 }
@@ -153,11 +200,11 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         if (!route.empty()) route += " -> ";
         route += s;
     };
-    std::string t1_reason, t2_reason;
+    std::string t1_reason;
     bool t1_cold_recovered = false;
 
-    // 消融开关 (config: strategies.dual_roi.tier1_only): true = 屏蔽 Tier2(BC-only)/
-    // Tier3(class1 链)/巨型 primary 短路, 仅保留原始 Dual-ROI (Tier1: BC+AK 合并解算)
+    // 消融开关 (config: strategies.dual_roi.tier1_only): true = 屏蔽 Tier3(class1 链)/
+    // 巨型 primary 短路, 仅保留 Tier1 (BC class0 解算)
     const bool kDualRoiTier1Only = config_.dual_roi_tier1_only;
 
     // BC 二值化过程条图 (成功/失败路径共用 —— 失败帧也要可视化, 排查主证据)
@@ -215,7 +262,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     RoiRect left_sec = expandRoi(left_group.secondary, pad, left_img.cols, left_img.rows);
 
     // P1 巨型 primary 短路: primary 边长覆盖画幅 ≥ primary_span_ratio 时目标外角点已出
-    // 视野, BC 角点必败 (Tier1/2 的 PnP 必失败) 且全图级 BC 提取极耗时 → 跳过 Tier1/2
+    // 视野, BC 角点必败 (Tier1 的 PnP 必失败) 且全图级 BC 提取极耗时 → 跳过 Tier1
     // 直接走 Tier3 class1 链。Tier3 开关关闭时保持旧路径。
     const bool primary_spans_frame =
         !kDualRoiTier1Only &&   // 消融: 关闭短路, 巨型 primary 也走 Tier1
@@ -240,9 +287,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         std::cout << "[DualRoi][Mono] primary spans frame ("
                   << left_pri.width << "x" << left_pri.height << " vs "
                   << left_img.cols << "x" << left_img.rows
-                  << "), skip Tier1/2 -> class1 chain" << "\n";
+                  << "), skip Tier1 -> class1 chain" << "\n";
     if (primary_spans_frame)
-        routeStep("SHORT-CIRCUIT(primary spans frame, skip Tier1/2)");
+        routeStep("SHORT-CIRCUIT(primary spans frame, skip Tier1)");
 
     // 2. Crop images (left only) —— 灰度按 ROI 转换 (P3); 彩色引用共享 (画图面板均先 clone)
     cv::Mat left_c0_gray, left_c0_color;
@@ -260,8 +307,10 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     cv::Mat left_color_orig = left_img;
 
     // ---- 提取/解算累加器与下游共用变量（短路时部分保持空/失败初值）----
-    PipelineResult result_bc, result_ak;
-    int n_bc = 0, m_ak_match = 0, n_bc_use = 0, total_use = 0;
+    PipelineResult result_bc;
+    int n_bc = 0, n_bc_use = 0, total_use = 0;
+    std::vector<int> pair_tmpl_idx;   // 每个合并点对应的标注模板点索引 (c0: 0..n0-1, c1: n0..)
+    bool joint_used = false;          // Tier1b 联合解算胜出
     std::vector<cv::Point2f> merged_pts_2d;
     std::vector<cv::KeyPoint> merged_kp_left;
     std::vector<Eigen::Vector3d> merged_pts_3d;
@@ -270,109 +319,61 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     const bool use_seed = seedActive();
     if (use_seed) { seed.R = state_.R_prev; seed.t = state_.t_prev; }
     PoseEstimate pose;                 // 短路时保持失败 → 自然落入 8c class1 链
-    bool bc_fallback_used = false;
 
     if (!primary_spans_frame) {
 
-    // 3+4. BC + AK extraction in parallel (mono, independent extractors, distinct image regions)
+    // 3. BC(class0) 提取 —— class1 部分不再用 AKAZE, 退化时由 Tier3 class1 链的 BC 接管
     auto t_extract = std::chrono::steady_clock::now();
-    auto fut_bc = std::async(std::launch::async, [&]() {
-        return binary_extractor_->extractMono(left_c0_gray, left_c0_color);
-    });
-    auto fut_ak = std::async(std::launch::async, [&]() {
-        return dual_akaze_extractor_->extractMono(left_c1_gray, left_c1_color);
-    });
-
-    result_bc = fut_bc.get();
+    result_bc = binary_extractor_->extractMono(left_c0_gray, left_c0_color);
     n_bc = static_cast<int>(result_bc.pts_left_match.size());
     if (verbose_console_) std::cout << "[DualRoi][Mono] BinaryCorner on class 0: " << n_bc << " corners" << "\n";
-
-    result_ak = fut_ak.get();
-    m_ak_match = static_cast<int>(result_ak.pts_left_match.size());
-    if (verbose_console_)
-        std::cout << "[DualRoi][Mono] AKAZE on class 1: " << m_ak_match << " template matches"
-                  << " (kp=" << result_ak.n_kp_left << ")"
-                  << "\n";
-    // 两路并行, 计墙钟时间
     extract_ms += std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t_extract).count();
 
-    // 5. Coordinate transform: class-1-local → class-0-local
     auto offsetPoints = [](std::vector<cv::Point2f>& pts, const cv::Point2d& offset) {
         float fx = static_cast<float>(offset.x), fy = static_cast<float>(offset.y);
         for (auto& p : pts) { p.x += fx; p.y += fy; }
     };
-    offsetPoints(result_ak.pts_left_match, sec_to_pri_offset);
-    offsetPoints(result_ak.pts_left_good,  sec_to_pri_offset);
-    for (auto& kp : result_ak.kp_left) {
-        kp.pt.x += static_cast<float>(sec_to_pri_offset.x);
-        kp.pt.y += static_cast<float>(sec_to_pri_offset.y);
+
+    // 4. BC 角点 ↔ 板系 3D 对应
+    //    BC 输出 pts_left_match[k] 已是规范序（matchCorners 用同一参考角 θ+CPSAGL 同步
+    //    重排模板/图像两侧，起点=基准角点，与匹配角无关），直接索引 dual_bc_tmpl_pts3d_ 即可。
+    //    严格数量守卫: 运行时角点数 ≠ 模板点数 → c0 侧整体剔除（前缀 min 配对在
+    //    数量不一致时是错位对应, 4-vs-10 类垃圾解的根源）
+    int n_bc_3d = static_cast<int>(dual_bc_tmpl_pts3d_.size());
+    if (n_bc_3d > 0 && n_bc != n_bc_3d) {
+        std::cerr << "[DualRoi][Mono] BC corner count mismatch (" << n_bc
+                  << " vs template " << n_bc_3d << "), dropping c0 side" << "\n";
     }
-
-    // 6. Merge BC + AK → 2D points + 3D correspondences
-
-    // --- BC 3D points ---
-    // BC 输出 pts_left_match[k] 已是规范序（matchCorners 用同一参考角 θ+CPSAGL 同步
-    // 重排模板/图像两侧，起点=基准角点，与匹配角无关），直接索引 dual_bc_tmpl_pts3d_ 即可。
-    std::vector<Eigen::Vector3d> bc_pts3d = dual_bc_tmpl_pts3d_;  // copy
-
-    // --- BC contribution: corners[i] ↔ bc_pts3d[i] ---
-    int n_bc_3d = static_cast<int>(bc_pts3d.size());
-    n_bc_use = std::min(n_bc, n_bc_3d);
+    n_bc_use = (n_bc == n_bc_3d) ? n_bc : 0;
     for (int i = 0; i < n_bc_use; ++i) {
         merged_pts_2d.push_back(result_bc.pts_left_match[i]);
         merged_kp_left.emplace_back(result_bc.pts_left_match[i], 1.0f);
-        merged_pts_3d.push_back(bc_pts3d[i]);
+        merged_pts_3d.push_back(dual_bc_tmpl_pts3d_[i]);
+        pair_tmpl_idx.push_back(i);
     }
+    total_use = n_bc_use;
 
-    // --- AK contribution: matches[i] ↔ template_.pts_3d[good_matches[i].trainIdx] ---
-    // 门槛: <4 个模板匹配未过 TemplateMatcher Homography RANSAC 验证 (零验证
-    // Ratio-Test 结果, 离群概率高) — 1-2 个 AK 离群点抬高全点平均重投影, 会否决
-    // 本来正确的候选; 此时由 BC 角点独挑 (与 AK=0 帧同路径)
-    const int kAkMergeMinMatches = 4;
-    const bool ak_merge_ok =
-        static_cast<int>(result_ak.good_matches.size()) >= kAkMergeMinMatches;
-    if (!ak_merge_ok && m_ak_match > 0 && verbose_console_)
-        std::cout << "[DualRoi][Mono] AK matches=" << m_ak_match
-                  << " < " << kAkMergeMinMatches << " (unverified), skip AK merge"
-                  << "\n";
-    const auto& ak_pts3d = dual_akaze_extractor_->templateData().pts_3d;
-    for (size_t i = 0; ak_merge_ok && i < result_ak.good_matches.size(); ++i) {
-        int idx = result_ak.good_matches[i].trainIdx;
-        if (idx >= 0 && idx < static_cast<int>(ak_pts3d.size())) {
-            merged_pts_2d.push_back(result_ak.pts_left_match[i]);
-            merged_kp_left.emplace_back(result_ak.pts_left_match[i], 1.0f);
-            merged_pts_3d.push_back(ak_pts3d[idx]);
-        }
-    }
-
-    total_use = static_cast<int>(merged_pts_2d.size());
-    if (verbose_console_)
-        std::cout << "[DualRoi][Mono] Merged: " << total_use << " total (BC=" << n_bc_use
-                  << ", AK=" << m_ak_match << ")"
-                  << "  pts3d=" << merged_pts_3d.size() << "\n";
-
-    // 6b. 合并点不足 → 不再早退整帧, 跳过 Tier1/2, 落入 Tier3 class1 链
-    //     (与 StereoTracker::processDualRoi 的 fall-through 语义对齐;
-    //      BC 面板/Route 输出由函数尾部统一处理)
+    // 4b. 角点不足 → 跳过 Tier1, 落入 class1 链
+    //     (BC 面板/Route 输出由函数尾部统一处理)
     if (total_use < 4) {
-        std::cerr << "[DualRoi][Mono] Too few merged points (" << total_use
-                  << "), skipping Tier1/2, trying class1 chain" << "\n";
-        routeStep("Tier1 SKIP[merged pts=" + std::to_string(total_use) + " <4]");
+        std::cerr << "[DualRoi][Mono] Too few BC corners (" << total_use
+                  << "), skipping Tier1, trying class1 chain" << "\n";
+        routeStep("Tier1(BC) SKIP[pts=" + std::to_string(total_use) + " <4]");
     }
 
-    // 7~8b. 仅合并可解时执行: 坐标还原 + Tier1 解算 + 门控 + Tier2 BC-only
-    // (merged<4 或短路时 pose 保持失败 → 8c class1 链成为唯一路径)
+    // 5~6. 仅角点可解时执行: 坐标还原 + Tier1 BC(class0) 解算
+    // (角点<4 或短路时 pose 保持失败 → 8c class1 链成为唯一路径)
     if (total_use >= 4) {
 
-    // 7. Restore full-image coordinates
+    // 5. Restore full-image coordinates
     offsetPoints(merged_pts_2d, left_off);
     for (auto& kp : merged_kp_left) {
         kp.pt.x += static_cast<float>(left_off.x);
         kp.pt.y += static_cast<float>(left_off.y);
     }
 
-    // 8. Pose estimation (mono EPnP; 序列模式带上帧位姿 seed)
+    // 6. Tier1: BC(class0)-only 解算 (原 Tier2 BC-only 提升为主级; MonoPnP 多候选择优)
     auto t_pnp = std::chrono::steady_clock::now();
     pose = use_seed
         ? mono_pnp_.solve(merged_pts_2d, merged_pts_3d, camera_.K, &seed,
@@ -381,17 +382,16 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     pnp_ms += std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t_pnp).count();
 
-    // 8a. 运动门控 (方案C): Tier1 解通过重投影校验但相对 seed 跳变超阈值
+    // 6a. 运动门控 (方案C): Tier1 解通过重投影校验但相对 seed 跳变超阈值
     //     (典型: 近距离 BC 角点误锁 class1 内图案, ~43px 跨度配 class0 尺度 3D,
-    //      15x 尺度偏差仍能过 8px 平坦重投影) → 判失败, 交由退化链 (Tier2/3) 接管。
-    //     无冷重启: 退化链本身就是恢复路径。陈旧 seed (class1 帧不解入缓存时
-    //     连续多帧不刷新) 放宽阈值, 让恢复帧的合理解通过。
+    //      15x 尺度偏差仍能过 8px 平坦重投影) → 判失败, 交由退化链 (Tier3) 接管。
+    //     陈旧 seed (class1 帧不解入缓存时连续多帧不刷新) 放宽阈值, 让恢复帧的合理解通过。
     if (pose.success && use_seed &&
         !motionGatePass(pose, seed, nullptr, false, "DualRoi-T1", true)) {
         // 冷启动复核（与普通链 processMono 同语义）: 陈旧 seed 误伤恢复帧时，
         // 无 seed 重解一次；冷解成功 = 纯重投影择优的可信路径，按「seed 过期」
         // 采纳，不再被陈旧 seed 锚定的门控二次审查。冷解也失败才真正判
-        // motion-gate 交由退化链 (Tier2/3) 接管
+        // motion-gate 交由退化链 (Tier3) 接管
         auto t_cold = std::chrono::steady_clock::now();
         PoseEstimate pc = mono_pnp_.solve(merged_pts_2d, merged_pts_3d,
                                           camera_.K, nullptr, 0.0);
@@ -412,58 +412,145 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     }
     if (t1_reason.empty() && !pose.success) t1_reason = "mono-pnp";
     routeStep(pose.success
-        ? "Tier1(merged BC=" + std::to_string(n_bc_use) + "+AK=" + std::to_string(m_ak_match) + ") OK"
-        : "Tier1(merged BC=" + std::to_string(n_bc_use) + "+AK=" + std::to_string(m_ak_match)
-          + ") FAIL[" + t1_reason + "]");
+        ? "Tier1(BC c0 n=" + std::to_string(n_bc_use) + ") OK"
+        : "Tier1(BC c0 n=" + std::to_string(n_bc_use) + ") FAIL[" + t1_reason + "]");
 
-    // 8b. 回退：合并解算失败 → 仅用外层 BC 角点重解（与单目 BC 策略同为
-    // MonoPnP 多候选择优）。BC 点位于合并数组前缀 [0, n_bc_use)，
-    // 与 dual_bc_tmpl_pts3d_ 一一对应，切片即得 BC-only 子集。
-    if (!kDualRoiTier1Only && !pose.success && n_bc_use >= 4) {
-        if (verbose_console_)
-            std::cout << "  [DualRoi][Mono] Merged solve failed, falling back to BC-only ("
-                      << n_bc_use << " corners)" << "\n";
-        std::vector<cv::Point2f> bc_2d(merged_pts_2d.begin(),
-                                       merged_pts_2d.begin() + n_bc_use);
-        std::vector<Eigen::Vector3d> bc_3d(dual_bc_tmpl_pts3d_.begin(),
-                                           dual_bc_tmpl_pts3d_.begin() + n_bc_use);
-        auto t_bc_pnp = std::chrono::steady_clock::now();
-        pose = use_seed
-            ? mono_pnp_.solve(bc_2d, bc_3d, camera_.K, &seed,
-                              config_.temporal.tie_epsilon_px)
-            : mono_pnp_.solve(bc_2d, bc_3d, camera_.K);
-        pnp_ms += std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - t_bc_pnp).count();
-        // 8b-gate: BC-only 解同样过运动门控 (含陈旧放宽), 误锁跳变被拒后落入 8c class1 链
-        if (pose.success && use_seed &&
-            !motionGatePass(pose, seed, nullptr, false, "DualRoi-T2", true)) {
-            if (verbose_console_)
-                std::cout << "  [DualRoi][Mono] Tier2 BC-only pose rejected by motion gate"
-                          << "\n";
-            t2_reason = "motion-gate";
-            pose = PoseEstimate{};
-        }
-        if (pose.success) {
-            bc_fallback_used = true;
-            total_use = n_bc_use;
-            merged_pts_2d.resize(n_bc_use);
-            merged_kp_left.resize(n_bc_use);
-            merged_pts_3d.resize(n_bc_use);   // 前缀即 BC 3D，保持可视化面板索引一致
-            routeStep("Tier2(BC-only) OK");
+    // ================================================================
+    // 6b. Tier1b: class1 增广联合解算
+    //     用 P0 把全部标注 3D 点 (c0+c1) 投影到图像, 提取角点 (c0+c1)
+    //     与投影点做贪心最近邻匹配 (门限内, 观测/3D 双向唯一) —— 顺序无关,
+    //     角点数波动/多余角点由门限与唯一性自然剔除。匹配对多于 Tier1a
+    //     时联合重解 (P0 作 seed), 否则保留 P0。
+    // ================================================================
+    if (pose.success && !dual_c1_tmpl_pts3d_.empty() && !left_c1_gray.empty()) {
+        auto t_c1_ext = std::chrono::steady_clock::now();
+        PipelineResult r_c1 = binary_extractor_->extractMono(left_c1_gray, left_c1_color);
+        extract_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_c1_ext).count();
+        int n_c1 = static_cast<int>(r_c1.pts_left_match.size());
+
+        if (n_c1 < 4) {
+            routeStep("Tier1b(BCJ) SKIP[c1 corners=" + std::to_string(n_c1) + " <4]");
         } else {
-            if (t2_reason.empty()) t2_reason = "mono-pnp";
-            routeStep("Tier2(BC-only) FAIL[" + t2_reason + "]");
+            // 观测集: c0 角点 + c1 角点 (全图坐标)
+            std::vector<cv::Point2f> obs;
+            std::vector<char> obs_is_c1;
+            obs.reserve(static_cast<size_t>(n_bc) + n_c1);
+            obs_is_c1.reserve(static_cast<size_t>(n_bc) + n_c1);
+            for (const auto& p : result_bc.pts_left_match) {
+                obs.emplace_back(p.x + static_cast<float>(left_off.x),
+                                 p.y + static_cast<float>(left_off.y));
+                obs_is_c1.push_back(0);
+            }
+            const float sox = static_cast<float>(left_sec.x);
+            const float soy = static_cast<float>(left_sec.y);
+            for (const auto& p : r_c1.pts_left_match) {
+                obs.emplace_back(p.x + sox, p.y + soy);
+                obs_is_c1.push_back(1);
+            }
+
+            // 预测集: P0 投影全部标注板系 3D 点 (c0 段在前, c1 段在后)
+            std::vector<cv::Point2f> pred;
+            std::vector<Eigen::Vector3d> all_3d;
+            pred.reserve(dual_bc_tmpl_pts3d_.size() + dual_c1_tmpl_pts3d_.size());
+            auto projOf = [&](const Eigen::Vector3d& P) {
+                Eigen::Vector3d Pc = pose.R * P + pose.t;
+                Eigen::Vector2d uv = projectToImage(Pc, camera_.K);
+                return cv::Point2f(static_cast<float>(uv.x()), static_cast<float>(uv.y()));
+            };
+            for (const auto& P : dual_bc_tmpl_pts3d_) { all_3d.push_back(P); pred.push_back(projOf(P)); }
+            for (const auto& P : dual_c1_tmpl_pts3d_) { all_3d.push_back(P); pred.push_back(projOf(P)); }
+
+            // 贪心 NN 匹配: 距离升序接受, 双向唯一
+            struct Cand { double d; int obs_i; int tmpl_j; };
+            std::vector<Cand> cands;
+            const double gate = config_.dual_roi_joint_match_gate_px;
+            for (int i = 0; i < static_cast<int>(obs.size()); ++i) {
+                for (int j = 0; j < static_cast<int>(pred.size()); ++j) {
+                    double dx = obs[i].x - pred[j].x;
+                    double dy = obs[i].y - pred[j].y;
+                    double d = std::sqrt(dx * dx + dy * dy);
+                    if (d <= gate) cands.push_back({d, i, j});
+                }
+            }
+            std::sort(cands.begin(), cands.end(),
+                      [](const Cand& a, const Cand& b) { return a.d < b.d; });
+            std::vector<char> obs_used(obs.size(), 0), tmpl_used(pred.size(), 0);
+            std::vector<cv::Point2f> j2d_c0, j2d_c1;
+            std::vector<int> jidx_c0, jidx_c1;
+            for (const auto& c : cands) {
+                if (obs_used[c.obs_i] || tmpl_used[c.tmpl_j]) continue;
+                obs_used[c.obs_i] = 1;
+                tmpl_used[c.tmpl_j] = 1;
+                if (obs_is_c1[c.obs_i]) { j2d_c1.push_back(obs[c.obs_i]); jidx_c1.push_back(c.tmpl_j); }
+                else                    { j2d_c0.push_back(obs[c.obs_i]); jidx_c0.push_back(c.tmpl_j); }
+            }
+
+            const int n_match = static_cast<int>(j2d_c0.size() + j2d_c1.size());
+            if (n_match < 4 || n_match <= total_use) {
+                routeStep("Tier1b(BCJ) SKIP[match=" + std::to_string(n_match)
+                          + " pts, no gain]");
+            } else {
+                // 联合 2D/3D (c0 对在前, c1 对在后)
+                std::vector<cv::Point2f> jp2d = j2d_c0;
+                jp2d.insert(jp2d.end(), j2d_c1.begin(), j2d_c1.end());
+                std::vector<Eigen::Vector3d> jp3d;
+                jp3d.reserve(jp2d.size());
+                for (int j : jidx_c0) jp3d.push_back(all_3d[j]);
+                for (int j : jidx_c1) jp3d.push_back(all_3d[j]);
+
+                // P0 作 seed 联合重解; 运动门控与 Tier1a 同语义 (拒绝→冷重解→判败)
+                PoseSeed p0_seed;
+                p0_seed.R = pose.R;
+                p0_seed.t = pose.t;
+                auto t_j = std::chrono::steady_clock::now();
+                PoseEstimate pj = mono_pnp_.solve(jp2d, jp3d, camera_.K, &p0_seed,
+                                                  config_.temporal.tie_epsilon_px);
+                bool joint_ok = pj.success;
+                if (joint_ok && use_seed &&
+                    !motionGatePass(pj, seed, nullptr, false, "DualRoi-BCJ", true)) {
+                    PoseEstimate pc = mono_pnp_.solve(jp2d, jp3d, camera_.K, nullptr, 0.0);
+                    if (pc.success) {
+                        pj = pc;
+                    } else {
+                        joint_ok = false;
+                    }
+                }
+                pnp_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t_j).count();
+
+                if (joint_ok) {
+                    pose = pj;
+                    joint_used = true;
+                    merged_pts_2d = std::move(jp2d);
+                    merged_pts_3d = std::move(jp3d);
+                    merged_kp_left.clear();
+                    merged_kp_left.reserve(merged_pts_2d.size());
+                    for (const auto& p : merged_pts_2d)
+                        merged_kp_left.emplace_back(p, 1.0f);
+                    pair_tmpl_idx.clear();
+                    pair_tmpl_idx.insert(pair_tmpl_idx.end(), jidx_c0.begin(), jidx_c0.end());
+                    pair_tmpl_idx.insert(pair_tmpl_idx.end(), jidx_c1.begin(), jidx_c1.end());
+                    n_bc_use = static_cast<int>(j2d_c0.size());
+                    total_use = n_match;
+                    routeStep("Tier1b(BCJ c0=" + std::to_string(n_bc_use)
+                              + "+c1=" + std::to_string(static_cast<int>(j2d_c1.size()))
+                              + ") OK");
+                } else {
+                    routeStep("Tier1b(BCJ c0=" + std::to_string(static_cast<int>(j2d_c0.size()))
+                              + "+c1=" + std::to_string(static_cast<int>(j2d_c1.size()))
+                              + ") FAIL[pnp]");
+                }
+            }
         }
-    } else if (!pose.success && !kDualRoiTier1Only) {
-        routeStep("Tier2 SKIP[BC pts=" + std::to_string(n_bc_use) + " <4]");
-    } else if (!pose.success) {
-        routeStep("Tier2 SKIP[ablation]");
+    } else if (pose.success && dual_c1_tmpl_pts3d_.empty()) {
+        routeStep("Tier1b(BCJ) SKIP[no c1 anno]");
     }
 
-    } // total_use >= 4 (合并可解才执行 Tier1/2)
-    } // !primary_spans_frame（短路或合并不足时 pose 保持失败, 8c 直接成为唯一路径）
+    } // total_use >= 4 (角点可解才执行 Tier1)
+    } // !primary_spans_frame（短路或角点不足时 pose 保持失败, 8c 直接成为唯一路径）
 
-    // 8c. 第 3 级退化: 合并与 BC-only 均失败 → 在 secondary ROI (class1) 上跑 BC→TT 链
+    // 8c. 退化: Tier1 BC(class0) 失败 → 在 secondary ROI (class1) 上跑 BC→TT 链
     //     (class1 3D 尺寸, State 5 同机制; 注入板系 seed —— class1 图案与板共面无
     //      相对旋转, R seed 直接有效, 仅 t 差同心偏移, IPPE 二义性由 ε-平票偏 seed 消解)
     bool c1_fallback_used = false;
@@ -472,7 +559,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     std::vector<Eigen::Vector3d> c1_pts3d;
     if (!kDualRoiTier1Only && !pose.success && config_.dual_roi_class1_fallback) {
         if (verbose_console_)
-            std::cout << "  [DualRoi][Mono] BC-only fallback failed, trying class1 chain (BC→TT)"
+            std::cout << "  [DualRoi][Mono] Tier1 BC solve failed, trying class1 chain (BC→TT)"
                       << "\n";
         std::string c1_legs;
         auto [ok, c1_pose] = runDualRoiClass1Chain(left_c1_gray, left_c1_color,
@@ -521,14 +608,16 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     }
     result.warm_start_used = use_seed && pose.success && !c1_fallback_used;
     if (t1_cold_recovered) result.gate_status = GateStatus::Recovered;
+    // Tier1(BC class0) 现为主级: Tier1b 联合解算胜出为 "DualRoi_BCJ", 纯 c0 为
+    // "DualRoi_BC"; class1 链胜出保留 C1 命名
     result.strategy_name = c1_fallback_used ? c1_strategy
-                         : (bc_fallback_used ? "DualRoi_BC" : "DualRoi");
+                         : (joint_used ? "DualRoi_BCJ" : "DualRoi_BC");
 
     result.n_matched   = total_use;
     result.n_projected = 0;
     result.extract_ms = extract_ms;
     result.pnp_ms = pnp_ms;
-    addLogEntry(result, is_first, bc_fallback_used || c1_fallback_used);
+    addLogEntry(result, is_first, c1_fallback_used);
 
     // ---- Visualization (simplified, left-only) ----
     // PnP 失败时仍输出：Panel 0/1 不依赖位姿；Panel 2/3 内部各自按 pose.success 降级
@@ -536,7 +625,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         std::string prefix = "_f" + std::to_string(current_frame_);
 
         const cv::Scalar BC_COLOR(0, 0, 255);    // red: BinaryCorner corners
-        const cv::Scalar AK_COLOR(0, 255, 0);    // green: AKAZE features
+        const cv::Scalar AK_COLOR(0, 255, 0);    // green: class1 链点 (Tier3)
 
         // ---- 诊断面板 (overview/corners/reproj) 仅 Debug 模式 ----
         if (visualize_detailed_) {
@@ -553,7 +642,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             cv::putText(p0, "class0 (BC)",
                 cv::Point(left_pri.x + 4, left_pri.y + 14),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(255, 0, 0), 1);
-            cv::putText(p0, "class1 (AK)",
+            cv::putText(p0, "class1 (BC)",
                 cv::Point(left_sec.x + 4, left_sec.y + 14),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 0), 1);
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_overview" + prefix + ".png", p0);
@@ -645,7 +734,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         }
 
         // Panel 4: Image ↔ Template correspondence (side-by-side, 对齐 StereoTracker 的 dual_roi_correspondence)
-        // class1 链胜出时跳过: 模板侧对应关系为 AKAZE 模板, 与链点 (BC/TT class1) 不匹配
+        // class1 链胜出时跳过: 模板侧对应关系为板模板 BC 角点, 与链点 (BC/TT class1) 不匹配
         if (!c1_fallback_used && total_use > 0) {
             // Left: class-0-ROI image
             cv::Mat p4_left = left_color_orig(
@@ -671,29 +760,35 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             float lx = static_cast<float>(left_off.x), ly = static_cast<float>(left_off.y);
             int offset_x = p4_left.cols;  // 图像与模板的水平分界
 
-            for (int i = 0; i < total_use; ++i) {
+            // 模板侧点: pair_tmpl_idx[i] < n0c → class0 标注角点(红),
+            // 否则 → class1 标注角点(绿, 索引偏移 n0c)
+            const int n0c = static_cast<int>(dual_bc_tmpl_corners_.size());
+            const int n1c = static_cast<int>(dual_c1_tmpl_corners_.size());
+            for (int i = 0; i < total_use &&
+                           i < static_cast<int>(pair_tmpl_idx.size()); ++i) {
                 // 图像点 (class-0-ROI 局部坐标)
                 cv::Point pt_img(static_cast<int>(merged_pts_2d[i].x - lx),
                                  static_cast<int>(merged_pts_2d[i].y - ly));
 
-                // 模板点 (按 scale_tmpl 缩放; BC 用与 dual_bc_tmpl_pts3d_ 同序的角点, AK 用模板匹配点)
+                const int j = pair_tmpl_idx[i];
                 cv::Point2f tmpl_pt;
-                if (i < n_bc_use && i < static_cast<int>(dual_bc_tmpl_corners_.size())) {
-                    tmpl_pt = dual_bc_tmpl_corners_[i] * scale_tmpl;
+                const cv::Scalar* color;
+                if (j < n0c) {
+                    tmpl_pt = dual_bc_tmpl_corners_[j];
+                    color = &BC_COLOR;
+                } else if (j - n0c < n1c) {
+                    tmpl_pt = dual_c1_tmpl_corners_[j - n0c];
+                    color = &AK_COLOR;
                 } else {
-                    int ak_idx = i - n_bc_use;
-                    if (ak_idx >= 0 && ak_idx < static_cast<int>(result_ak.pts_template_match.size()))
-                        tmpl_pt = result_ak.pts_template_match[ak_idx] * scale_tmpl;
-                    else
-                        continue;
+                    continue;
                 }
+                tmpl_pt *= scale_tmpl;
                 cv::Point pt_tmpl(static_cast<int>(tmpl_pt.x) + offset_x,
                                   static_cast<int>(tmpl_pt.y));
 
-                cv::Scalar color = (i < n_bc_use) ? BC_COLOR : AK_COLOR;
-                cv::circle(p4, pt_img,  2, color, -1);
-                cv::circle(p4, pt_tmpl, 2, color, -1);
-                cv::line(p4, pt_img, pt_tmpl, color, 1, cv::LINE_AA);
+                cv::circle(p4, pt_img,  2, *color, -1);
+                cv::circle(p4, pt_tmpl, 2, *color, -1);
+                cv::line(p4, pt_img, pt_tmpl, *color, 1, cv::LINE_AA);
             }
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_correspondence" + prefix + ".png", p4);
         }
@@ -708,7 +803,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
 
         if (verbose_console_)
             std::cout << "  [DualRoi][Mono] Visualized: " << n_bc_use << " BC + "
-                      << (total_use - n_bc_use) << " AK corners" << "\n";
+                      << (total_use - n_bc_use) << " C1 pts" << "\n";
     }
 
     result.timing["dual_roi"] = std::chrono::duration<double, std::milli>(
@@ -721,7 +816,6 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     if (verbose_console_)
         std::cout << "[DualRoi][Mono] Frame done: n_pts=" << total_use
                   << "  PnP=" << (pose.success ? "OK" : "FAIL")
-                  << (bc_fallback_used ? "  [BC-fallback]" : "")
                   << (c1_fallback_used ? "  [class1-chain:" + c1_strategy + "]" : "")
                   << "\n";
 
@@ -873,11 +967,16 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
         return result;
     }
 
-    // ROI 校验：无 ROI → 全图
+    // ROI 校验：无 ROI → 帧失败（全图回退随 AKAZE 链一并移除）
     const RoiRect* left_roi = left_group ? &left_group->primary : nullptr;
     RoiRect roi = validateRoi(left_roi, left_img.size(), "mono_left");
     if (!roi.valid()) {
-        roi = RoiRect{0, 0, left_img.cols, left_img.rows};
+        if (verbose_console_)
+            std::cout << "[Mono] no valid ROI, frame fails (Skip_NoRoi)" << "\n";
+        result.strategy_name = "Skip_NoRoi";
+        addLogEntry(result, state_.frame_count == 0, false);
+        state_.frame_count++;
+        return result;
     }
 
     int roi_area = roi.width * roi.height;

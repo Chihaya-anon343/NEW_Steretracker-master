@@ -149,9 +149,10 @@ const char* TrackerBase::strategyNameFromBand(int band) {
 }
 
 int TrackerBase::nominateBand(int roi_area, bool is_class1) const {
+    // band 3 (AKAZE) 已停用：单 ROI 链折叠为 BC→TT 两带；
+    // area==0 (无 ROI) 在 process 入口即判帧失败，不会到达此处
     int akaze_t, tiny_t;
     effectiveThresholds(is_class1, akaze_t, tiny_t);
-    if (roi_area >= akaze_t || roi_area == 0) return 3;
     if (roi_area > tiny_t) return 2;
     return 1;
 }
