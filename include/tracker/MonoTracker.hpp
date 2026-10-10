@@ -5,7 +5,7 @@
  * @brief 单目视觉追踪器 —— 仅左图，EPnP 位姿解算。
  *
  * 继承 TrackerBase，不包含任何双目模块
- * （无 GPnPSolver / InitialPnPSolver / MadDisparityFilter / StereoProjector）。
+ * （无 GPnPSolver / InitialPnPSolver 等双目解算与立体滤波组件）。
  */
 
 #include "tracker/TrackerBase.hpp"
@@ -56,7 +56,6 @@ private:
 
     MonoPnPSolver mono_pnp_;
 
-    std::unique_ptr<AkazeGpnpExtractor> dual_akaze_extractor_;
     bool dual_bc_template_ready_{false};
     std::vector<cv::Point2f> dual_bc_tmpl_corners_;
     std::vector<Eigen::Vector3d> dual_bc_tmpl_pts3d_;

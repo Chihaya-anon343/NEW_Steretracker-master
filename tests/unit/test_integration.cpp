@@ -25,7 +25,6 @@
 #include "common/Config.hpp"
 #include "tracker/MonoTracker.hpp"
 #include "tracker/StereoTracker.hpp"
-#include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 
@@ -122,9 +121,7 @@ RoiRect roiFromJson(const std::string& scene, int frame,
 }
 
 TrackerConfig makeTrackerCfg() {
-    return makeTrackerConfig(/*scale=*/0.5f, /*gpnp_min_pts=*/3,
-                             /*use_initial_pnp=*/true, /*mad_sigma=*/3.0f,
-                             /*akaze_min_area=*/40000, /*tiny_max_area=*/800);
+    return makeTrackerConfig(/*gpnp_min_pts=*/3, /*use_initial_pnp=*/true);
 }
 
 BinaryCornerExtractor::Config makeBinaryCfg() {

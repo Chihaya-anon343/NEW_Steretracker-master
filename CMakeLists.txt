@@ -56,19 +56,13 @@ set(PROJECT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 set(SOURCES
     main.cpp
-    src/feature/AkazeExtractor.cpp
-    src/feature/AkazeGpnpExtractor.cpp
     src/feature/BinaryCornerExtractor.cpp
-    src/feature/MadDisparityFilter.cpp
-    src/feature/OpticalFlowTracker.cpp
     src/feature/TinyTargetExtractor.cpp
     src/matching/TemplateMatcher.cpp
-    src/stereo/StereoProjector.cpp
     src/pose/InitialPnPSolver.cpp
     src/pose/GPnPSolver.cpp
     src/pose/MonoPnPSolver.cpp
     src/utils/PoseUtils.cpp
-    src/visualization/Visualizer.cpp
     src/tracker/TrackerBase.cpp
     src/tracker/MonoTracker.cpp
     src/tracker/StereoTracker.cpp

@@ -5,7 +5,6 @@
 
 #include "tracker/StereoTracker.hpp"
 #include "common/GeometryUtils.hpp"
-#include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -43,23 +42,11 @@ StereoTracker::StereoTracker(const Eigen::Matrix3d& K,
                                const std::string& tiny_template_dir)
     : initial_pnp_(config.gpnp_min_pts)
     , gpnp_solver_(camera_, config.gpnp_min_pts)
-    , mad_filter_(3, 3.0)
 {
     camera_ = makeStereoCameraParams(K, R_rl, t_rl);
     config_ = config;
 
     initExtractors(template_path, binary_cfg, binary_template_dir, tiny_cfg, tiny_template_dir);
-
-    // 双ROI专用 AKAZE 提取器
-    LKParams dual_lk;
-    dual_lk.winSize = cv::Size(15, 15);
-    dual_lk.maxLevel = 2;
-    dual_akaze_extractor_ = std::make_unique<AkazeGpnpExtractor>(
-        config.dual_roi_akaze_scale, dual_lk);
-    dual_akaze_extractor_->initCamera(camera_);
-    dual_akaze_extractor_->setTemplateData(template_path,
-                                            config.template_real_width_mm,
-                                            config.template_real_height_mm);
 }
 
 StereoTracker::~StereoTracker() = default;
@@ -143,9 +130,8 @@ bool StereoTracker::runExtraction(FeatureExtractor& ext,
         result.right_roi_offset_y = static_cast<int>(ry);
     }
 
-    // For non-AKAZE strategies, compute full-image disparity
-    bool is_akaze_ext = (ext.name() == "AkazeGpnp");
-    if (!is_akaze_ext && !result.pts_left_good.empty() && !result.pts_right_good.empty()) {
+    // Full-image disparity（BC/TT 立体角点对）
+    if (!result.pts_left_good.empty() && !result.pts_right_good.empty()) {
         int n = std::min(static_cast<int>(result.pts_left_good.size()),
                          static_cast<int>(result.pts_right_good.size()));
         result.disparity.resize(n);
@@ -165,109 +151,7 @@ bool StereoTracker::runExtraction(FeatureExtractor& ext,
     }
 
     // Determine if extraction succeeded
-    if (is_akaze_ext) {
-        return result.n_kp_left >= 4;  // AKAZE: need minimum keypoints
-    } else {
-        return !result.pts_left_match.empty();  // BinaryCorner/TinyTarget: need extracted corners
-    }
-}
-
-// ============================================================================
-// PnP Helper: AKAZE path
-// ============================================================================
-
-std::pair<bool, PoseEstimate> StereoTracker::runAkazePnP(
-        PipelineResult& result,
-        const std::vector<Eigen::Vector3d>& pnp_pts_3d) {
-    PoseEstimate pose;
-    double gpnp_timing = 0.0;
-
-    // ---- MAD disparity filter (mono mode: skip, no right-image data) ----
-    bool is_mono = result.pts_right_good.empty();
-
-    if (!is_mono) {
-        auto t_filter = std::chrono::high_resolution_clock::now();
-        MadFilterResult mad_res = mad_filter_.filter(
-            result.pts_left_good, result.pts_right_good, result.idx_from_filtered);
-
-        result.pts_left_good = std::move(mad_res.pts_left_filtered);
-        result.pts_right_good = std::move(mad_res.pts_right_filtered);
-        result.disparity = std::move(mad_res.disparity);
-        result.dx_filtered = std::move(mad_res.dx_filtered);
-        result.idx_from_filtered = std::move(mad_res.idx_from_filtered);
-
-        auto t_filter_end = std::chrono::high_resolution_clock::now();
-        result.timing["filter"] = std::chrono::duration<double, std::milli>(t_filter_end - t_filter).count();
-
-        // ---- Sync pts_left_used/pts_right_used/pts_right_projected after MAD ----
-        if (!mad_res.downgraded && !mad_res.filter_mask.empty()) {
-            bool all_pass = true;
-            for (bool m : mad_res.filter_mask) { if (!m) { all_pass = false; break; } }
-
-            if (!all_pass && !result.valid_mask.empty()) {
-                std::vector<int> valid_indices;
-                for (size_t i = 0; i < result.valid_mask.size(); ++i)
-                    if (result.valid_mask[i]) valid_indices.push_back(static_cast<int>(i));
-
-                std::vector<bool> filter_subset(valid_indices.size());
-                for (size_t i = 0; i < valid_indices.size(); ++i)
-                    filter_subset[i] = mad_res.filter_mask[valid_indices[i]];
-
-                auto apply_subset = [&](std::vector<cv::Point2f>& arr) {
-                    if (arr.size() != filter_subset.size()) return;
-                    std::vector<cv::Point2f> filtered;
-                    for (size_t i = 0; i < filter_subset.size(); ++i)
-                        if (filter_subset[i]) filtered.push_back(arr[i]);
-                    arr = std::move(filtered);
-                };
-                apply_subset(result.pts_left_used);
-                apply_subset(result.pts_right_used);
-                apply_subset(result.pts_right_projected);
-            }
-        }
-    } else {
-        result.timing["filter"] = 0.0;
-    }
-
-    // ---- AKAZE uses its own template pts_3d if available ----
-    // (pnp_pts_3d 由 dispatchPnP 按当前策略解析后传入)
-
-    // ---- Pose estimation ----
-    // 每帧始终运行 InitialPnP（几何一致初值），避免 GPnP HYBRID 路径复用上帧缓存旋转
-    if (config_.use_initial_pnp) {
-        MatchResult match_res;
-        match_res.good_matches = result.good_matches;
-        match_res.pts_left_match = result.pts_left_match;
-        match_res.pts_template_match = result.pts_template_match;
-        auto t_init_pnp = std::chrono::high_resolution_clock::now();
-        PoseEstimate init_pose = initial_pnp_.solve(match_res, pnp_pts_3d, camera_.K);
-        result.timing["initial_pnp"] = std::chrono::duration<double, std::milli>(
-            std::chrono::high_resolution_clock::now() - t_init_pnp).count();
-
-        if (init_pose.success) {
-            // Warm-start GPNP with InitialPnP result
-            pose = gpnp_solver_.solve(result, pnp_pts_3d, &init_pose.R, &init_pose.t, gpnp_timing);
-            if (!pose.success) {
-                // GPNP failed but InitialPnP succeeded → use InitialPnP (no degradation)
-                if (verbose_console_) std::cout << "  [AKAZE] GPNP failed, falling back to InitialPnP result" << "\n";
-                pose = init_pose;
-                pose.success = true;
-            }
-        } else {
-            // InitialPnP failed → try GPNP with default depth
-            if (verbose_console_) std::cout << "  [AKAZE] InitialPnP failed, trying GPNP with default depth" << "\n";
-            Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
-            Eigen::Vector3d t_id(0, 0, 5000);
-            pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
-        }
-    } else {
-        if (verbose_console_) std::cout << "  [InitialPnP] Skipped (use_initial_pnp=false)" << "\n";
-        Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
-        Eigen::Vector3d t_id(0, 0, 5000);
-        pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
-    }
-
-    return {pose.success, pose};
+    return !result.pts_left_match.empty();  // BinaryCorner/TinyTarget: need extracted corners
 }
 
 // ============================================================================
@@ -410,11 +294,8 @@ std::pair<bool, PoseEstimate> StereoTracker::runTinyTargetPnP(
 std::pair<bool, PoseEstimate> StereoTracker::dispatchPnP(FeatureExtractor* ext,
                                                            PipelineResult& result) {
     // 3D 模板按当前策略 ext 解析 (退化链中 ext 可不同于成员 extractor_)
-    const auto& tmpl_pts = ext->templateData().pts_3d;
-    const auto& pnp_pts_3d = tmpl_pts.empty() ? template_.pts_3d : tmpl_pts;
+    const auto& pnp_pts_3d = ext->templateData().pts_3d;
     switch (ext->strategyType()) {
-        case StrategyType::Akaze:
-            return runAkazePnP(result, pnp_pts_3d);
         case StrategyType::BinaryCorner:
             return runBinaryCornerPnP(result, pnp_pts_3d);
         case StrategyType::TinyTarget:
@@ -515,6 +396,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     bool is_first = !state_.has_cache;
     PipelineResult result;
     std::string winning_strategy;
+    FeatureExtractor* winner_ext = nullptr;
     bool fallback_used = false;
     bool pose_ok = false;
     PoseEstimate final_pose;
@@ -579,6 +461,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
             pose_ok = true;
             final_pose = pose;
             winning_strategy = strategy_name;
+            winner_ext = ext;
             result.strategy_name = strategy_name;
             break;
         }
@@ -635,24 +518,6 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                     std::cout << "  [Viz] No axes: result.success=false" << "\n";
             }
             utils::AsyncImageSaver::write(output_dir_ + "/stereo" + prefix + ".png", vis);
-        } else if (winning_strategy == "AkazeGpnp") {
-            if (!visualizer_) visualizer_ = std::make_unique<Visualizer>(camera_.K, output_dir_);
-            cv::Mat tmpl_color = template_.color_image;
-            if (tmpl_color.empty()) {
-                cv::cvtColor(template_.gray_image.empty()
-                    ? cv::Mat(200, 200, CV_8UC1, cv::Scalar(128))
-                    : template_.gray_image,
-                    tmpl_color, cv::COLOR_GRAY2BGR);
-            }
-            visualizer_->generateAll(
-                left_color_orig, right_color_orig, tmpl_color,
-                result.kp_left,
-                result.pts_left_used, result.pts_right_used,
-                result.pts_right_projected,
-                result.good_matches,
-                result.pts_left_match, result.pts_template_match,
-                result.disparity, prefix,
-                result.R, result.t, result.gpnp_success);
         } else {
             // BinaryCorner / TinyTarget visualization
             auto expandRect = [](const RoiRect& roi, const cv::Size& imgSz) -> cv::Rect {
@@ -688,7 +553,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                 {255,255,0}, {128,0,255}, {0,128,255}, {255,128,0}, {128,255,0}
             };
 
-            const auto& pnp_pts_3d = template_.pts_3d;
+            const auto& pnp_pts_3d = winner_ext->templateData().pts_3d;
             bool is_tiny = (winning_strategy == "TinyTarget");
 
             // --- Panel 0: 二值图像（左 | 右），角点叠加 (BinaryCorner only) ---
@@ -1002,17 +867,17 @@ PipelineResult StereoTracker::process(const std::string& left_path,
 }
 
 // ============================================================================
-// Dual-ROI Strategy: BinaryCorner (class 0 edges) + AKAZE (class 1 center)
+// Dual-ROI Strategy: BinaryCorner (class 0 edges) + class1 退化链 (Tier3)
 // ============================================================================
-// prepareDualBcTemplate — 从 AKAZE 模板提取 BC 角点（双目双ROI用）
+// prepareDualBcTemplate — 从板模板图提取 BC 角点（双目双ROI用）
 // ============================================================================
 
 void StereoTracker::prepareDualBcTemplate() {
     if (dual_bc_template_ready_) return;
 
-    const cv::Mat& tmpl_img = akaze_extractor_->templateData().gray_image;
+    const cv::Mat& tmpl_img = template_.gray_image;
     if (tmpl_img.empty()) {
-        std::cerr << "[DualRoi] AKAZE template image empty, cannot prepare BC template" << "\n";
+        std::cerr << "[DualRoi] board template image empty, cannot prepare BC template" << "\n";
         dual_bc_template_ready_ = true;
         return;
     }
@@ -1046,7 +911,7 @@ void StereoTracker::prepareDualBcTemplate() {
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
         if (contours.empty()) {
-            std::cerr << "[DualRoi] No contours found in AKAZE template binary" << "\n";
+            std::cerr << "[DualRoi] No contours found in board template binary" << "\n";
             dual_bc_template_ready_ = true;
             return;
         }
@@ -1076,7 +941,7 @@ void StereoTracker::prepareDualBcTemplate() {
             cv::approxPolyDP(*largest, corners, eps, true);
         }
         if (corners.empty()) {
-            std::cerr << "[DualRoi] Failed to extract corners from AKAZE template" << "\n";
+            std::cerr << "[DualRoi] Failed to extract corners from board template" << "\n";
             dual_bc_template_ready_ = true;
             return;
         }
@@ -1313,7 +1178,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     for (int i = 0; i < n_bc_use && i < static_cast<int>(result_bc.pts_template_match.size()); ++i) {
         merged_pts_template.push_back(result_bc.pts_template_match[i]);
     }
-    // BC 3D points from AKAZE-template-derived corners
+    // BC 3D points from board-template-derived corners
     for (int i = 0; i < n_bc_use && i < static_cast<int>(dual_bc_tmpl_pts3d_.size()); ++i) {
         merged_pts3d.push_back(dual_bc_tmpl_pts3d_[i]);
     }
@@ -1842,8 +1707,8 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             cv::Mat p5_left = left_color_orig(
                 cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
 
-            // Right: AKAZE template (grayscale → BGR, resize to match left height)
-            const cv::Mat& tmpl_gray = akaze_extractor_->templateData().gray_image;
+            // Right: board template (grayscale → BGR, resize to match left height)
+            const cv::Mat& tmpl_gray = template_.gray_image;
             cv::Mat tmpl_color;
             if (!tmpl_gray.empty()) {
                 cv::cvtColor(tmpl_gray, tmpl_color, cv::COLOR_GRAY2BGR);

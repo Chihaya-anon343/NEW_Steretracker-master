@@ -32,7 +32,7 @@ SiftKeypointExtractor::SiftKeypointExtractor(const Config& cfg)
 SiftKeypointExtractor::~SiftKeypointExtractor() = default;
 
 // ============================================================================
-// 初始化: 模板特征预提取 (仿 AkazeExtractor::extractTemplate)
+// 初始化: 模板特征预提取
 // ============================================================================
 
 bool SiftKeypointExtractor::initialize() {
@@ -86,7 +86,7 @@ bool SiftKeypointExtractor::initialize() {
 }
 
 // ============================================================================
-// 检测: ROI 图像 → SIFT → 模板匹配 → 2D/3D 对应 (仿 AkazeExtractor::extract)
+// 检测: ROI 图像 → SIFT → 模板匹配 → 2D/3D 对应
 // ============================================================================
 
 SiftKeypointExtractor::Result SiftKeypointExtractor::detect(const cv::Mat& roi_bgr) {

@@ -11,7 +11,6 @@
 #include "feature/FeatureExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
-#include "visualization/Visualizer.hpp"
 
 #include <opencv2/core.hpp>
 #include <memory>
@@ -19,8 +18,6 @@
 #include <vector>
 
 namespace gpnp {
-
-class AkazeGpnpExtractor;
 
 class TrackerBase {
 public:
@@ -65,10 +62,10 @@ protected:
     void addLogEntry(const PipelineResult& result, bool is_first, bool fallback_used);
 
     // ---- 时序连贯性 (temporal): 策略粘滞 + 位姿链 + 运动门控 ----
-    // 策略档位: 1=TinyTarget(远) 2=BinaryCorner(中) 3=AkazeGpnp(中近/大)
+    // 策略档位: 1=TinyTarget(远) 2=BinaryCorner(中)
     static int bandFromStrategyName(const std::string& name);
     static const char* strategyNameFromBand(int band);
-    void effectiveThresholds(bool is_class1, int& akaze_t, int& tiny_t) const;
+    int effectiveThresholds(bool is_class1) const;
     int nominateBand(int roi_area, bool is_class1) const;      ///< 纯面积分类（现有三分段语义）
     void applyBandChain(int band, bool is_class1);             ///< 档位 → 提取器 + 单向退化链
     int resolveLockedStrategy(int band_raw, bool is_class1);   ///< 粘滞状态机: 迟滞+去抖+越级硬切
@@ -109,19 +106,17 @@ protected:
     StereoCameraParams camera_;
     TrackerConfig config_;
     TemplateData template_;
-    std::unique_ptr<AkazeGpnpExtractor> akaze_extractor_;
     std::unique_ptr<BinaryCornerExtractor> binary_extractor_;
     std::unique_ptr<TinyTargetExtractor> tiny_extractor_;
     FeatureExtractor* extractor_ = nullptr;
     std::vector<FeatureExtractor*> fallback_extractors_;
-    int akaze_min_area_ = 40000, tiny_max_area_ = 800;
-    int akaze_min_area_class1_ = 0, tiny_max_area_class1_ = 0;
+    int tiny_max_area_ = 800;
+    int tiny_max_area_class1_ = 0;
     int binary_roi_pad_ = 0, tiny_roi_pad_ = 0;
     std::string output_dir_;
     bool verbose_console_ = true;
     bool visualize_detailed_ = true;  ///< true=Debug 模式生成 per-strategy 面板; false=仅三维轴叠加图
     int current_frame_ = 0;           ///< 当前输入帧号（用于可视化文件名）
-    std::unique_ptr<Visualizer> visualizer_;
     TrackingState state_;
 };
 

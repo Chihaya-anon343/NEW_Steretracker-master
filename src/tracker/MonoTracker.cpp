@@ -5,7 +5,6 @@
 
 #include "tracker/MonoTracker.hpp"
 #include "common/GeometryUtils.hpp"
-#include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -43,16 +42,6 @@ MonoTracker::MonoTracker(const Eigen::Matrix3d& K,
     config_ = config;
 
     initExtractors(template_path, binary_cfg, binary_template_dir, tiny_cfg, tiny_template_dir);
-
-    // 双ROI专用 AKAZE 提取器
-    LKParams dual_lk;
-    dual_lk.winSize = cv::Size(15, 15);
-    dual_lk.maxLevel = 2;
-    dual_akaze_extractor_ = std::make_unique<AkazeGpnpExtractor>(config.dual_roi_akaze_scale, dual_lk);
-    dual_akaze_extractor_->initCamera(camera_);
-    dual_akaze_extractor_->setTemplateData(template_path,
-                                            config.template_real_width_mm,
-                                            config.template_real_height_mm);
 }
 
 // ============================================================
@@ -62,7 +51,7 @@ MonoTracker::MonoTracker(const Eigen::Matrix3d& K,
 void MonoTracker::prepareDualBcTemplate() {
     if (dual_bc_template_ready_) return;
 
-    const cv::Mat& tmpl_img = akaze_extractor_->templateData().gray_image;
+    const cv::Mat& tmpl_img = template_.gray_image;
     if (tmpl_img.empty()) {
         std::cerr << "[DualRoi] board template image empty, cannot prepare BC template" << "\n";
         dual_bc_template_ready_ = true;
@@ -741,7 +730,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 cv::Rect(left_pri.x, left_pri.y, left_pri.width, left_pri.height)).clone();
 
             // Right: AKAZE template (grayscale → BGR, resize to match left height)
-            const cv::Mat& tmpl_gray = akaze_extractor_->templateData().gray_image;
+            const cv::Mat& tmpl_gray = template_.gray_image;
             cv::Mat tmpl_color;
             if (!tmpl_gray.empty()) {
                 cv::cvtColor(tmpl_gray, tmpl_color, cv::COLOR_GRAY2BGR);
@@ -1448,23 +1437,6 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                     }
                 }
                 utils::AsyncImageSaver::write(output_dir_ + "/mono_tt_reproj" + prefix + ".png", p_reproj);
-            }
-        }
-
-        // ================================================================
-        // AKAZE-specific panels
-        // ================================================================
-        if (!is_bc && !is_tiny) {
-            // -- Panel: Matched feature points on expanded view --
-            if (!result.pts_left_match.empty()) {
-                cv::Mat p_match = view_L.clone();
-                for (size_t i = 0; i < result.pts_left_match.size(); ++i) {
-                    cv::Point2f pv = toView_L(result.pts_left_match[i]);
-                    cv::circle(p_match,
-                        cv::Point(static_cast<int>(pv.x), static_cast<int>(pv.y)),
-                        4, CORNER_COLORS[i % 10], -1);
-                }
-                utils::AsyncImageSaver::write(output_dir_ + "/mono_ak_matches" + prefix + ".png", p_match);
             }
         }
 

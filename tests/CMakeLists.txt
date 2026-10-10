@@ -87,19 +87,13 @@ set(TEST_SHARED_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/TrackerBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/MonoTracker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTracker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/AkazeExtractor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/AkazeGpnpExtractor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/BinaryCornerExtractor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/TinyTargetExtractor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/MadDisparityFilter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/OpticalFlowTracker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matching/TemplateMatcher.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/stereo/StereoProjector.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/pose/InitialPnPSolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/pose/GPnPSolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/pose/MonoPnPSolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/utils/PoseUtils.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/visualization/Visualizer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/detection/RoiGenerator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/FileStereoSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/input/DirectoryStereoSource.cpp

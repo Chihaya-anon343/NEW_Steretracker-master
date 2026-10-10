@@ -33,7 +33,6 @@
 #include "detection/RoiGenerator.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
-#include "feature/AkazeGpnpExtractor.hpp"
 #include "utils/PoseUtils.hpp"
 
 #include <opencv2/core.hpp>
@@ -121,19 +120,16 @@ Eigen::Matrix3d makeK(int img_w, int img_h) {
 }
 
 // ---------------------------------------------------------------------------
-// 配置构造 (物理尺寸统一取 500×500 mm, 与 AKAZE 模板/真值一致)
+// 配置构造 (物理尺寸统一取 500×500 mm, 与板模板/真值一致)
 // ---------------------------------------------------------------------------
 TrackerConfig makeTrackerCfg() {
-    // scale=1.0: 合成图 akaze 目标仅 ~201px, 0.5 降采样后特征点过少导致匹配失败
-    // dual_roi_akaze_scale=1.0: 与 config/tracker_config_synth_dual.json 一致
-    return makeTrackerConfig(/*scale=*/1.0, /*gpnp_min_pts=*/3,
+    return makeTrackerConfig(/*gpnp_min_pts=*/3,
                              /*use_initial_pnp=*/true,
                              /*template_real_width_mm=*/500.0,
                              /*template_real_height_mm=*/500.0,
-                             /*akaze_min_area=*/40000, /*tiny_max_area=*/800,
-                             /*akaze_min_area_class1=*/0, /*tiny_max_area_class1=*/0,
-                             /*dual_roi_secondary_expand=*/50,
-                             /*dual_roi_akaze_scale=*/1.0);
+                             /*tiny_max_area=*/800,
+                             /*tiny_max_area_class1=*/0,
+                             /*dual_roi_secondary_expand=*/50);
 }
 
 BinaryCornerExtractor::Config makeBinaryCfg() {

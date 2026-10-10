@@ -5,7 +5,6 @@
 
 #include "tracker/TrackerBase.hpp"
 #include "common/GeometryUtils.hpp"
-#include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 
@@ -39,29 +38,29 @@ void TrackerBase::initExtractors(const std::string& template_path,
                                   const std::string& binary_template_dir,
                                   const TinyTargetExtractor::Config& tiny_cfg,
                                   const std::string& tiny_template_dir) {
-    akaze_extractor_ = std::make_unique<AkazeGpnpExtractor>(config_.scale, config_.lk_params);
-    akaze_extractor_->initCamera(camera_);
-    akaze_extractor_->setTemplateData(template_path,
-                                       config_.template_real_width_mm,
-                                       config_.template_real_height_mm);
-    template_ = akaze_extractor_->templateData();
+    // 板模板图直读（Dual-ROI BC 模板派生与可视化的图像来源）
+    template_.gray_image = cv::imread(template_path, cv::IMREAD_GRAYSCALE);
+    if (template_.gray_image.empty()) {
+        std::cerr << "[TrackerBase] WARNING: board template image empty: "
+                  << template_path << "\n";
+    } else {
+        template_.template_width  = template_.gray_image.cols;
+        template_.template_height = template_.gray_image.rows;
+    }
 
     binary_extractor_ = std::make_unique<BinaryCornerExtractor>(binary_cfg, binary_template_dir);
     tiny_extractor_ = std::make_unique<TinyTargetExtractor>(tiny_cfg, tiny_template_dir);
 
-    akaze_min_area_ = config_.akaze_min_area;
     tiny_max_area_  = config_.tiny_max_area;
-    akaze_min_area_class1_ = config_.akaze_min_area_class1;
     tiny_max_area_class1_  = config_.tiny_max_area_class1;
     binary_roi_pad_ = binary_cfg.roi_pad_pixels;
     tiny_roi_pad_   = tiny_cfg.roi_pad_pixels;
 
-    extractor_ = akaze_extractor_.get();
-    fallback_extractors_.push_back(binary_extractor_.get());
+    extractor_ = binary_extractor_.get();
     fallback_extractors_.push_back(tiny_extractor_.get());
 
     if (verbose_console_)
-        std::cout << "[TrackerBase] Pre-initialized 3 extractors: AkazeGpnp, BinaryCorner, TinyTarget"
+        std::cout << "[TrackerBase] Pre-initialized 2 extractors: BinaryCorner, TinyTarget"
                   << "\n";
 }
 
@@ -109,8 +108,6 @@ void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
         };
         if (band_used <= 1 && nominated_band_ >= 2)
             pushIfAbsent(binary_extractor_.get());
-        if (nominated_band_ == 3)
-            pushIfAbsent(akaze_extractor_.get());
     }
 
     if (verbose_console_ && tc.enabled)
@@ -123,25 +120,20 @@ void TrackerBase::configureStrategyChain(int roi_area, bool is_class1) {
                   << (sticky_hold_ ? " [HOLD]" : "") << "\n";
 }
 
-void TrackerBase::effectiveThresholds(bool is_class1, int& akaze_t, int& tiny_t) const {
-    akaze_t = akaze_min_area_;
-    tiny_t  = tiny_max_area_;
-    if (is_class1) {
-        if (akaze_min_area_class1_ > 0) akaze_t = akaze_min_area_class1_;
-        if (tiny_max_area_class1_ > 0)  tiny_t  = tiny_max_area_class1_;
-    }
+int TrackerBase::effectiveThresholds(bool is_class1) const {
+    int tiny_t = tiny_max_area_;
+    if (is_class1 && tiny_max_area_class1_ > 0) tiny_t = tiny_max_area_class1_;
+    return tiny_t;
 }
 
 int TrackerBase::bandFromStrategyName(const std::string& name) {
     if (name == "TinyTarget")   return 1;
     if (name == "BinaryCorner") return 2;
-    if (name == "AkazeGpnp")    return 3;
-    return 0;   // DualRoi 等非三策略
+    return 0;   // DualRoi 等非两档策略
 }
 
 const char* TrackerBase::strategyNameFromBand(int band) {
     switch (band) {
-        case 3:  return "AkazeGpnp";
         case 2:  return "BinaryCorner";
         case 1:  return "TinyTarget";
         default: return "Unknown";
@@ -149,29 +141,18 @@ const char* TrackerBase::strategyNameFromBand(int band) {
 }
 
 int TrackerBase::nominateBand(int roi_area, bool is_class1) const {
-    // band 3 (AKAZE) 已停用：单 ROI 链折叠为 BC→TT 两带；
+    // 单 ROI 链折叠为 BC→TT 两带；
     // area==0 (无 ROI) 在 process 入口即判帧失败，不会到达此处
-    int akaze_t, tiny_t;
-    effectiveThresholds(is_class1, akaze_t, tiny_t);
-    if (roi_area > tiny_t) return 2;
+    if (roi_area > effectiveThresholds(is_class1)) return 2;
     return 1;
 }
 
 void TrackerBase::applyBandChain(int band, bool is_class1) {
-    int akaze_t, tiny_t;
-    effectiveThresholds(is_class1, akaze_t, tiny_t);
+    const int tiny_t = effectiveThresholds(is_class1);
 
     fallback_extractors_.clear();
 
-    if (band == 3) {
-        extractor_ = akaze_extractor_.get();
-        fallback_extractors_.push_back(binary_extractor_.get());
-        fallback_extractors_.push_back(tiny_extractor_.get());
-        if (verbose_console_)
-            std::cout << "[TrackerBase] Strategy chain: AkazeGpnp → BinaryCorner → TinyTarget"
-                      << " (akaze_thresh=" << akaze_t
-                      << " is_class1=" << is_class1 << ")" << "\n";
-    } else if (band == 2) {
+    if (band == 2) {
         extractor_ = binary_extractor_.get();
         fallback_extractors_.push_back(tiny_extractor_.get());
         if (verbose_console_)
@@ -199,7 +180,7 @@ int TrackerBase::resolveLockedStrategy(int band_raw, bool is_class1) {
         return sticky_locked_;
     }
 
-    // 越级硬切：raw 面积跨越两档（如 TT↔AKAZE，快速接近/远离），立即切换
+    // 越级硬切：raw 面积跨越两档（如 TT↔BC，快速接近/远离），立即切换
     if (std::abs(band_raw - sticky_locked_) >= 2) {
         sticky_locked_ = band_raw;
         sticky_pending_ = 0;
@@ -217,15 +198,12 @@ int TrackerBase::resolveLockedStrategy(int band_raw, bool is_class1) {
     }
 
     // 迟滞余量：必须决定性地进入另一档
-    int akaze_t, tiny_t;
-    effectiveThresholds(is_class1, akaze_t, tiny_t);
+    const double tiny_t = effectiveThresholds(is_class1);
     bool margin_ok = false;
     if (band_ema > sticky_locked_) {
-        double th = (band_ema == 3) ? akaze_t : tiny_t;
-        margin_ok = ema_area_ > th * tc.hysteresis_up;
+        margin_ok = ema_area_ > tiny_t * tc.hysteresis_up;
     } else {
-        double th = (sticky_locked_ == 3) ? akaze_t : tiny_t;
-        margin_ok = ema_area_ < th * tc.hysteresis_down;
+        margin_ok = ema_area_ < tiny_t * tc.hysteresis_down;
     }
 
     if (band_ema == sticky_pending_) ++pending_count_;
@@ -510,10 +488,10 @@ void TrackerBase::printLogs() const {
         return;
     }
 
-    const std::vector<std::string> timing_keys = {"akaze", "flow", "filter", "proj", "match_template", "gpnp"};
+    const std::vector<std::string> timing_keys = {"binary_corner", "tiny_target", "initial_pnp", "gpnp", "tiny_pnp", "dual_roi"};
     const std::map<std::string, std::string> timing_labels = {
-        {"akaze", "AKAZE"}, {"flow", "OptFlow"}, {"filter", "Filter"},
-        {"proj", "Proj"}, {"match_template", "Match"}, {"gpnp", "PnP"}};
+        {"binary_corner", "BC"}, {"tiny_target", "TT"}, {"initial_pnp", "InitPnP"},
+        {"gpnp", "GPnP"}, {"tiny_pnp", "TinyPnP"}, {"dual_roi", "DualROI"}};
 
     std::vector<std::string> used_keys;
     for (const auto& k : timing_keys)

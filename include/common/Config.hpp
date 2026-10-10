@@ -44,46 +44,32 @@ inline StereoCameraParams makeStereoCameraParams(
 
 /// 构造带验证的跟踪器配置。
 inline TrackerConfig makeTrackerConfig(
-    double scale = 0.5,
     int gpnp_min_pts = 4,
     bool use_initial_pnp = true,
     double template_real_width_mm = 200.0,
     double template_real_height_mm = 200.0,
-    int akaze_min_area = 40000,
     int tiny_max_area = 800,
-    int akaze_min_area_class1 = 0,
     int tiny_max_area_class1 = 0,
-    int dual_roi_secondary_expand = 10,
-    double dual_roi_akaze_scale = 0.5)
+    int dual_roi_secondary_expand = 10)
 {
-    if (scale <= 0.0 || scale > 1.0) {
-        throw std::invalid_argument("scale 必须在 (0, 1] 范围内，当前值: " + std::to_string(scale));
-    }
     if (gpnp_min_pts < 3) {
         throw std::invalid_argument("gpnp_min_pts 必须 >= 3，当前值: " + std::to_string(gpnp_min_pts));
     }
     if (template_real_width_mm <= 0.0 || template_real_height_mm <= 0.0) {
         throw std::invalid_argument("模板物理尺寸必须为正数");
     }
-    if (akaze_min_area <= 0) {
-        throw std::invalid_argument("akaze_min_area 必须为正数");
-    }
     if (tiny_max_area <= 0) {
         throw std::invalid_argument("tiny_max_area 必须为正数");
     }
 
     TrackerConfig cfg;
-    cfg.scale = scale;
     cfg.gpnp_min_pts = gpnp_min_pts;
     cfg.use_initial_pnp = use_initial_pnp;
     cfg.template_real_width_mm = template_real_width_mm;
     cfg.template_real_height_mm = template_real_height_mm;
-    cfg.akaze_min_area = akaze_min_area;
     cfg.tiny_max_area = tiny_max_area;
-    cfg.akaze_min_area_class1 = akaze_min_area_class1;
     cfg.tiny_max_area_class1 = tiny_max_area_class1;
     cfg.dual_roi_secondary_expand = dual_roi_secondary_expand;
-    cfg.dual_roi_akaze_scale = dual_roi_akaze_scale;
     return cfg;
 }
 

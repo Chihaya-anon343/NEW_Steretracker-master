@@ -4,7 +4,7 @@
  * @file SiftKeypointExtractor.hpp
  * @brief 对比方法: SIFT/ORB 特征点提取 —— ROI 图像 ↔ 模板特征匹配 → 2D/3D 对应点 → PnP。
  *
- * 独立于主 pipeline 的 FeatureExtractor 策略体系 (仿 AkazeExtractor, 不继承):
+ * 独立于主 pipeline 的 FeatureExtractor 策略体系 (不继承):
  *   - 不参与面积分级 / 策略链选择 / 退化链 / ROI padding
  *   - 仅被 main_compare.cpp (pose_compare) 使用
  *

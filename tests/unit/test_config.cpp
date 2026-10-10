@@ -49,27 +49,22 @@ static void test_stereo_params_nan() {
 // ============================================================================
 
 static void test_tracker_config_valid() {
-    auto cfg = makeTrackerConfig(0.5, 4, true, 200.0, 150.0, 40000, 800, 10, 0.5);
-    TEST_ASSERT_NEAR(cfg.scale, 0.5, 1e-9);
+    auto cfg = makeTrackerConfig(4, true, 200.0, 150.0, 800, 400, 10);
     TEST_ASSERT(cfg.gpnp_min_pts == 4);
     TEST_ASSERT(cfg.use_initial_pnp == true);
     TEST_ASSERT_NEAR(cfg.template_real_width_mm, 200.0, 1e-9);
     TEST_ASSERT_NEAR(cfg.template_real_height_mm, 150.0, 1e-9);
-    TEST_ASSERT(cfg.akaze_min_area == 40000);
     TEST_ASSERT(cfg.tiny_max_area == 800);
+    TEST_ASSERT(cfg.tiny_max_area_class1 == 400);
     TEST_ASSERT(cfg.dual_roi_secondary_expand == 10);
-    TEST_ASSERT_NEAR(cfg.dual_roi_akaze_scale, 0.5, 1e-9);
 }
 
 static void test_tracker_config_invalid() {
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.0), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(1.5), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.5, 2), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.5, -3), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.5, 4, true, 0.0, 150.0), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.5, 4, true, 200.0, -1.0), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.5, 4, true, 200.0, 150.0, 0), std::invalid_argument);
-    TEST_ASSERT_THROWS(makeTrackerConfig(0.5, 4, true, 200.0, 150.0, 40000, 0), std::invalid_argument);
+    TEST_ASSERT_THROWS(makeTrackerConfig(2), std::invalid_argument);
+    TEST_ASSERT_THROWS(makeTrackerConfig(-3), std::invalid_argument);
+    TEST_ASSERT_THROWS(makeTrackerConfig(4, true, 0.0, 150.0), std::invalid_argument);
+    TEST_ASSERT_THROWS(makeTrackerConfig(4, true, 200.0, -1.0), std::invalid_argument);
+    TEST_ASSERT_THROWS(makeTrackerConfig(4, true, 200.0, 150.0, 0), std::invalid_argument);
 }
 
 // ============================================================================

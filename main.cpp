@@ -10,7 +10,6 @@
 #include "tracker/MonoTracker.hpp"
 #include "detection/YoloRoiProvider.hpp"
 #include "common/GeometryUtils.hpp"
-#include "feature/AkazeGpnpExtractor.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -94,11 +93,10 @@ int main(int argc, char** argv) {
     double cx = fs["camera"]["cx"], cy = fs["camera"]["cy"];
     double baseline = fs["camera"]["baseline_mm"];
 
-    // AKAZE 策略参数
+    // 板模板参数（Dual-ROI BC 模板派生与物理尺寸来源）
     std::string template_path = fs["strategies"]["akaze_gpnp"]["template_path"];
     double tw = fs["strategies"]["akaze_gpnp"]["template_real_width_mm"];
     double th = fs["strategies"]["akaze_gpnp"]["template_real_height_mm"];
-    double scale = fs["strategies"]["akaze_gpnp"]["scale"];
     int min_pts = fs["strategies"]["akaze_gpnp"]["gpnp_min_pts"];
     bool use_init_pnp = static_cast<int>(fs["strategies"]["akaze_gpnp"]["use_initial_pnp"]) != 0;
 
@@ -134,14 +132,12 @@ int main(int argc, char** argv) {
     int min_roi = fs["yolo"]["roi_min_size"];
 
     // 策略选择阈值（从 JSON 读取，替代原硬编码常量）
-    int akaze_min_area = fs["strategies"]["akaze_min_area"];
     int tiny_max_area  = fs["strategies"]["tiny_max_area"];
     int dual_trigger_area = fs["strategies"]["dual_trigger_area"];
     bool stereo_mono_fallback = static_cast<int>(fs["strategies"]["stereo_mono_fallback"]) != 0;
 
     // 近距离回退配置（class0 丢失时用 class1）
     RoiGenerator::CloseRangeConfig close_range_cfg;
-    int akaze_min_area_class1 = 0;
     int tiny_max_area_class1  = 0;
     cv::FileNode cr_node = fs["strategies"]["close_range"];
     if (!cr_node.empty()) {
@@ -149,15 +145,12 @@ int main(int argc, char** argv) {
         close_range_cfg.class1_min_area  = cr_node["class1_min_area"];
         close_range_cfg.roi_expand_ratio = cr_node["roi_expand_ratio"];
         close_range_cfg.min_expand_pixels = cr_node["min_expand_pixels"];
-        akaze_min_area_class1 = static_cast<int>(cr_node["akaze_min_area"]);
         tiny_max_area_class1  = static_cast<int>(cr_node["tiny_max_area"]);
-        close_range_cfg.akaze_min_area = akaze_min_area_class1;
         close_range_cfg.tiny_max_area  = tiny_max_area_class1;
     }
 
-    // 双 ROI 配置（class 1 ROI 拓展像素 + AKAZE 提取参数 + class1 三级退化链开关 + 巨型 primary 短路）
+    // 双 ROI 配置（class 1 ROI 拓展像素 + class1 三级退化链开关 + 巨型 primary 短路）
     int dual_expand = 10;
-    double dual_akaze_scale = 0.5;
     bool dual_class1_fallback = true;
     double dual_primary_span_ratio = 0.99;
     bool dual_tier1_only = false;
@@ -190,10 +183,6 @@ int main(int argc, char** argv) {
         {
             cv::FileNode t1only = dual_node["tier1_only"];
             if (!t1only.empty()) dual_tier1_only = static_cast<int>(t1only) != 0;
-        }
-        cv::FileNode ak_node = dual_node["akaze"];
-        if (!ak_node.empty()) {
-            dual_akaze_scale = ak_node["scale"];
         }
     }
 
@@ -487,10 +476,9 @@ int main(int argc, char** argv) {
     Eigen::Matrix3d R_rl = Eigen::Matrix3d::Identity();
     Eigen::Vector3d t_rl(baseline, 0.0, 0.0);
 
-    TrackerConfig tracker_cfg = makeTrackerConfig(scale, min_pts, use_init_pnp, tw, th,
-                                                  akaze_min_area, tiny_max_area,
-                                                  akaze_min_area_class1, tiny_max_area_class1,
-                                                  dual_expand, dual_akaze_scale);
+    TrackerConfig tracker_cfg = makeTrackerConfig(min_pts, use_init_pnp, tw, th,
+                                                  tiny_max_area, tiny_max_area_class1,
+                                                  dual_expand);
     tracker_cfg.dual_roi_class1_fallback = dual_class1_fallback;
     tracker_cfg.dual_roi_primary_span_ratio = dual_primary_span_ratio;
     tracker_cfg.dual_roi_tier1_only = dual_tier1_only;
@@ -907,8 +895,8 @@ int main(int argc, char** argv) {
                 << " baseline_mm=" << baseline << "\n"
                 << "YOLO: model=" << model_path << " conf=" << conf
                 << " class=" << target_cls << " expand=" << expand << "\n"
-                << "AKAZE模板: " << template_path << "  " << tw << "x" << th << "mm"
-                << "  scale=" << scale << "  min_pts=" << min_pts << "\n"
+                << "板模板: " << template_path << "  " << tw << "x" << th << "mm"
+                << "  min_pts=" << min_pts << "\n"
                 << "BC模板: " << binary_template_dir << "  corners=" << binary_cfg.corners
                 << "  kernel=" << binary_cfg.kernel_size
                 << "  p2m_c0=" << binary_cfg.pixel_to_meter_scale_class0
@@ -916,9 +904,7 @@ int main(int argc, char** argv) {
                 << "TT模板: " << tiny_template_dir << "  scale_factor=" << tiny_cfg.scale_factor
                 << "  sq_c0=" << tiny_cfg.square_size_m_class0
                 << "  sq_c1=" << tiny_cfg.square_size_m_class1 << "\n"
-                << "面积阈值: akaze_min=" << akaze_min_area
-                << "  tiny_max=" << tiny_max_area
-                << "  class1_akaze=" << akaze_min_area_class1
+                << "面积阈值: tiny_max=" << tiny_max_area
                 << "  class1_tiny=" << tiny_max_area_class1 << "\n"
                 << "close_range: enabled=" << close_range_cfg.enabled
                 << "  class1_min=" << close_range_cfg.class1_min_area

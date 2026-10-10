@@ -323,18 +323,24 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
     }
     snap("1.otsu", work_img);
 
-    // ---- 第1步: 保留最大连通域 ----
-    cv::Mat largest_region = keepLargestRegion(work_img);
-    if (debug_capture_) last_largest_region_ = largest_region.clone();
-    snap("2.largest", largest_region);
+    // ---- 第1~3步: 清理链 (最大连通域 → 填洞 → 平滑) ----
+    // 输出 smoothed 只被第4步 findBestMatch 消费; preset 路径 (右目复用左目
+    // 模板) 跳过模板匹配, 整链无消费者 → 直接跳过 (右目省 3 次全图操作
+    // + connectedComponents + findContours, 角点/位姿结果逐位不变)
+    cv::Mat smoothed;
+    if (preset_template == nullptr) {
+        cv::Mat largest_region = keepLargestRegion(work_img);
+        if (debug_capture_) last_largest_region_ = largest_region.clone();
+        snap("2.largest", largest_region);
 
-    // ---- 第2步: 填充孔洞 ----
-    cv::Mat filled = fillHoles(largest_region);
-    snap("3.filled", filled);
+        cv::Mat filled = fillHoles(largest_region);
+        snap("3.filled", filled);
 
-    // ---- 第3步: 形态学平滑 ----
-    cv::Mat smoothed = smoothBoundary(filled);
-    snap("4.smoothed", smoothed);
+        smoothed = smoothBoundary(filled);
+        snap("4.smoothed", smoothed);
+    } else {
+        logStep("CleanupChain", "Skipped (preset template path)");
+    }
 
     // ---- 第4步: 模板匹配 ----
     if (preset_template != nullptr) {
@@ -450,9 +456,10 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
         int tw = last_matched_template_->image.cols;
         int th = last_matched_template_->image.rows;
 
-        // 将模板角点缩放到平滑后的图像空间
-        double scale_x = static_cast<double>(smoothed.cols) / tw;
-        double scale_y = static_cast<double>(smoothed.rows) / th;
+        // 将模板角点缩放到平滑后的图像空间 (work_img 与 smoothed 同尺寸,
+        // preset 路径下 smoothed 为空, 统一用 work_img)
+        double scale_x = static_cast<double>(work_img.cols) / tw;
+        double scale_y = static_cast<double>(work_img.rows) / th;
 
         std::vector<cv::Point2f> scaled_template = last_matched_template_->corners;
         for (auto& pt : scaled_template) {
@@ -462,7 +469,7 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
 
         auto matches = matchCorners(scaled_template, corners,
                                      static_cast<double>(last_matched_template_->angle) + CPSAGL,
-                                     smoothed.size());
+                                     work_img.size());
 
         if (!matches.empty()) {
             std::vector<cv::Point2f> ordered(corners.size());
@@ -576,8 +583,10 @@ cv::Mat BinaryCornerExtractor::keepLargestRegion(const cv::Mat& binary_img) {
                 "All regions touch border, fallback to global largest");
     }
 
-    cv::Mat result = cv::Mat::zeros(binary_img.size(), CV_8UC1);
-    result.setTo(255, labels == best_label);
+    // compare(CMP_EQ) 单趟直出 0/255 掩码, 输出与 zeros+setTo(255, labels==best)
+    // 逐位相同, 省 zeros 初始化 + (labels==best) 临时掩码两次全图分配/扫描
+    cv::Mat result;
+    cv::compare(labels, best_label, result, cv::CMP_EQ);
 
     logStep("LargestRegion",
             "Kept 1 region / " + std::to_string(num_labels - 1) +
@@ -686,18 +695,14 @@ cv::Mat BinaryCornerExtractor::keepRegionFromCenter(const cv::Mat& binary_img) {
 // ============================================================================
 
 cv::Mat BinaryCornerExtractor::fillHoles(const cv::Mat& binary_img) {
-    int orig_count = cv::countNonZero(binary_img);
-
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binary_img, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     cv::Mat filled = cv::Mat::zeros(binary_img.size(), CV_8UC1);
     cv::drawContours(filled, contours, -1, cv::Scalar(255), cv::FILLED);
 
-    int filled_count = cv::countNonZero(filled);
     logStep("FillHoles",
-            "White pixels: " + std::to_string(orig_count) +
-            " -> " + std::to_string(filled_count));
+            "Filled " + std::to_string(contours.size()) + " external contours");
     return filled;
 }
 
@@ -710,10 +715,7 @@ cv::Mat BinaryCornerExtractor::smoothBoundary(const cv::Mat& binary_img) {
     cv::morphologyEx(binary_img, closed, cv::MORPH_CLOSE, kernel_);
     cv::morphologyEx(closed, opened, cv::MORPH_OPEN, kernel_);
 
-    int smoothed_count = cv::countNonZero(opened);
-    logStep("SmoothBoundary",
-            "Kernel: " + std::to_string(config_.kernel_size) +
-            ", white pixels: " + std::to_string(smoothed_count));
+    logStep("SmoothBoundary", "Kernel: " + std::to_string(config_.kernel_size));
     return opened;
 }
 

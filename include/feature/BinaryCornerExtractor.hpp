@@ -152,7 +152,8 @@ private:
     /// 从二值图像 (0/255) 提取角点的核心函数。
     /// @param binary_img      Otsu 二值化后的 ROI
     /// @param out_corners     输出的角点（ROI 局部坐标）
-    /// @param preset_template 可选：预设模板，非空时跳过 findBestMatch() 直接使用
+    /// @param preset_template 可选：预设模板，非空时跳过前置清理链
+    ///                        （其输出仅服务模板匹配）与 findBestMatch() 直接使用
     Status extractFromBinary(const cv::Mat& binary_img,
                               std::vector<cv::Point2f>& out_corners,
                               const TemplateData* preset_template = nullptr);

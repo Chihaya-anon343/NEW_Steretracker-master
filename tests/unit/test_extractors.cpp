@@ -56,9 +56,8 @@ void test_interface_names() {
     // 仅验证策略名称常量（避免依赖模板目录）
     // BinaryCorner / TinyTarget 的 name() 为编译期常量，无需实例
     // StrategyType 枚举值
-    TEST_ASSERT(static_cast<int>(StrategyType::Akaze) == 0);
-    TEST_ASSERT(static_cast<int>(StrategyType::BinaryCorner) == 1);
-    TEST_ASSERT(static_cast<int>(StrategyType::TinyTarget) == 2);
+    TEST_ASSERT(static_cast<int>(StrategyType::BinaryCorner) == 0);
+    TEST_ASSERT(static_cast<int>(StrategyType::TinyTarget) == 1);
 }
 REGISTER_TEST(test_interface_names);
 

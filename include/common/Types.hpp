@@ -36,14 +36,6 @@ struct StereoCameraParams {
 // 配置参数
 // ============================================================================
 
-/// Lucas-Kanade 光流参数。
-struct LKParams {
-    cv::Size winSize{21, 21};
-    int maxLevel{3};
-    cv::TermCriteria criteria{cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, 0.01};
-    double minEigThreshold{1e-4};
-};
-
 /// 时序连贯性配置（序列模式：位姿链 + 策略粘滞 + 运动门控）。
 /// 所有阈值以"帧"为单位 —— 离线序列时间戳为墙钟，不可用 dt。
 struct TemporalConfig {
@@ -67,18 +59,13 @@ struct TemporalConfig {
 
 /// 跟踪器级别配置（构造时一次性设置）。
 struct TrackerConfig {
-    double scale{0.5};                   ///< AKAZE 图像缩放因子 (0~1)
     int gpnp_min_pts{4};                 ///< GPNP 最少点数要求
     bool use_initial_pnp{true};          ///< 是否启用 RANSAC+ITERATIVE 初始 PnP
     double template_real_width_mm{200.0}; ///< 模板物理宽度 (mm)
     double template_real_height_mm{200.0};///< 模板物理高度 (mm)
-    LKParams lk_params;                  ///< 光流参数
-    int akaze_min_area{40000};           ///< 选择 AKAZE 策略的最小 ROI 面积
     int tiny_max_area{800};              ///< TinyTarget 策略的最大 ROI 面积
-    int akaze_min_area_class1{0};        ///< class1-only 时的 AKAZE 阈值 (0=回退到 akaze_min_area)
     int tiny_max_area_class1{0};         ///< class1-only 时的 TinyTarget 阈值 (0=回退到 tiny_max_area)
     int dual_roi_secondary_expand{10};   ///< 双 ROI 模式下次级（class 1）ROI 的拓展像素数
-    double dual_roi_akaze_scale{0.5};    ///< 双 ROI class 1 提取时的 AKAZE 缩放
     bool dual_roi_class1_fallback{true}; ///< 双 ROI 第 3 级退化: 合并与 BC-only 均失败后在 class1 ROI 上跑 BC→TT 链
     double dual_roi_primary_span_ratio{0.99}; ///< 巨型 primary 短路: primary 边长覆盖画幅 ≥ 该比例 → 目标外角点出视野, 跳过 Tier1/2 直接 class1 链 (<=0 关闭)
     bool dual_roi_tier1_only{false};     ///< Dual-ROI 消融: true = 仅 Tier1 (屏蔽 Tier2/Tier3/巨型 primary 短路)
@@ -92,19 +79,8 @@ struct TrackerConfig {
 // 特征数据
 // ============================================================================
 
-/// 单幅图像 AKAZE 特征提取结果。
-struct FeatureSet {
-    std::vector<cv::KeyPoint> keypoints;
-    cv::Mat descriptors;                        ///< CV_8U, N×61 二值描述子
-    std::vector<cv::Point2f> points;            ///< 关键点坐标 (N×1×2 → N×2)
-    int num_keypoints{0};
-};
-
 /// 不可变模板数据（构造时一次性提取）。
 struct TemplateData {
-    std::vector<cv::KeyPoint> keypoints;
-    cv::Mat descriptors;
-    cv::Mat color_image;
     cv::Mat gray_image;
     std::vector<Eigen::Vector3d> pts_3d;        ///< 模板坐标系下的 3D 坐标 (mm)
     int template_width{0};
@@ -115,39 +91,6 @@ struct TemplateData {
     cv::Mat image_bool;                           ///< 预计算二值掩膜（image > 127）
     std::vector<cv::Point2f> corners;             ///< 从 .txt 文件读取的角点坐标
     int angle{0};                                 ///< 旋转角度（度，从文件名解析）
-};
-
-// ============================================================================
-// 光流跟踪结果
-// ============================================================================
-
-/// LK 光流 L→R 跟踪结果，含 FB 校验 + MAD 滤波。
-struct TrackResult {
-    std::vector<cv::Point2f> pts_left_good;      ///< 有效的左图特征点
-    std::vector<cv::Point2f> pts_right_good;     ///< 有效的右图特征点
-    std::vector<int> idx_from_filtered;          ///< 映射回原始 kp_left 的索引
-    std::vector<double> disparity;               ///< 标准校正双目视差：left.x - right.x
-    std::vector<double> dx_filtered;             ///< MAD 滤波后的 x 视差
-    int num_matched{0};
-
-    // FB 校验统计（诊断用）
-    int num_before_fb{0};
-    int num_after_fb{0};
-    int num_after_mad{0};
-    double fb_error_mean{0.0};
-};
-
-// ============================================================================
-// 立体投影结果
-// ============================================================================
-
-/// 双目深度估计与右图投影的结果。
-struct ProjectionResult {
-    std::vector<cv::Point2f> pts_right_projected; ///< 右图上的投影点
-    std::vector<cv::Point2f> pts_left_used;       ///< 具有有效投影的左图点
-    std::vector<cv::Point2f> pts_right_used;      ///< 具有有效投影的右图点
-    std::vector<bool> valid_mask;                  ///< N 元素掩膜（true = 有效投影）
-    int num_projected{0};
 };
 
 // ============================================================================
@@ -288,7 +231,6 @@ struct LogEntry {
 struct PipelineResult {
     // --- 特征提取 ---
     std::vector<cv::KeyPoint> kp_left;
-    cv::Mat desc_left;
     int n_kp_left{0};
 
     // --- 光流跟踪 ---
@@ -388,22 +330,6 @@ struct RoiGroup {
 
     /// 如果主 ROI 和次级 ROI 均无效则返回 true。
     bool empty() const { return !primary.valid() && !secondary.valid(); }
-};
-
-// ============================================================================
-// MAD 滤波结果（0626: 由 MadDisparityFilter::filter() 返回）
-// ============================================================================
-
-/// MadDisparityFilter::filter() 的输出，匹配 Python 字典结构。
-struct MadFilterResult {
-    std::vector<cv::Point2f> pts_left_filtered;
-    std::vector<cv::Point2f> pts_right_filtered;
-    std::vector<double> disparity;        ///< 标准校正双目视差：left.x - right.x
-    std::vector<double> dx_filtered;
-    std::vector<double> dy_filtered;
-    std::vector<int> idx_from_filtered;
-    std::vector<bool> filter_mask;        ///< N 元素布尔掩膜
-    bool downgraded{false};               ///< 若点数过少导致回退则为 true
 };
 
 // ============================================================================

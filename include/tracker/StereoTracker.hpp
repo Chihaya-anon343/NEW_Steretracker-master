@@ -1,7 +1,6 @@
 #pragma once
 
 #include "tracker/TrackerBase.hpp"
-#include "feature/MadDisparityFilter.hpp"
 #include "pose/GPnPSolver.hpp"
 #include "pose/InitialPnPSolver.hpp"
 #include "pose/MonoPnPSolver.hpp"
@@ -98,9 +97,6 @@ private:
                                                PipelineResult& result);
     // PnP 入口显式接收当前策略的 3D 模板 (ext->templateData().pts_3d)，
     // 不读成员 extractor_ —— 退化链中 ext 可不同于 extractor_，混用会错配 3D 索引
-    std::pair<bool, PoseEstimate> runAkazePnP(
-        PipelineResult& result,
-        const std::vector<Eigen::Vector3d>& pnp_pts_3d);
     std::pair<bool, PoseEstimate> runBinaryCornerPnP(
         PipelineResult& result,
         const std::vector<Eigen::Vector3d>& pnp_pts_3d);
@@ -112,7 +108,6 @@ private:
         const std::vector<Eigen::Vector3d>& pnp_pts_3d);
 
     // ---- Stereo-specific members ----
-    std::unique_ptr<AkazeGpnpExtractor> dual_akaze_extractor_;
     bool dual_bc_template_ready_{false};
     std::vector<cv::Point2f> dual_bc_tmpl_corners_;
     std::vector<Eigen::Vector3d> dual_bc_tmpl_pts3d_;
@@ -120,7 +115,6 @@ private:
     std::vector<Eigen::Vector3d> dual_c1_tmpl_pts3d_;  ///< class1 标注点板系 3D (与 corners 同序)
     InitialPnPSolver initial_pnp_;
     GPnPSolver gpnp_solver_;
-    MadDisparityFilter mad_filter_;
     MonoPnPSolver mono_pnp_;  ///< 单侧检测降级时的单目 PnP
 };
 
