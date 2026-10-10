@@ -13,8 +13,10 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 #include "common/Types.hpp"
+#include "detection/IYoloDetector.hpp"
 #include "detection/YoloDecode.hpp"
 #include "detection/YoloObbDecode.hpp"
+#include "detection/YoloPreprocess.hpp"
 
 #include <algorithm>
 #include <array>
@@ -33,10 +35,10 @@ namespace gpnp {
 // YOLO 目标检测器（纯头文件）
 // ============================================================================
 
-class YoloDetector {
+class YoloDetector : public IYoloDetector {
 public:
     explicit YoloDetector(const YoloConfig& cfg);
-    ~YoloDetector();
+    ~YoloDetector() override;
 
     YoloDetector(const YoloDetector&) = delete;
     YoloDetector& operator=(const YoloDetector&) = delete;
@@ -44,20 +46,15 @@ public:
     bool isInitialized() const { return session_ != nullptr; }
 
     /// 对图像运行检测。成功时将填充 `detections`。
-    Status detect(const cv::Mat& image, std::vector<Detection>& detections);
+    Status detect(const cv::Mat& image, std::vector<Detection>& detections) override;
 
     /// 对图像运行 OBB 检测（需 config_.is_obb == true）。成功时将填充 `detections`。
-    Status detectObb(const cv::Mat& image, std::vector<ObbDetection>& detections);
+    Status detectObb(const cv::Mat& image, std::vector<ObbDetection>& detections) override;
 
 private:
     // --- 预处理辅助函数 ---
 
-    static cv::Mat ensureBGR(const cv::Mat& img);
     static std::pair<int, int> resolveInputShape(const std::vector<int64_t>& shape);
-    static void letterbox(const cv::Mat& img, cv::Mat& out,
-                          const cv::Size& new_shape,
-                          float& ratio, float& dw, float& dh,
-                          const cv::Scalar& color = cv::Scalar(114, 114, 114));
     static std::vector<float> blobFromImage(const cv::Mat& img,
                                             std::array<int64_t, 4>& input_shape);
     void preprocess(const cv::Mat& img, cv::Mat& out,
@@ -193,7 +190,7 @@ inline Status YoloDetector::runInference(const cv::Mat& image,
         return Status::EmptyInput;
     }
 
-    cv::Mat bgr = ensureBGR(image);
+    cv::Mat bgr = ensureBgrImage(image);
 
     cv::Mat input_tensor_img;
     preprocess(bgr, input_tensor_img, ratio, dw, dh);
@@ -227,7 +224,7 @@ inline Status YoloDetector::detect(const cv::Mat& image,
             return st;
         }
 
-        cv::Mat bgr = ensureBGR(image);
+        cv::Mat bgr = ensureBgrImage(image);
         return postprocess(outputs, bgr, ratio, dw, dh, detections);
 
     } catch (const Ort::Exception& e) {
@@ -253,7 +250,7 @@ inline Status YoloDetector::detectObb(const cv::Mat& image,
             return st;
         }
 
-        cv::Mat bgr = ensureBGR(image);
+        cv::Mat bgr = ensureBgrImage(image);
         return postprocessObb(outputs, bgr, ratio, dw, dh, detections);
 
     } catch (const Ort::Exception& e) {
@@ -261,28 +258,6 @@ inline Status YoloDetector::detectObb(const cv::Mat& image,
     } catch (const std::exception&) {
         return Status::UnknownError;
     }
-}
-
-// --- 确保 BGR 格式 ---
-
-inline cv::Mat YoloDetector::ensureBGR(const cv::Mat& img) {
-    if (img.empty()) {
-        throw std::runtime_error("Input image is empty.");
-    }
-    if (img.channels() == 3) {
-        return img;
-    }
-    cv::Mat bgr;
-    if (img.channels() == 1) {
-        cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
-        return bgr;
-    }
-    if (img.channels() == 4) {
-        cv::cvtColor(img, bgr, cv::COLOR_BGRA2BGR);
-        return bgr;
-    }
-    throw std::runtime_error("Unsupported image channels: " +
-                             std::to_string(img.channels()));
 }
 
 // --- 从 ONNX 模型获取输入尺寸 ---
@@ -299,55 +274,14 @@ inline std::pair<int, int> YoloDetector::resolveInputShape(
     return {640, 640};
 }
 
-// --- Letterbox：缩放 + 填充 ---
-
-inline void YoloDetector::letterbox(const cv::Mat& img, cv::Mat& out,
-                                     const cv::Size& new_shape,
-                                     float& ratio, float& dw, float& dh,
-                                     const cv::Scalar& color) {
-    const int src_h = img.rows;
-    const int src_w = img.cols;
-
-    ratio = std::min(
-        static_cast<float>(new_shape.height) / static_cast<float>(src_h),
-        static_cast<float>(new_shape.width) / static_cast<float>(src_w));
-
-    int new_unpad_w = static_cast<int>(std::round(src_w * ratio));
-    int new_unpad_h = static_cast<int>(std::round(src_h * ratio));
-    new_unpad_w = std::max(1, new_unpad_w);
-    new_unpad_h = std::max(1, new_unpad_h);
-
-    dw = (new_shape.width - new_unpad_w) / 2.0f;
-    dh = (new_shape.height - new_unpad_h) / 2.0f;
-
-    cv::Mat resized;
-    cv::resize(img, resized, cv::Size(new_unpad_w, new_unpad_h));
-
-    int top = static_cast<int>(std::round(dh - 0.1f));
-    int bottom = static_cast<int>(std::round(dh + 0.1f));
-    int left = static_cast<int>(std::round(dw - 0.1f));
-    int right = static_cast<int>(std::round(dw + 0.1f));
-
-    top = std::max(0, top);
-    bottom = std::max(0, bottom);
-    left = std::max(0, left);
-    right = std::max(0, right);
-
-    cv::copyMakeBorder(resized, out, top, bottom, left, right,
-                       cv::BORDER_CONSTANT, color);
-
-    if (out.rows != new_shape.height || out.cols != new_shape.width) {
-        cv::resize(out, out, new_shape);
-    }
-}
-
 // --- 预处理：letterbox → BGR→RGB → 归一化 ---
+// letterbox 几何来自 YoloPreprocess.hpp（与 RKNN 后端共享，保证反变换互逆）
 
 inline void YoloDetector::preprocess(const cv::Mat& img, cv::Mat& out,
                                       float& ratio, float& dw, float& dh) const {
     cv::Mat letterboxed;
-    letterbox(img, letterboxed,
-              cv::Size(input_hw_.second, input_hw_.first), ratio, dw, dh);
+    letterboxImage(img, letterboxed,
+                   cv::Size(input_hw_.second, input_hw_.first), ratio, dw, dh);
 
     cv::cvtColor(letterboxed, out, cv::COLOR_BGR2RGB);
     out.convertTo(out, CV_32FC3, 1.0 / 255.0);
@@ -391,33 +325,23 @@ inline Status YoloDetector::postprocess(const std::vector<Ort::Value>& preds,
     auto tensor_info = output.GetTensorTypeAndShapeInfo();
     auto shape = tensor_info.GetShape();
 
-    if (shape.size() != 2 && shape.size() != 3) {
-        return Status::InferenceFailed;
-    }
-
     // 原始 YOLOv8 输出：[1, 4+nc, N] (BCN) 或 [1, N, 4+nc] (BNC)，
     // 也可能是去掉 batch 维的 rank-2。区分"属性维"(4+nc) 与"预测框维"(N)。
-    size_t dim1 = 0, dim2 = 0;
-    if (shape.size() == 3) {
-        dim1 = static_cast<size_t>(shape[1]);
-        dim2 = static_cast<size_t>(shape[2]);
-    } else {
-        dim1 = static_cast<size_t>(shape[0]);
-        dim2 = static_cast<size_t>(shape[1]);
+    size_t num_preds = 0, num_attrs = 0;
+    bool shape_is_bcn = false;
+    if (!resolveYoloOutputLayout(shape.data(), shape.size(),
+                                 num_preds, num_attrs, shape_is_bcn)) {
+        return Status::InferenceFailed;
     }
-
-    const bool shape_is_bcn = (dim1 < dim2);
-    const size_t num_attrs  = shape_is_bcn ? dim1 : dim2;   // 4 + 类别数
-    const size_t num_preds  = shape_is_bcn ? dim2 : dim1;   // 预测框数
-    const size_t num_classes = num_attrs - 4;
 
     if (num_attrs < 5 || num_preds == 0) {
         return Status::InferenceFailed;
     }
+    const size_t num_classes = num_attrs - 4;
 
     const float* data = output.GetTensorData<float>();
     const size_t total = tensor_info.GetElementCount();
-    if (!data || total < dim1 * dim2) {
+    if (!data || total < num_attrs * num_preds) {
         return Status::InferenceFailed;
     }
 
@@ -449,32 +373,22 @@ inline Status YoloDetector::postprocessObb(const std::vector<Ort::Value>& preds,
     auto tensor_info = output.GetTensorTypeAndShapeInfo();
     auto shape = tensor_info.GetShape();
 
-    if (shape.size() != 2 && shape.size() != 3) {
-        return Status::InferenceFailed;
-    }
-
     // OBB 输出：[1, 4+nc+1, N] (BCN) 或 [1, N, 4+nc+1] (BNC)
-    size_t dim1 = 0, dim2 = 0;
-    if (shape.size() == 3) {
-        dim1 = static_cast<size_t>(shape[1]);
-        dim2 = static_cast<size_t>(shape[2]);
-    } else {
-        dim1 = static_cast<size_t>(shape[0]);
-        dim2 = static_cast<size_t>(shape[1]);
-    }
-
-    const bool shape_is_bcn = (dim1 < dim2);
-    const size_t num_attrs  = shape_is_bcn ? dim1 : dim2;   // 4 + nc + 1
-    const size_t num_preds  = shape_is_bcn ? dim2 : dim1;
-    const size_t num_classes = num_attrs - 5;               // 多出的 1 通道为角度
-
-    if (num_attrs < 6 || num_classes == 0 || num_preds == 0) {
+    size_t num_preds = 0, num_attrs = 0;
+    bool shape_is_bcn = false;
+    if (!resolveYoloOutputLayout(shape.data(), shape.size(),
+                                 num_preds, num_attrs, shape_is_bcn)) {
         return Status::InferenceFailed;
     }
+
+    if (num_attrs < 6 || num_preds == 0) {
+        return Status::InferenceFailed;
+    }
+    const size_t num_classes = num_attrs - 5;               // 多出的 1 通道为角度
 
     const float* data = output.GetTensorData<float>();
     const size_t total = tensor_info.GetElementCount();
-    if (!data || total < dim1 * dim2) {
+    if (!data || total < num_attrs * num_preds) {
         return Status::InferenceFailed;
     }
 

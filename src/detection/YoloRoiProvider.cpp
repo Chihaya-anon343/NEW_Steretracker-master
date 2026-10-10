@@ -4,7 +4,6 @@
  */
 
 #include "detection/YoloRoiProvider.hpp"
-#include "detection/YoloDetector.hpp"
 #include "common/LogConfig.hpp"
 
 #include <future>
@@ -18,7 +17,7 @@ YoloRoiProvider::~YoloRoiProvider() = default;
 bool YoloRoiProvider::initialize(const YoloConfig& yolo_cfg,
                                   const RoiGenerator::Config& roi_cfg) {
     try {
-        detector_ = std::make_unique<YoloDetector>(yolo_cfg);
+        detector_ = createYoloDetector(yolo_cfg);
         roi_gen_  = std::make_unique<RoiGenerator>(roi_cfg);
         if (g_verbose_console)
             std::cout << "[YoloRoiProvider] Ready. Model: " << yolo_cfg.model_path
@@ -49,8 +48,8 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
     Status sl = Status::UnknownError;
     Status sr = Status::UnknownError;
 
-    // H1: 左右推理并行 — 两次推理完全独立且 YoloDetector::detect() 线程安全
-    // (共享成员构造后只读, Ort::Session::Run 支持并发, 输出向量各自独立)
+    // H1: 左右推理并行 — 两次推理完全独立
+    // (ORT 后端: Session::Run 支持并发; RKNN 后端: 检测器内部互斥, 并发退化为串行, 正确性优先)
     try {
         auto fut_right = std::async(std::launch::async,
                                     [&]() { return detector_->detect(right_img, det_right); });

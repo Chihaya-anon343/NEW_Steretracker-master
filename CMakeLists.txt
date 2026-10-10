@@ -14,13 +14,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # --- OpenCV ---
 find_package(OpenCV REQUIRED COMPONENTS
-    core
-    imgproc
-    features2d
-    calib3d
-    video
-    highgui
-    imgcodecs
+        core
+        imgproc
+        features2d
+        calib3d
+        video
+        highgui
+        imgcodecs
 )
 
 # --- Eigen3 ---
@@ -30,23 +30,77 @@ find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
 
 # --- ONNX Runtime (YOLO detection, required) ---
-set(ONNXRUNTIME_ROOT
-    "/opt/onnxruntime-linux-x64-gpu-1.20.1"
-    CACHE PATH "ONNX Runtime installation path")
+# Resolution order: -DONNXRUNTIME_ROOT=<path> > auto-detect /opt/onnxruntime-*
+# (tolerates variant installs: linux-x64-gpu in Docker, linux-aarch64 on ARM boards)
+set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime install prefix (empty = auto-detect /opt/onnxruntime-*)")
 
-if(NOT EXISTS "${ONNXRUNTIME_ROOT}")
-    message(FATAL_ERROR
-            "ONNX Runtime not found:\n"
-            "  ${ONNXRUNTIME_ROOT}\n"
-            "Please verify Docker image installation.")
+set(_ORT_ROOT "")
+if(ONNXRUNTIME_ROOT)
+    if(EXISTS "${ONNXRUNTIME_ROOT}")
+        set(_ORT_ROOT "${ONNXRUNTIME_ROOT}")
+    else()
+        message(WARNING "ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}' does not exist, falling back to auto-detect")
+    endif()
 endif()
 
+if(NOT _ORT_ROOT)
+    file(GLOB _ORT_CANDIDATES "/opt/onnxruntime-*")
+    foreach(_d IN LISTS _ORT_CANDIDATES)
+        if(EXISTS "${_d}/lib/libonnxruntime.so" AND EXISTS "${_d}/include/onnxruntime_cxx_api.h")
+            list(APPEND _ORT_VALID "${_d}")
+        endif()
+    endforeach()
+    list(SORT _ORT_VALID)
+    list(LENGTH _ORT_VALID _ORT_N)
+    if(_ORT_N EQUAL 0)
+        message(FATAL_ERROR
+                "ONNX Runtime not found. Searched:\n"
+                "  - ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}' (cache)\n"
+                "  - /opt/onnxruntime-* (needs lib/libonnxruntime.so + include/onnxruntime_cxx_api.h)\n"
+                "Fix: install ONNX Runtime under /opt or pass -DONNXRUNTIME_ROOT=<path>.")
+    elseif(_ORT_N GREATER 1)
+        list(GET _ORT_VALID -1 _ORT_ROOT)
+        message(WARNING "Multiple ONNX Runtime installs under /opt: ${_ORT_VALID}; using '${_ORT_ROOT}'")
+    else()
+        list(GET _ORT_VALID 0 _ORT_ROOT)
+    endif()
+endif()
+
+set(ONNXRUNTIME_ROOT "${_ORT_ROOT}")  # shadow cache so later refs use the resolved path
 message(STATUS "ONNX Runtime root: ${ONNXRUNTIME_ROOT}")
 
 add_library(onnxruntime SHARED IMPORTED)
 set_target_properties(onnxruntime PROPERTIES
-    IMPORTED_LOCATION "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so"
-    INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_ROOT}/include")
+        IMPORTED_LOCATION "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_ROOT}/include")
+
+# Built binaries resolve libonnxruntime.so without LD_LIBRARY_PATH
+set(CMAKE_BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib")
+set(CMAKE_INSTALL_RPATH "${ONNXRUNTIME_ROOT}/lib")
+
+# --- RKNN Runtime (Rockchip NPU, 可选: 仅 ARM 板上有, x86 Docker 无) ---
+# 探测失败不报错——.rknn 后端禁用, ONNX Runtime 后端不受影响。
+set(RKNN_ROOT "" CACHE PATH "RKNN runtime install prefix (containing lib/ and include/)")
+
+find_library(RKNN_RT_LIB
+        NAMES rknnrt
+        PATHS /usr/lib /usr/lib/aarch64-linux-gnu /usr/local/lib ${RKNN_ROOT}/lib)
+find_path(RKNN_INC_DIR
+        NAMES rknn_api.h
+        PATHS /usr/include /usr/local/include ${RKNN_ROOT}/include
+              ${CMAKE_SOURCE_DIR}/third_party/rknpu2/include)
+
+if(RKNN_RT_LIB AND RKNN_INC_DIR)
+    add_library(rknnrt SHARED IMPORTED)
+    set_target_properties(rknnrt PROPERTIES
+            IMPORTED_LOCATION "${RKNN_RT_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${RKNN_INC_DIR}")
+    set(GPNP_RKNN_AVAILABLE ON)
+    message(STATUS "RKNN: enabled (${RKNN_RT_LIB}, ${RKNN_INC_DIR})")
+else()
+    set(GPNP_RKNN_AVAILABLE OFF)
+    message(STATUS "RKNN: not found, .rknn backend disabled")
+endif()
 
 # ============================================================================
 # Source Files
@@ -55,34 +109,34 @@ set_target_properties(onnxruntime PROPERTIES
 set(PROJECT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 set(SOURCES
-    main.cpp
-    src/feature/AkazeExtractor.cpp
-    src/feature/AkazeGpnpExtractor.cpp
-    src/feature/BinaryCornerExtractor.cpp
-    src/feature/MadDisparityFilter.cpp
-    src/feature/OpticalFlowTracker.cpp
-    src/feature/TinyTargetExtractor.cpp
-    src/matching/TemplateMatcher.cpp
-    src/stereo/StereoProjector.cpp
-    src/pose/InitialPnPSolver.cpp
-    src/pose/GPnPSolver.cpp
-    src/pose/MonoPnPSolver.cpp
-    src/utils/PoseUtils.cpp
-    src/visualization/Visualizer.cpp
-    src/tracker/TrackerBase.cpp
-    src/tracker/MonoTracker.cpp
-    src/tracker/StereoTracker.cpp
-    src/detection/RoiGenerator.cpp
-    src/detection/YoloRoiProvider.cpp
-    # 输入系统 (Phase 1 + Phase 3 摄像头源)
-    src/input/FileStereoSource.cpp
-    src/input/DirectoryStereoSource.cpp
-    src/input/SequenceSource.cpp
-    src/input/CameraSource.cpp
-    src/input/InputProvider.cpp
-    src/input/SimulatedSensors.cpp
-    # ESKF 多源融合 (适配层; eskf/eskf_vio.hpp 为 header-only)
-    src/fusion/EskfFusionManager.cpp
+        main.cpp
+        src/feature/AkazeExtractor.cpp
+        src/feature/AkazeGpnpExtractor.cpp
+        src/feature/BinaryCornerExtractor.cpp
+        src/feature/MadDisparityFilter.cpp
+        src/feature/OpticalFlowTracker.cpp
+        src/feature/TinyTargetExtractor.cpp
+        src/matching/TemplateMatcher.cpp
+        src/stereo/StereoProjector.cpp
+        src/pose/InitialPnPSolver.cpp
+        src/pose/GPnPSolver.cpp
+        src/pose/MonoPnPSolver.cpp
+        src/utils/PoseUtils.cpp
+        src/visualization/Visualizer.cpp
+        src/tracker/TrackerBase.cpp
+        src/tracker/MonoTracker.cpp
+        src/tracker/StereoTracker.cpp
+        src/detection/RoiGenerator.cpp
+        src/detection/YoloRoiProvider.cpp
+        # 输入系统 (Phase 1 + Phase 3 摄像头源)
+        src/input/FileStereoSource.cpp
+        src/input/DirectoryStereoSource.cpp
+        src/input/SequenceSource.cpp
+        src/input/CameraSource.cpp
+        src/input/InputProvider.cpp
+        src/input/SimulatedSensors.cpp
+        # ESKF 多源融合 (适配层; eskf/eskf_vio.hpp 为 header-only)
+        src/fusion/EskfFusionManager.cpp
 )
 
 # ============================================================================
@@ -92,8 +146,8 @@ set(SOURCES
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${PROJECT_INCLUDE_DIR}
-    ${CMAKE_SOURCE_DIR}   # eskf/ (header-only 库)
+        ${PROJECT_INCLUDE_DIR}
+        ${CMAKE_SOURCE_DIR}   # eskf/ (header-only 库)
 )
 
 # Link OpenCV (works with both modern targets and legacy lib list)
@@ -124,15 +178,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 # ============================================================================
 
 add_executable(pose_compare
-    main_compare.cpp
-    src/feature/SiftKeypointExtractor.cpp
-    src/feature/NetworkKeypointExtractor.cpp
-    src/matching/TemplateMatcher.cpp
-    src/pose/MonoPnPSolver.cpp
+        main_compare.cpp
+        src/feature/SiftKeypointExtractor.cpp
+        src/feature/NetworkKeypointExtractor.cpp
+        src/matching/TemplateMatcher.cpp
+        src/pose/MonoPnPSolver.cpp
 )
 
 target_include_directories(pose_compare PRIVATE
-    ${PROJECT_INCLUDE_DIR}
+        ${PROJECT_INCLUDE_DIR}
 )
 
 if(OpenCV_FOUND)
@@ -156,12 +210,12 @@ target_link_libraries(pose_compare PRIVATE onnxruntime Threads::Threads)
 # ============================================================================
 
 add_executable(pose_compare2
-    main_compare2.cpp
-    src/feature/AprilTagExtractor.cpp
+        main_compare2.cpp
+        src/feature/AprilTagExtractor.cpp
 )
 
 target_include_directories(pose_compare2 PRIVATE
-    ${PROJECT_INCLUDE_DIR}
+        ${PROJECT_INCLUDE_DIR}
 )
 
 if(OpenCV_FOUND)
@@ -209,30 +263,46 @@ endif()
 target_link_libraries(obb_pipeline PRIVATE onnxruntime Threads::Threads)
 
 # ============================================================================
+# RKNN 后端接线 (所有 YOLO 检测消费方: GPNP/pose_compare/pose_compare2/obb_pipeline)
+#
+# YoloDetectorFactory.cpp 按 model_path 后缀 .rknn 路由后端;
+# RknnYoloDetector.cpp 仅在探测到 librknnrt 时编译。
+# ============================================================================
+
+foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2 obb_pipeline)
+    target_sources(${tgt} PRIVATE src/detection/YoloDetectorFactory.cpp)
+    if(GPNP_RKNN_AVAILABLE)
+        target_sources(${tgt} PRIVATE src/detection/RknnYoloDetector.cpp)
+        target_link_libraries(${tgt} PRIVATE rknnrt)
+        target_compile_definitions(${tgt} PRIVATE GPNP_WITH_RKNN=1)
+    endif()
+endforeach()
+
+# ============================================================================
 # Compiler Options
 # ============================================================================
 
 if(MSVC)
     foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2 obb_pipeline)
         target_compile_options(${tgt} PRIVATE
-            /W4
-            /EHsc
-            /O2
-            /bigobj
+                /W4
+                /EHsc
+                /O2
+                /bigobj
         )
         target_compile_definitions(${tgt} PRIVATE
-            _CRT_SECURE_NO_WARNINGS
-            NOMINMAX
+                _CRT_SECURE_NO_WARNINGS
+                NOMINMAX
         )
     endforeach()
 else()
     foreach(tgt ${PROJECT_NAME} pose_compare pose_compare2 obb_pipeline)
         target_compile_options(${tgt} PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
-            -O3
-            -march=native
+                -Wall
+                -Wextra
+                -Wpedantic
+                -O3
+                -march=native
         )
     endforeach()
 endif()

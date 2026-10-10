@@ -11,7 +11,7 @@
  * 配置: config/compare2_config.json (仅 input.directory_path 必填, 其余占位)
  */
 
-#include "detection/YoloDetector.hpp"
+#include "detection/IYoloDetector.hpp"
 #include "feature/AprilTagExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
 
@@ -176,7 +176,7 @@ int main(int argc, char** argv) {
     }
     std::cout << "输入序列: " << images.size() << " 帧 (" << input_dir << ")" << std::endl;
 
-    YoloDetector yolo(yolo_cfg);   // 构造失败抛异常 → 由外层 catch 报错退出
+    auto yolo = gpnp::createYoloDetector(yolo_cfg);   // 构造失败抛异常 → 由外层 catch 报错退出
 
     AprilTagExtractor extractor(at_cfg);
     if (!extractor.initialize()) {

@@ -11,7 +11,7 @@
  * 配置: config/compare_config.json (仅 input.directory_path 必填, 其余占位)
  */
 
-#include "detection/YoloDetector.hpp"
+#include "detection/IYoloDetector.hpp"
 #include "feature/NetworkKeypointExtractor.hpp"
 #include "feature/SiftKeypointExtractor.hpp"
 #include "pose/MonoPnPSolver.hpp"
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
     }
     std::cout << "输入序列: " << images.size() << " 帧 (" << input_dir << ")" << std::endl;
 
-    YoloDetector yolo(yolo_cfg);   // 构造失败抛异常 → 由外层 catch 报错退出
+    auto yolo = gpnp::createYoloDetector(yolo_cfg);   // 构造失败抛异常 → 由外层 catch 报错退出
 
     // 特征点提取器: 按 method 分发, 统一为 ExtractFn 供帧循环调用
     ExtractFn run_extract;

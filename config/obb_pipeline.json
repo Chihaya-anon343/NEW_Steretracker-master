@@ -1,6 +1,6 @@
 {
     "yolo": {
-        "model_path": "yolo_onnx/obb_best.onnx",
+        "model_path": "yolo_onnx/obb_best.rknn",
         "device_type": "CPU",
         "conf_threshold": 0.25,
         "iou_threshold": 0.45,

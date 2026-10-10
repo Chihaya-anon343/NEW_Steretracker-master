@@ -22,6 +22,42 @@
 namespace gpnp {
 
 /**
+ * 从原始输出张量维度推导 (num_attrs, num_preds, is_bcn)。
+ * 兼容 [1,A,N] / [A,N] / [1,A,N,1] 等布局：剥离前导 batch 维与尾部单元素维后
+ * 必须恰好剩 2 维；属性维(4+nc 或 4+nc+1) = 较小者，预测框维 N = 较大者，
+ * is_bcn = 属性维在前。两维相等（无法区分）或维度异常时返回 false。
+ * 模板同时覆盖 ONNX 的 int64_t shape 与 RKNN 的 uint32_t dims。
+ */
+template <typename T>
+inline bool resolveYoloOutputLayout(const T* dims, size_t n_dims,
+                                    size_t& num_preds, size_t& num_attrs,
+                                    bool& is_bcn) {
+    if (dims == nullptr || n_dims < 2) {
+        return false;
+    }
+    size_t b = 0;
+    size_t e = n_dims;
+    if (dims[b] == 1 && e - b > 2) {
+        ++b;  // 剥离前导 batch 维
+    }
+    while (e - b > 2 && dims[e - 1] == 1) {
+        --e;  // 剥离尾部单元素维
+    }
+    if (e - b != 2) {
+        return false;
+    }
+    const size_t d0 = static_cast<size_t>(dims[b]);
+    const size_t d1 = static_cast<size_t>(dims[b + 1]);
+    if (d0 == 0 || d1 == 0 || d0 == d1) {
+        return false;
+    }
+    is_bcn = (d0 < d1);
+    num_attrs = is_bcn ? d0 : d1;
+    num_preds = is_bcn ? d1 : d0;
+    return true;
+}
+
+/**
  * 解码原始 YOLOv8 输出为 Detection 列表（含置信度过滤 + NMS + 反向 letterbox + clamp）。
  *
  * @param data           原始输出张量的 float 数据指针（已去除 batch 维）

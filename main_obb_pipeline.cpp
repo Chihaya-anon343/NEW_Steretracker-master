@@ -13,7 +13,7 @@
  */
 
 #include "common/Types.hpp"
-#include "detection/YoloDetector.hpp"
+#include "detection/IYoloDetector.hpp"
 #include "feature/ObbCornerExtractor.hpp"
 #include "pose/MonoPnPSolver.hpp"
 
@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
               << "\n[obb_pipeline] input=" << in_dir << " output=" << out_dir << std::endl;
 
     // ---- 组件构造 ----
-    gpnp::YoloDetector detector(ycfg);
+    auto detector = gpnp::createYoloDetector(ycfg);   // .rknn 后缀 → RKNN NPU 后端
     gpnp::ObbCornerExtractor extractor(ecfg);
     if (!extractor.templatesReady()) {
         std::cerr << "[obb_pipeline] 模板加载失败: " << ecfg.template_dir << std::endl;
@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
         // 1) YOLO-OBB 检测
         std::vector<gpnp::ObbDetection> obbs;
         auto t0 = std::chrono::steady_clock::now();
-        gpnp::Status st = detector.detectObb(img, obbs);
+        gpnp::Status st = detector->detectObb(img, obbs);
         auto t1 = std::chrono::steady_clock::now();
         t_det += std::chrono::duration<double, std::milli>(t1 - t0).count();
         if (st != gpnp::Status::Success || obbs.empty()) {

@@ -9,6 +9,7 @@
  */
 
 #include "common/Types.hpp"
+#include "detection/IYoloDetector.hpp"
 #include "detection/RoiGenerator.hpp"
 
 #include <opencv2/core.hpp>
@@ -17,8 +18,6 @@
 #include <utility>
 
 namespace gpnp {
-
-class YoloDetector;
 
 class YoloRoiProvider {
 public:
@@ -48,7 +47,7 @@ public:
     RoiGroup detectMono(const cv::Mat& left_img);
 
 private:
-    std::unique_ptr<YoloDetector> detector_;
+    std::unique_ptr<IYoloDetector> detector_;
     std::unique_ptr<RoiGenerator> roi_gen_;
 };
 
