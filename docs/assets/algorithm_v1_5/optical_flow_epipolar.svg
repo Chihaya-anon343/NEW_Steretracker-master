@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1100" height="550" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1100 550" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1100" height="550"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-550)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="0" width="1100" height="550" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="32" y="510" style="font-family: DocumentChinese; font-size: 24px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,1020) scale(1,-1)">极线带、右点初始化与光流往返校验</text>
+			<text x="32" y="481" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,962) scale(1,-1)">示意数值，非实验数据；允许垂直偏差不会消除标定误差。坐标间距未按比例绘制。</text>
+			<rect x="40" y="243" width="450" height="190" style="stroke: rgb(79%,83%,88%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="48" y="444" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,888) scale(1,-1)">左图：仅在左 ROI 提取特征</text>
+			<path d="M 55,419 L 130,419 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="130 419, 121.7105 422.5048, 121.7105 415.4952" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="138" y="415" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,830) scale(1,-1)">u</text>
+			<path d="M 55,419 L 55,363 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="55 363, 58.50477 371.2895, 51.49523 371.2895" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="45" y="348" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,696) scale(1,-1)">v</text>
+			<rect x="606" y="243" width="450" height="190" style="stroke: rgb(79%,83%,88%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="614" y="444" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,888) scale(1,-1)">右图：在灰度搜索区域寻找对应</text>
+			<path d="M 621,419 L 696,419 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="696 419, 687.7105 422.5048, 687.7105 415.4952" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="704" y="415" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,830) scale(1,-1)">u</text>
+			<path d="M 621,419 L 621,363 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="621 363, 624.5048 371.2895, 617.4952 371.2895" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="611" y="348" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,696) scale(1,-1)">v</text>
+			<rect x="657" y="287" width="350" height="72" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(85%,91%,99%); fill-rule: evenodd;"/>
+			<path d="M 657,323 L 1007,323 Z" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; stroke-dasharray: 4, 3;"/>
+			<text x="730" y="379" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,758) scale(1,-1)">极线 ±3 px 搜索带</text>
+			<circle cx="300" cy="323" r="5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(14%,38%,92%); fill-rule: evenodd;"/>
+			<circle cx="794" cy="305" r="5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(1%,58%,41%); fill-rule: evenodd;"/>
+			<circle cx="834" cy="323" r="5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(85%,46%,2%); fill-rule: evenodd;"/>
+			<text x="190" y="280" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,560) scale(1,-1)">p_L=(300,200)</text>
+			<text x="672" y="263" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,526) scale(1,-1)">p_R=(260,201.5)</text>
+			<text x="839" y="335" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(85%,46%,2%); stroke:none;" transform="translate(0,670) scale(1,-1)">同坐标初值</text>
+			<path d="M 834,323 L 794,305 Z" style="stroke: rgb(85%,46%,2%); stroke-linecap: butt; stroke-width: 2;"/>
+			<polygon points="794 305, 802.9976 305.2057, 800.1212 311.5978" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(85%,46%,2%); fill-rule: evenodd;"/>
+			<path d="M 300,323 L 794,305 Z" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1.6; stroke-dasharray: 5, 4;"/>
+			<polygon points="794 305, 785.8436 308.8043, 785.5883 301.7994" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(1%,58%,41%); fill-rule: evenodd;"/>
+			<text x="458" y="359" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,718) scale(1,-1)">L→R LK</text>
+			<path d="M 794,244 L 300,244 Z" style="stroke: rgb(85%,46%,2%); stroke-linecap: butt; stroke-width: 1.8; stroke-dasharray: 5, 4;"/>
+			<polygon points="300 244, 308.2895 240.4952, 308.2895 247.5048" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(85%,46%,2%); fill-rule: evenodd;"/>
+			<text x="452" y="223" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(85%,46%,2%); stroke:none;" transform="translate(0,446) scale(1,-1)">R→L 反向追踪</text>
+			<text x="70" y="192" style="font-family: DocumentChinese; font-size: 15px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,384) scale(1,-1)">返回点 (300.4,200.3)：FB=0.5 px；水平视差 d=40 px；垂直偏差 1.5 px</text>
+			<rect x="32" y="97" width="200" height="55" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="44" y="119.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,239) scale(1,-1)">左角点与原编号</text>
+			<path d="M 232,125 L 246,125 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="246 125, 237.7105 128.5048, 237.7105 121.4952" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<rect x="248" y="97" width="200" height="55" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="260" y="119.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,239) scale(1,-1)">右初值／粗搜索</text>
+			<path d="M 448,125 L 462,125 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="462 125, 453.7105 128.5048, 453.7105 121.4952" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<rect x="464" y="97" width="200" height="55" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="476" y="119.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,239) scale(1,-1)">L→R LK</text>
+			<path d="M 664,125 L 678,125 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="678 125, 669.7105 128.5048, 669.7105 121.4952" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<rect x="680" y="97" width="200" height="55" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="692" y="119.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,239) scale(1,-1)">R→L、NCC等质检</text>
+			<path d="M 880,125 L 894,125 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="894 125, 885.7105 128.5048, 885.7105 121.4952" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<rect x="896" y="97" width="200" height="55" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="908" y="119.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,239) scale(1,-1)">可用平面与帧级检查</text>
+			<text x="34" y="56" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,112) scale(1,-1)">逐点合格后仍可能有残余错误；平面过滤只在开关开启、冗余足够且共识可靠时剔除超限点。</text>
+			<text x="34" y="27" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,54) scale(1,-1)">四点 TT 跳过平面过滤；最终右点必须来自图像观测，投影或粗搜索点不能直接作为最终对应。</text>
+		</g>
+	</g>
+</svg>

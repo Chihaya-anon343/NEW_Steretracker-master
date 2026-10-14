@@ -1,15 +1,16 @@
 {
-  "mode": "debug",
+  "mode": "normal",
 
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
     "_comment": "type: file / directory / sequence",
     "max_frames": 0,
+    "use_threaded_capture": false,
     "image": {
-      "type": "sequence",
+      "type": "directory",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "tests/data/approach_seq",
+      "directory_path": "data/stereo_crop",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -32,8 +33,8 @@
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/big/cj01_image_0032 - 副本.jpg",
-    "right": "data/big/cj01_image_0032.jpg"
+    "left": "data/big/cj01_image_0032.jpg",
+    "right": "data/big/cj01_image_0032 - 副本.jpg"
   },
 
   "manual_roi": {
@@ -78,7 +79,7 @@
 
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
-    "visualize": true,
+    "visualize": false,
     "log_file": true
   },
 
@@ -98,10 +99,26 @@
     "roi_min_size": 0
   },
 
+  "stereo_frontend": {
+    "method": "left_bc_lk",
+    "dual_roi_flow": true,
+    "dual_roi_legacy_fallback": true,
+    "disparity_only": true,
+    "disparity_full_chain": true,
+    "roi_pyramid": true,
+    "coarse_epipolar_band": true,
+    "max_epipolar_error_px": 3.0,
+    "planar_geometry_filter": true,
+    "planar_max_error_px": 0.25,
+    "planar_min_points": 6,
+    "planar_min_inlier_ratio": 0.7,
+    "planar_max_hypotheses": 128,
+    "on_failure": "reject"
+  },
   "strategies": {
     "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, else BinaryCorner",
-    "tiny_max_area": 900,
-    "dual_trigger_area": 200000,
+    "tiny_max_area": 2000,
+    "dual_trigger_area": 18000,
     "stereo_mono_fallback": false,
 
     "close_range": {

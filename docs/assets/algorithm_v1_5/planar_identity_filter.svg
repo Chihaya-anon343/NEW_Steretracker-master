@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1100" height="480" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1100 480" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1100" height="480"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-480)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="0" width="1100" height="480" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="32" y="440" style="font-family: DocumentChinese; font-size: 24px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,880) scale(1,-1)">平面过滤保留身份，禁止按剩余点数重新配模板</text>
+			<text x="32" y="411" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,822) scale(1,-1)">示意剔除中间编号 2；本次实际第 29 帧剔除的是编号 9。示意不是实验测量。</text>
+			<text x="35" y="355" style="font-family: DocumentChinese; font-size: 15px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,710) scale(1,-1)">逐点质检后</text>
+			<rect x="220" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="232" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">0</text>
+			<rect x="295" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="307" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">1</text>
+			<rect x="370" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(86%,14%,14%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="382" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(86%,14%,14%); stroke:none;" transform="translate(0,700) scale(1,-1)">2</text>
+			<rect x="445" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="457" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">3</text>
+			<rect x="520" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="532" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">4</text>
+			<rect x="595" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="607" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">5</text>
+			<rect x="670" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="682" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">6</text>
+			<rect x="745" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="757" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">7</text>
+			<rect x="820" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="832" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">8</text>
+			<rect x="895" y="331" width="57" height="48" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="907" y="350.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,700) scale(1,-1)">9</text>
+			<path d="M 523,321 L 523,277 Z" style="stroke: rgb(86%,14%,14%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="523 277, 526.5048 285.2895, 519.4952 285.2895" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(86%,14%,14%); fill-rule: evenodd;"/>
+			<text x="555" y="294" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(86%,14%,14%); stroke:none;" transform="translate(0,588) scale(1,-1)">可靠平面：剔除超限点 2</text>
+			<text x="35" y="233" style="font-family: DocumentChinese; font-size: 15px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,466) scale(1,-1)">几何过滤后</text>
+			<rect x="220" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="232" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">0</text>
+			<rect x="295" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="307" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">1</text>
+			<rect x="370" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="382" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">3</text>
+			<rect x="445" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="457" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">4</text>
+			<rect x="520" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="532" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">5</text>
+			<rect x="595" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="607" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">6</text>
+			<rect x="670" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="682" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">7</text>
+			<rect x="745" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="757" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">8</text>
+			<rect x="820" y="208" width="57" height="48" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="832" y="227.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,454) scale(1,-1)">9</text>
+			<text x="222" y="172" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,344) scale(1,-1)">图像点／右点／视差／模板身份按同一原编号同步筛选</text>
+			<rect x="35" y="87" width="300" height="52" rx="7" ry="7" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="47" y="108.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,216) scale(1,-1)">关闭开关或不足 6 点：跳过</text>
+			<rect x="390" y="87" width="300" height="52" rx="7" ry="7" style="stroke: rgb(85%,46%,2%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="402" y="108.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(85%,46%,2%); stroke:none;" transform="translate(0,216) scale(1,-1)">无可靠共识：标记不确定，保留</text>
+			<rect x="745" y="87" width="320" height="52" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="757" y="108.0" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,216) scale(1,-1)">过滤后复核点数、比例与空间覆盖</text>
+			<text x="36" y="45" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,90) scale(1,-1)">倾斜平面允许 d = a·u + b·v + c；几何残差不是对真值误差直接截断。</text>
+			<text x="36" y="19" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,38) scale(1,-1)">满足数值与几何验收的点才能进入后续位姿约束；TT 仍要求原四点全部匹配通过。</text>
+		</g>
+	</g>
+</svg>

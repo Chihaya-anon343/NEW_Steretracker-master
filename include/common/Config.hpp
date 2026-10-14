@@ -10,10 +10,88 @@
 #include "Types.hpp"
 
 #include <Eigen/Dense>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
 namespace gpnp {
+
+inline void validateStereoFlowConfig(const StereoFlowConfig& c) {
+    if (!std::isfinite(c.planar_max_error_px) || c.planar_max_error_px <= 0 ||
+        c.planar_min_points < 6 || c.planar_min_points > 1024 ||
+        !std::isfinite(c.planar_min_inlier_ratio) || c.planar_min_inlier_ratio <= 0.5 ||
+        c.planar_min_inlier_ratio > 1 || c.planar_max_hypotheses < 1 || c.planar_max_hypotheses > 4096)
+        throw std::invalid_argument("Invalid stereo_frontend planar geometry settings");
+    if (c.dual_roi_flow && !c.enabled)
+        throw std::invalid_argument("dual_roi_flow requires stereo_frontend.method=left_bc_lk");
+    if (c.disparity_only && !c.enabled)
+        throw std::invalid_argument("disparity_only requires stereo_frontend.method=left_bc_lk");
+    if (c.disparity_full_chain && (!c.disparity_only || !c.enabled))
+        throw std::invalid_argument("disparity_full_chain requires left_bc_lk and disparity_only=true");
+    if (!std::isfinite(c.roi_max_area_ratio) || c.roi_max_area_ratio <= 0 || c.roi_max_area_ratio > 1 ||
+        c.roi_extra_margin_px < 0 || c.roi_extra_margin_px > 512)
+        throw std::invalid_argument("Invalid stereo_frontend ROI settings");
+    if (c.window_size < 3 || c.window_size % 2 == 0 || c.max_level < 0 || c.max_level > 8 ||
+        c.max_iterations < 1 || !std::isfinite(c.epsilon) || c.epsilon <= 0 ||
+        !std::isfinite(c.min_eigenvalue) || c.min_eigenvalue < 0 ||
+        c.ncc_patch_size < 3 || c.ncc_patch_size % 2 == 0 ||
+        c.max_search_candidates < 2 || c.max_search_candidates > 8192 || c.min_matches < 4)
+        throw std::invalid_argument("Invalid stereo_frontend window, pyramid or point settings");
+    auto positive = [](double x) { return std::isfinite(x) && x > 0; };
+    if (!positive(c.max_fb_error_px) || !positive(c.max_epipolar_error_px) ||
+        !positive(c.min_disparity_px) || !positive(c.max_disparity_px) ||
+        c.max_disparity_px <= c.min_disparity_px ||
+        !positive(c.duplicate_distance_px) || !positive(c.initial_reprojection_px) ||
+        !positive(c.max_mean_reprojection_px) || !positive(c.max_point_reprojection_px) ||
+        !std::isfinite(c.min_ncc) || c.min_ncc < -1 || c.min_ncc > 1 ||
+        !std::isfinite(c.uniqueness_margin) || c.uniqueness_margin < 0 || c.uniqueness_margin > 2 ||
+        !std::isfinite(c.min_valid_ratio) || c.min_valid_ratio <= 0 || c.min_valid_ratio > 1 ||
+        !std::isfinite(c.min_coverage_ratio) || c.min_coverage_ratio < 0 || c.min_coverage_ratio > 1)
+        throw std::invalid_argument("Invalid stereo_frontend quality or disparity settings");
+}
+
+inline StereoFlowConfig readStereoFlowConfig(const cv::FileNode& node) {
+    StereoFlowConfig c;
+    if (node.empty()) return c;
+    const std::string method = node["method"].empty() ? "dual_bc" : static_cast<std::string>(node["method"]);
+    if (method != "dual_bc" && method != "left_bc_lk")
+        throw std::invalid_argument("stereo_frontend.method must be dual_bc or left_bc_lk");
+    c.enabled = method == "left_bc_lk";
+    if (!node["dual_roi_flow"].empty()) c.dual_roi_flow = static_cast<int>(node["dual_roi_flow"]) != 0;
+    if (!node["dual_roi_legacy_fallback"].empty()) c.dual_roi_legacy_fallback = static_cast<int>(node["dual_roi_legacy_fallback"]) != 0;
+    if (!node["disparity_only"].empty()) c.disparity_only = static_cast<int>(node["disparity_only"]) != 0;
+    if (!node["disparity_full_chain"].empty()) c.disparity_full_chain = static_cast<int>(node["disparity_full_chain"]) != 0;
+    const std::string failure = node["on_failure"].empty() ? "reject" : static_cast<std::string>(node["on_failure"]);
+    if (failure != "reject" && failure != "left_pnp")
+        throw std::invalid_argument("stereo_frontend.on_failure must be reject or left_pnp");
+    c.allow_left_pnp = failure == "left_pnp";
+    auto integer = [&](const char* key, int& v) { if (!node[key].empty()) v = static_cast<int>(node[key]); };
+    auto real = [&](const char* key, double& v) { if (!node[key].empty()) v = static_cast<double>(node[key]); };
+    integer("window_size", c.window_size); integer("max_level", c.max_level);
+    if (!node["roi_pyramid"].empty()) c.roi_pyramid = static_cast<int>(node["roi_pyramid"]) != 0;
+    if (!node["roi_fallback_full"].empty()) c.roi_fallback_full = static_cast<int>(node["roi_fallback_full"]) != 0;
+    real("roi_max_area_ratio", c.roi_max_area_ratio); integer("roi_extra_margin_px", c.roi_extra_margin_px);
+    integer("max_iterations", c.max_iterations); real("epsilon", c.epsilon);
+    real("min_eigenvalue", c.min_eigenvalue); real("max_fb_error_px", c.max_fb_error_px);
+    real("max_epipolar_error_px", c.max_epipolar_error_px);
+    real("min_disparity_px", c.min_disparity_px); real("max_disparity_px", c.max_disparity_px);
+    integer("ncc_patch_size", c.ncc_patch_size); real("min_ncc", c.min_ncc);
+    real("uniqueness_margin", c.uniqueness_margin); integer("max_search_candidates", c.max_search_candidates);
+    if (!node["coarse_retry"].empty()) c.coarse_retry = static_cast<int>(node["coarse_retry"]) != 0;
+    if (!node["coarse_epipolar_band"].empty()) c.coarse_epipolar_band = static_cast<int>(node["coarse_epipolar_band"]) != 0;
+    integer("min_matches", c.min_matches); real("min_valid_ratio", c.min_valid_ratio);
+    real("min_coverage_ratio", c.min_coverage_ratio); real("duplicate_distance_px", c.duplicate_distance_px);
+    real("initial_reprojection_px", c.initial_reprojection_px);
+    real("max_mean_reprojection_px", c.max_mean_reprojection_px);
+    real("max_point_reprojection_px", c.max_point_reprojection_px);
+    if (!node["planar_geometry_filter"].empty()) c.planar_geometry_filter = static_cast<int>(node["planar_geometry_filter"]) != 0;
+    real("planar_max_error_px", c.planar_max_error_px);
+    integer("planar_min_points", c.planar_min_points);
+    real("planar_min_inlier_ratio", c.planar_min_inlier_ratio);
+    integer("planar_max_hypotheses", c.planar_max_hypotheses);
+    validateStereoFlowConfig(c);
+    return c;
+}
 
 /// 从独立矩阵构造双目相机参数。
 /// 验证矩阵维度并预计算 K_inv、focal_length、baseline。

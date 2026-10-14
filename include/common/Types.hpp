@@ -57,6 +57,56 @@ struct TemporalConfig {
     double area_ema_alpha{0.5};          ///< 面积 EMA 系数（仅用于策略提名/迟滞，不影响裁剪；<=0 = 不平滑）
 };
 
+/// Optional left-only BC frontend. Missing configuration retains dual BC behavior.
+struct StereoFlowConfig {
+    bool enabled{false};
+    bool dual_roi_flow{false};
+    bool dual_roi_legacy_fallback{true};
+    bool disparity_only{false};
+    bool disparity_full_chain{false}; ///< Left BC/TT and class1 disparity chain; opt-in for old configurations.
+    bool roi_pyramid{false};
+    bool roi_fallback_full{true};
+    double roi_max_area_ratio{0.85};
+    int roi_extra_margin_px{16};
+    bool allow_left_pnp{false};
+    int window_size{21};
+    int max_level{3};
+    int max_iterations{30};
+    double epsilon{0.01};
+    double min_eigenvalue{1e-4};
+    double max_fb_error_px{1.0};
+    double max_epipolar_error_px{1.5};
+    double min_disparity_px{0.5};
+    double max_disparity_px{400.0};
+    int ncc_patch_size{11};
+    double min_ncc{0.8};
+    double uniqueness_margin{0.03};
+    int max_search_candidates{512};
+    bool coarse_retry{true};
+    bool coarse_epipolar_band{true};  ///< false reproduces the original single-line coarse search.
+    int min_matches{4};
+    double min_valid_ratio{0.6};
+    double min_coverage_ratio{0.25};
+    double duplicate_distance_px{2.0};
+    double initial_reprojection_px{8.0};
+    double max_mean_reprojection_px{3.0};
+    double max_point_reprojection_px{8.0};
+    bool planar_geometry_filter{false}; ///< Opt-in: input points must belong to one planar target.
+    double planar_max_error_px{0.25};
+    int planar_min_points{6}; ///< TT four-point paths remain under their original checks.
+    double planar_min_inlier_ratio{0.7};
+    int planar_max_hypotheses{128};
+};
+
+enum class PoseSource { Unspecified, StereoGpnp, LeftPnpFallback };
+inline const char* poseSourceName(PoseSource source) {
+    switch (source) {
+        case PoseSource::StereoGpnp: return "StereoGpnp";
+        case PoseSource::LeftPnpFallback: return "LeftPnpFallback";
+        default: return "Unspecified";
+    }
+}
+
 /// 跟踪器级别配置（构造时一次性设置）。
 struct TrackerConfig {
     int gpnp_min_pts{4};                 ///< GPNP 最少点数要求
@@ -73,6 +123,7 @@ struct TrackerConfig {
     std::string dual_roi_class1_points_path; ///< Dual-ROI class1 人工标注点文件 (空=Tier1b 联合解算停用)
     double dual_roi_joint_match_gate_px{12.0}; ///< Tier1b NN 匹配门限 (px, 投影预测点↔提取角点)
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
+    StereoFlowConfig stereo_flow;
 };
 
 // ============================================================================
@@ -120,6 +171,7 @@ struct PoseEstimate {
     Eigen::Vector3d t{Eigen::Vector3d::Zero()};     ///< 平移 (mm)
     bool success{false};
     int num_points{0};
+    PoseSource source{PoseSource::Unspecified};
 
     /// 如果位姿表示一个有效的估计则返回 true。
     bool valid() const { return success && num_points > 0; }
@@ -160,6 +212,12 @@ struct GPNPMonitor {
 
     // 优化过程
     bool opt_success{false};
+    bool candidate_valid{false};
+    bool pose_accepted{false};
+    std::string initial_source;
+    std::string geometry_reason;
+    double mean_left_px{0.0}, mean_right_px{0.0}, max_reprojection_px{0.0};
+    bool used_initial_pose_fallback{false};
     int opt_status{0};
     std::string opt_message;
     int opt_nfev{0};
@@ -187,6 +245,7 @@ struct GPNPMonitor {
 
 /// 单帧日志记录（等价于 Python 的 _add_log 字典）。
 struct LogEntry {
+    GPNPMonitor last_gpnp_monitor;
     int frame{0};
     double timestamp{0.0};
     bool is_first{false};
@@ -207,6 +266,22 @@ struct LogEntry {
     double pnp_ms{0.0};     ///< 位姿解算总耗时 (ms)
 
     std::string strategy_name;            ///< 使用的提取器策略
+    std::string stereo_method;
+    PoseSource pose_source{PoseSource::Unspecified};
+    bool stereo_success{false};
+    bool disparity_only{false};
+    bool disparity_success{false};
+    std::string failure_reason;
+    int flow_coarse_attempts{0};
+    double stereo_match_ms{0.0};
+    cv::Rect flow_roi;
+    bool flow_full_fallback{false};
+    int flow_pyramid_builds{0}, dual_c0_pairs{0}, dual_c1_pairs{0};
+    bool legacy_frontend_fallback{false};
+    std::string route_detail;
+    std::string flow_planar_status{"disabled"};
+    int flow_planar_rejected{0};
+    double flow_planar_ms{0};
     bool is_class1{false};                ///< 是否 class1 回退帧
     double t_x{0.0}, t_y{0.0}, t_z{0.0};        ///< 平移 (mm)
     double rvec_x{0.0}, rvec_y{0.0}, rvec_z{0.0};///< 旋转向量 (angle*axis, θ∈[0,π] 有 ±180° 跳变)
@@ -229,6 +304,7 @@ struct LogEntry {
 /// 单次 process() 调用的聚合结果。
 /// 替代 Python 版本中 process() 返回的字典。
 struct PipelineResult {
+    GPNPMonitor last_gpnp_monitor; ///< Solver snapshot for the selected pose attempt.
     // --- 特征提取 ---
     std::vector<cv::KeyPoint> kp_left;
     int n_kp_left{0};
@@ -258,6 +334,26 @@ struct PipelineResult {
     int gpnp_n_pts{0};
     bool success{false};  ///< 流水线整体成功标志（提取 + PnP，单目/双目通用）
     std::string strategy_name; ///< 本帧胜出的策略名（如 "BinaryCorner", "TinyTarget"）
+    std::string stereo_method;
+    PoseSource pose_source{PoseSource::Unspecified};
+    bool stereo_success{false};
+    bool disparity_only{false};
+    bool disparity_success{false};
+    std::string failure_reason;
+    int flow_coarse_attempts{0};
+    double stereo_match_ms{0.0};
+    cv::Rect flow_roi;
+    bool flow_full_fallback{false};
+    int flow_pyramid_builds{0}, dual_c0_pairs{0}, dual_c1_pairs{0};
+    bool legacy_frontend_fallback{false};
+    std::string route_detail;
+    std::string flow_planar_status{"disabled"};
+    int flow_planar_rejected{0};
+    double flow_planar_ms{0};
+    // Aligned with pts_left_good; original class-local IDs survive filtering.
+    std::vector<int> flow_regions, flow_original_indices, flow_template_indices;
+    std::string model_frame;
+    std::vector<Eigen::Vector3d> pose_model_points; ///< Explicit model table indexed by good_matches.trainIdx.
     double quat_w{1.0}, quat_x{0.0}, quat_y{0.0}, quat_z{0.0};///< 符号连续化四元数 (w,x,y,z, 由 finalizePose 填充)
     double rot_deg_unwrapped{0.0};  ///< 累计 unwrapped 旋转角 (度, 由 finalizePose 填充)
 

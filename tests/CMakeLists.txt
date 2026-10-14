@@ -87,9 +87,13 @@ set(TEST_SHARED_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/TrackerBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/MonoTracker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTracker.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerFlow.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerDualFlow.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerDisparity.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/BinaryCornerExtractor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/TinyTargetExtractor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matching/TemplateMatcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matching/StereoFlowMatcher.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/pose/InitialPnPSolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/pose/GPnPSolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/pose/MonoPnPSolver.cpp
@@ -188,8 +192,26 @@ gpnp_add_test(test_yolo_decode
 )
 
 # PnP 求解器 (需要 Eigen + OpenCV calib3d)
+gpnp_add_test(test_stereo_flow
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_stereo_flow.cpp
+)
+gpnp_add_test(test_dual_roi_flow
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_dual_roi_flow.cpp
+)
+gpnp_add_test(test_disparity_chain
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_disparity_chain.cpp
+)
+add_executable(benchmark_stereo_roi benchmark_stereo_roi.cpp ../src/matching/StereoFlowMatcher.cpp)
+target_include_directories(benchmark_stereo_roi PRIVATE ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(benchmark_stereo_roi PRIVATE ${OpenCV_LIBS} Eigen3::Eigen)
+add_executable(benchmark_planar_geometry benchmark_planar_geometry.cpp ../src/matching/StereoFlowMatcher.cpp)
+target_include_directories(benchmark_planar_geometry PRIVATE ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(benchmark_planar_geometry PRIVATE ${OpenCV_LIBS} Eigen3::Eigen)
+
+# PnP 求解器 (需要 Eigen + OpenCV calib3d)
 gpnp_add_test(test_pose_solvers
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_pose_solvers.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gpnp_boundaries.cpp
 )
 
 # 特征提取器 (BinaryCorner / TinyTarget / AKAZE 合成图, 模板依赖自动跳过)
@@ -213,6 +235,24 @@ if(GPNP_ONNXRUNTIME_FOUND)
     gpnp_add_test(test_yolo_detector
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_yolo_detector.cpp
     )
+
+    # Opt-in benchmark, run in a Release build (not registered with ctest).
+    add_executable(benchmark_stereo_frontend
+        benchmark_stereo_frontend.cpp ../src/feature/BinaryCornerExtractor.cpp
+        ../src/matching/StereoFlowMatcher.cpp ../src/utils/PoseUtils.cpp
+        ../src/detection/RoiGenerator.cpp ../src/detection/YoloRoiProvider.cpp)
+    target_include_directories(benchmark_stereo_frontend PRIVATE
+        ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS} ${GPNP_ONNXRUNTIME_INCLUDE_DIR})
+    target_link_libraries(benchmark_stereo_frontend PRIVATE
+        ${OpenCV_LIBS} Eigen3::Eigen Threads::Threads ${GPNP_ONNXRUNTIME_LIB})
+    add_executable(benchmark_dual_roi_frontend
+        benchmark_dual_roi_frontend.cpp ../src/feature/BinaryCornerExtractor.cpp
+        ../src/matching/StereoFlowMatcher.cpp ../src/utils/PoseUtils.cpp
+        ../src/detection/RoiGenerator.cpp ../src/detection/YoloRoiProvider.cpp)
+    target_include_directories(benchmark_dual_roi_frontend PRIVATE
+        ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS} ${GPNP_ONNXRUNTIME_INCLUDE_DIR})
+    target_link_libraries(benchmark_dual_roi_frontend PRIVATE
+        ${OpenCV_LIBS} Eigen3::Eigen Threads::Threads ${GPNP_ONNXRUNTIME_LIB})
 
     # 合成图全流程 (YOLO → 位姿, 双目/单目 × 四策略 = 8 项)
     gpnp_add_test(test_synthetic_pipeline
@@ -242,7 +282,7 @@ gpnp_add_test(test_eskf_multimodal
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS test_config test_roi_generator test_yolo_decode test_pose_solvers
-            test_extractors test_integration test_eskf_fusion test_eskf_multimodal
+            test_extractors test_integration test_eskf_fusion test_eskf_multimodal test_stereo_flow test_dual_roi_flow test_disparity_chain
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "运行 Steretracker 单元与集成测试"
 )
@@ -250,7 +290,7 @@ add_custom_target(check
 # ============================================================================
 # 摘要
 # ============================================================================
-set(GPNP_TEST_LIST "test_config, test_roi_generator, test_yolo_decode, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal")
+set(GPNP_TEST_LIST "test_config, test_roi_generator, test_yolo_decode, test_pose_solvers, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal, test_stereo_flow, test_dual_roi_flow, test_disparity_chain")
 if(GPNP_ONNXRUNTIME_FOUND)
     set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system, test_yolo_detector, test_synthetic_pipeline")
 endif()

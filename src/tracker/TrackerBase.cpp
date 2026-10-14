@@ -365,6 +365,8 @@ void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose)
     result.gpnp_success = pose.success;
     result.success = pose.success;   // 统一流水线整体成功标志（终端 FAILED / 三维轴绘制依赖此值）
     result.gpnp_n_pts = pose.num_points;
+    result.pose_source = pose.source;
+    result.stereo_success = pose.source == PoseSource::StereoGpnp;
 
     if (pose.success) {
         cv::Mat R_cv(3, 3, CV_64F);
@@ -458,6 +460,24 @@ void TrackerBase::addLogEntry(const PipelineResult& result, bool is_first, bool 
     entry.extract_ms = result.extract_ms;
     entry.pnp_ms = result.pnp_ms;
     entry.strategy_name = result.strategy_name;
+    entry.last_gpnp_monitor=result.last_gpnp_monitor;
+    if(result.last_gpnp_monitor.gpnp_min_pts>0)state_.last_gpnp_monitor=result.last_gpnp_monitor;
+    entry.flow_planar_status=result.flow_planar_status;
+    entry.flow_planar_rejected=result.flow_planar_rejected;
+    entry.flow_planar_ms=result.flow_planar_ms;
+    entry.stereo_method = result.stereo_method;
+    entry.pose_source = result.pose_source;
+    entry.stereo_success = result.stereo_success;
+    entry.disparity_only = result.disparity_only;
+    entry.disparity_success = result.disparity_success;
+    entry.failure_reason = result.failure_reason;
+    entry.flow_coarse_attempts = result.flow_coarse_attempts;
+    entry.stereo_match_ms = result.stereo_match_ms;
+    entry.flow_roi=result.flow_roi;
+    entry.flow_full_fallback=result.flow_full_fallback;
+    entry.flow_pyramid_builds=result.flow_pyramid_builds;
+    entry.dual_c0_pairs=result.dual_c0_pairs;entry.dual_c1_pairs=result.dual_c1_pairs;
+    entry.legacy_frontend_fallback=result.legacy_frontend_fallback;entry.route_detail=result.route_detail;
     entry.is_class1 = result.is_class1;
     entry.warm_start_used = result.warm_start_used;
     entry.gate_status = static_cast<int>(result.gate_status);
@@ -488,10 +508,11 @@ void TrackerBase::printLogs() const {
         return;
     }
 
-    const std::vector<std::string> timing_keys = {"binary_corner", "tiny_target", "initial_pnp", "gpnp", "tiny_pnp", "dual_roi"};
+    const std::vector<std::string> timing_keys = {"binary_corner", "tiny_target", "initial_pnp", "flow_crop", "flow_pyramid", "flow_coarse", "flow_lk", "flow_check", "gpnp", "tiny_pnp", "dual_roi"};
     const std::map<std::string, std::string> timing_labels = {
         {"binary_corner", "BC"}, {"tiny_target", "TT"}, {"initial_pnp", "InitPnP"},
-        {"gpnp", "GPnP"}, {"tiny_pnp", "TinyPnP"}, {"dual_roi", "DualROI"}};
+        {"gpnp", "GPnP"}, {"tiny_pnp", "TinyPnP"}, {"dual_roi", "DualROI"},
+        {"flow_crop", "Crop"}, {"flow_pyramid", "Pyramid"}, {"flow_coarse", "Coarse"}, {"flow_lk", "LK"}, {"flow_check", "Check"}};
 
     std::vector<std::string> used_keys;
     for (const auto& k : timing_keys)
@@ -552,7 +573,7 @@ void TrackerBase::printLogs() const {
             ru << std::fixed << std::setprecision(1) << log.rot_deg_unwrapped;
             row.push_back(ru.str());
         }
-        row.push_back(log.gpnp_success ? "OK" : "FAIL");
+        row.push_back(log.disparity_only ? "SKIP" : log.gpnp_success ? "OK" : "FAIL");
         for (const auto& k : used_keys) {
             auto it = log.timing.find(k);
             row.push_back(it != log.timing.end() ? std::to_string(static_cast<int>(it->second)) + "ms" : "-");
@@ -564,6 +585,31 @@ void TrackerBase::printLogs() const {
         print_row(row);
     }
     print_sep('=');
+    for (const auto& log : logs) {
+        if (log.stereo_method != "LK" && log.stereo_method != "DualBC") continue;
+        std::cout << "[StereoFrontend] frame=" << log.frame << " method=" << log.stereo_method << " source="
+                  << poseSourceName(log.pose_source) << " stereo=" << log.stereo_success
+                  << " pairs=" << log.n_matched << " match_ms=" << log.stereo_match_ms
+                  << " coarse=" << log.flow_coarse_attempts;
+        std::cout << " planar=" << log.flow_planar_status << " planar_rejected=" << log.flow_planar_rejected
+                  << " planar_ms=" << log.flow_planar_ms;
+        if (log.disparity_only) std::cout << " disparity_only=1 match_ok=" << log.disparity_success << " pnp=SKIP";
+        if (log.flow_roi.area()>0) std::cout << " roi=" << log.flow_roi.width << 'x' << log.flow_roi.height
+                                          << " full_retry=" << log.flow_full_fallback;
+        if (!log.failure_reason.empty()) std::cout << " reason=" << log.failure_reason;
+        if (!log.route_detail.empty()) std::cout << " c0=" << log.dual_c0_pairs << " c1=" << log.dual_c1_pairs
+            << " pyramids=" << log.flow_pyramid_builds << " legacy=" << log.legacy_frontend_fallback
+            << " route=" << log.route_detail;
+        std::cout << "\n";
+        const auto& m=log.last_gpnp_monitor;
+        if(m.gpnp_min_pts>0)std::cout<<"[GPnPOptimizer] frame="<<log.frame<<" stop="<<m.opt_message
+            <<" status="<<m.opt_status<<" nfev="<<m.opt_nfev<<" init="<<m.initial_source
+            <<" candidate="<<m.candidate_valid<<" solver_accepted="<<m.pose_accepted
+            <<" frame_accepted="<<log.gpnp_success<<" source="<<poseSourceName(log.pose_source)
+            <<" geometry="<<m.geometry_reason<<" initial_cost="<<m.opt_initial_cost<<" final_cost="<<m.opt_final_cost
+            <<" mean_left="<<m.mean_left_px<<" mean_right="<<m.mean_right_px<<" max_px="<<m.max_reprojection_px
+            <<" reason="<<m.failure_reason<<'\n';
+    }
 }
 
 } // namespace gpnp

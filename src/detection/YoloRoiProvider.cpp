@@ -52,6 +52,8 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
     // H1: 左右推理并行 — 两次推理完全独立且 YoloDetector::detect() 线程安全
     // (共享成员构造后只读, Ort::Session::Run 支持并发, 输出向量各自独立)
     try {
+        ++inference_counts_.left;
+        ++inference_counts_.right;
         auto fut_right = std::async(std::launch::async,
                                     [&]() { return detector_->detect(right_img, det_right); });
         sl = detector_->detect(left_img, det_left);
@@ -60,6 +62,8 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
         // 极端情况 (如线程创建失败) → 回退串行, 行为与修改前一致
         det_left.clear();
         det_right.clear();
+        ++inference_counts_.left;
+        ++inference_counts_.right;
         sl = detector_->detect(left_img, det_left);
         sr = detector_->detect(right_img, det_right);
     }
@@ -107,6 +111,7 @@ RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
     if (!isReady()) return {};
 
     std::vector<Detection> det_left;
+    ++inference_counts_.left;
     Status sl = detector_->detect(left_img, det_left);
 
     if (sl != Status::Success || det_left.empty()) {
@@ -130,6 +135,31 @@ RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
     }
 
     return lg;
+}
+
+LeftDetection YoloRoiProvider::detectLeft(const cv::Mat& left_img) {
+    LeftDetection left;
+    left.image_size = left_img.size();
+    if (!isReady()) return left;
+    ++inference_counts_.left;
+    left.status = detector_->detect(left_img, left.detections);
+    if (left.status == Status::Success && !left.detections.empty())
+        left.group = roi_gen_->generateGroup(left.detections, left.image_size);
+    return left;
+}
+
+std::pair<RoiGroup, RoiGroup> YoloRoiProvider::completeStereo(const LeftDetection& left,
+                                                            const cv::Mat& right_img) {
+    if (!isReady()) return {};
+    std::vector<Detection> right;
+    ++inference_counts_.right;
+    const Status status = detector_->detect(right_img, right);
+    const bool left_ok = left.status == Status::Success && !left.detections.empty();
+    const bool right_ok = status == Status::Success && !right.empty();
+    if (left_ok && right_ok)
+        return roi_gen_->generateStereoGroup(left.detections, right, left.image_size, right_img.size());
+    return {left_ok ? left.group : RoiGroup{},
+            right_ok ? roi_gen_->generateGroup(right, right_img.size()) : RoiGroup{}};
 }
 
 } // namespace gpnp

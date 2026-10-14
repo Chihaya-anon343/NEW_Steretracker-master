@@ -8,6 +8,9 @@
             <mapping deploy="/tmp/tmp.o5cX0BI6qB/NEW_Steretracker-master_COPY" local="$PROJECT_DIR$" />
           </mappings>
           <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/output" />
+            <excludedPath local="true" path="$PROJECT_DIR$/tests" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-" />
             <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-" />
           </excludedPaths>
         </serverdata>

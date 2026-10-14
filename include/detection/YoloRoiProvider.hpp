@@ -20,6 +20,13 @@ namespace gpnp {
 
 class YoloDetector;
 
+struct LeftDetection {
+    RoiGroup group;
+    std::vector<Detection> detections;
+    cv::Size image_size;
+    Status status{Status::UnknownError};
+};
+
 class YoloRoiProvider {
 public:
     YoloRoiProvider();
@@ -47,9 +54,17 @@ public:
     /// 右图不做任何处理。
     RoiGroup detectMono(const cv::Mat& left_img);
 
+    /// Left-only detection, retaining raw detections for legacy pairing if needed.
+    LeftDetection detectLeft(const cv::Mat& left_img);
+    std::pair<RoiGroup, RoiGroup> completeStereo(const LeftDetection& left,
+                                                const cv::Mat& right_img);
+    struct InferenceCounts { int left{0}; int right{0}; };
+    InferenceCounts inferenceCounts() const { return inference_counts_; }
+
 private:
     std::unique_ptr<YoloDetector> detector_;
     std::unique_ptr<RoiGenerator> roi_gen_;
+    InferenceCounts inference_counts_;
 };
 
 } // namespace gpnp

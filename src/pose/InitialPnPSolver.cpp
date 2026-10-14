@@ -167,6 +167,7 @@ PoseEstimate InitialPnPSolver::solve(
                     t_candidate.at<double>(2);
 
         result.success = true;
+        result.source = PoseSource::LeftPnpFallback;
         result.num_points = n_inliers;
 
         std::cout << "  [InitialPnP] Success | n=" << n_pts

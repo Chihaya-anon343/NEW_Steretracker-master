@@ -1,0 +1,173 @@
+{
+  "mode": "debug",
+  "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
+  "input_system": {
+    "_comment": "type: file / directory / sequence",
+    "max_frames": 0,
+    "image": {
+      "type": "sequence",
+      "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
+      "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
+      "directory_path": "tests/data/approach_seq",
+      "left_pattern": "left",
+      "right_pattern": "right",
+      "sequence_pattern": "frame"
+    },
+    "imu": {
+      "_comment": "Phase 2, Linux only",
+      "enabled": false,
+      "port": "/dev/ttyUSB0",
+      "baud_rate": 921600,
+      "protocol": "custom"
+    },
+    "altimeter": {
+      "_comment": "Phase 2, Linux only",
+      "enabled": false,
+      "can_interface": "can0",
+      "type": "can"
+    }
+  },
+  "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
+  "input": {
+    "_comment": "Debug 模式图像路径",
+    "left": "data/big/cj01_image_0032.jpg",
+    "right": "data/big/cj01_image_0032 - 副本.jpg"
+  },
+  "manual_roi": {
+    "_comment": "enabled=true 跳过 YOLO (仅 debug 模式生效)",
+    "enabled": false,
+    "left": {
+      "x": 416,
+      "y": 113,
+      "width": 300,
+      "height": 300
+    },
+    "right": {
+      "x": 410,
+      "y": 113,
+      "width": 300,
+      "height": 300
+    }
+  },
+  "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
+  "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
+  "mono_mode": false,
+  "temporal": {
+    "_comment": "序列时序连贯性: 位姿链热启动 + 策略粘滞 + 运动门控 (所有阈值以帧为单位, 不依赖时间戳)",
+    "enabled": true,
+    "pose_chain": {
+      "_comment": "位姿链: 上帧成功位姿作为本帧 PnP 候选初值",
+      "max_cache_age_frames": 30,
+      "tie_epsilon_px": 0.3
+    },
+    "motion_gate": {
+      "_comment": "运动一致性门控: 平移=|Δt|或径向比值任一满足即过, 跳变时冷启动重解(直接采纳)→退化链→帧失败; 参数<=0关闭对应检查",
+      "max_trans_ratio": 0.35,
+      "max_scale_ratio": 3.0,
+      "max_rot_deg": 15.0,
+      "switch_margin": 2.0
+    },
+    "stickiness": {
+      "_comment": "策略粘滞: 迟滞+去抖+越级硬切; 相邻档切换需 EMA 面积越过阈值×余量且连续确认",
+      "hold_frames": 3,
+      "hysteresis_up": 1.25,
+      "hysteresis_down": 0.8,
+      "locked_fail_limit": 3
+    },
+    "area_ema_alpha": 0.5
+  },
+  "output": {
+    "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
+    "visualize": true,
+    "log_file": true,
+    "directory": "output/bc_flow"
+  },
+  "camera": {
+    "fx": 1370.1815888598676,
+    "fy": 1373.0103114278359,
+    "cx": 516.4761400598917,
+    "cy": 856.0291167973786,
+    "baseline_mm": 60.0
+  },
+  "yolo": {
+    "model_path": "yolo_onnx/yolov8n_p2.onnx",
+    "conf_threshold": 0.2,
+    "target_class_id": 0,
+    "roi_expand_ratio": 0.0,
+    "roi_min_size": 0
+  },
+  "strategies": {
+    "_comment": "ROI area thresholds: <= tiny_max -> TinyTarget, else BinaryCorner",
+    "tiny_max_area": 900,
+    "dual_trigger_area": 2000000,
+    "stereo_mono_fallback": false,
+    "close_range": {
+      "_comment": "近距离回退: class0 未检测到 + class1 有效时触发",
+      "enabled": true,
+      "class1_min_area": 100,
+      "roi_expand_ratio": 1,
+      "min_expand_pixels": 1,
+      "tiny_max_area": 400
+    },
+    "board_template": {
+      "template_path": "data/clean_target2.png",
+      "template_real_width_mm": 400,
+      "template_real_height_mm": 400,
+      "gpnp_min_pts": 4,
+      "use_initial_pnp": true
+    },
+    "binary_corner": {
+      "template_dir": "data/NewMuBan(reordered)",
+      "corners": 10,
+      "kernel_size": 3,
+      "corner_scale": 3.0,
+      "target_width": 100,
+      "target_height": 100,
+      "pixel_to_meter_scale_class0": 0.0059,
+      "pixel_to_meter_scale_class1": 0.00046,
+      "roi_pad_pixels": 3
+    },
+    "tiny_target": {
+      "template_dir": "data/NewMuBan(reordered)",
+      "target_width": 50,
+      "target_height": 50,
+      "scale_factor": 4,
+      "square_size_m_class0": 0.295,
+      "square_size_m_class1": 0.017,
+      "roi_pad_pixels": 5
+    },
+    "dual_roi": {
+      "_comment": "双ROI class1 拓展像素; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭); tier1_only=消融开关, true=屏蔽Tier2/Tier3/短路仅保留合并解算; class0/class1_points_path=人工标注点txt (class0空=approxPolyDP自动推导, class1空=Tier1b联合解算停用); joint_match_gate_px=Tier1b NN匹配门限",
+      "secondary_expand_pixels": 0,
+      "class1_fallback_enabled": true,
+      "primary_span_ratio": 0.98,
+      "tier1_only": false,
+      "class0_points_path": "scripts/class0_points.txt",
+      "class1_points_path": "scripts/class1_points.txt",
+      "joint_match_gate_px": 12
+    }
+  },
+  "stereo_frontend": {
+    "method": "left_bc_lk",
+    "dual_roi_flow": true,
+    "dual_roi_legacy_fallback": true,
+    "disparity_only": true,
+    "disparity_full_chain": true,
+    "roi_pyramid": true,
+    "on_failure": "reject",
+    "window_size": 21,
+    "max_level": 3,
+    "max_fb_error_px": 1.0,
+    "max_epipolar_error_px": 1.5,
+    "min_disparity_px": 0.5,
+    "max_disparity_px": 400.0,
+    "ncc_patch_size": 11,
+    "min_ncc": 0.8,
+    "coarse_retry": true,
+    "min_matches": 4,
+    "min_valid_ratio": 0.6,
+    "min_coverage_ratio": 0.25,
+    "max_mean_reprojection_px": 3.0,
+    "max_point_reprojection_px": 8.0
+  }
+}

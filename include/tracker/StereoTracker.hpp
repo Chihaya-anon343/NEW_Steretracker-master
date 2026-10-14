@@ -4,9 +4,11 @@
 #include "pose/GPnPSolver.hpp"
 #include "pose/InitialPnPSolver.hpp"
 #include "pose/MonoPnPSolver.hpp"
+#include "matching/StereoFlowMatcher.hpp"
 
 #include <opencv2/core.hpp>
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,12 @@ public:
     StereoTracker(const StereoTracker&) = delete;
     StereoTracker& operator=(const StereoTracker&) = delete;
 
+    /// Non-mutating prediction of the next primary band, including EMA/hysteresis.
+    /// If true, process(..., &left_group, nullptr) uses left-only BC + stereo LK.
+    bool prefersLeftBcFlow(const RoiGroup& left_group) const;
+    bool prefersLeftStereoFlow(const RoiGroup& left_group) const;
+    using LegacyStereoProvider = std::function<std::pair<RoiGroup,RoiGroup>()>;
+
     // ---- Stereo API ----
 
     PipelineResult process(const cv::Mat& left_img,
@@ -43,12 +51,38 @@ public:
                            const RoiGroup* left_group = nullptr,
                            const RoiGroup* right_group = nullptr);
 
+    /// Optional lazy detection used only after Dual-ROI flow fails.
+    PipelineResult process(const cv::Mat& left_img, const cv::Mat& right_img,
+                           bool visualize, const RoiGroup* left_group,
+                           const RoiGroup* right_group, const LegacyStereoProvider& legacy_provider);
+
     /// 单目降级处理：左右图仅一侧检测到目标时使用（EPnP，无立体）。
     PipelineResult processMono(const cv::Mat& img,
                                bool visualize = false,
                                const RoiGroup* roi_group = nullptr);
 
 private:
+    PipelineResult processSingleDisparity(const cv::Mat& left, const cv::Mat& right,
+                                          const RoiGroup& group, bool visualize);
+    PipelineResult runDisparityExtraction(FeatureExtractor& extractor, StereoFlowFrame& context,
+                                          const cv::Mat& left_gray, const cv::Mat& left_color,
+                                          const cv::Mat& right_color, const cv::Rect& roi,
+                                          int region, FlowMatchResult& diagnostics);
+    void writeDisparityResult(const PipelineResult& result) const;
+    static bool terminalDisparityFailure(const std::string& reason);
+    PipelineResult processDualRoiFlow(const cv::Mat& left, const cv::Mat& right,
+                                     const RoiGroup& group, bool visualize, PoseEstimate& pose);
+    PipelineResult runDualTinyDisparity(const cv::Mat& left, const cv::Mat& right,
+                                        const RoiGroup& left_group, const RoiGroup& right_group, bool visualize);
+    void renderDualFlowResult(const PipelineResult& result, const cv::Mat& left,
+                              const cv::Mat& right, const RoiGroup& group) const;
+    bool runBcFlow(const cv::Mat& left_gray, const cv::Mat& right_gray,
+                   const cv::Mat& left_color, const cv::Mat& right_color,
+                   const RoiRect& left_roi, PipelineResult& result,
+                   PoseEstimate& pose, FlowMatchResult& diagnostics);
+    void renderBcFlow(const PipelineResult& result, const FlowMatchResult& diagnostics,
+                      const RoiRect& left_roi, const cv::Mat& left_color,
+                      const cv::Mat& right_color, const FeatureExtractor* winner) const;
     // ---- Stereo-specific helpers ----
     PipelineResult processDualRoi(const cv::Mat& left_img,
                                    const cv::Mat& right_img,

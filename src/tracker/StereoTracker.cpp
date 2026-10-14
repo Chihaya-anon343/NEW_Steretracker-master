@@ -41,10 +41,11 @@ StereoTracker::StereoTracker(const Eigen::Matrix3d& K,
                                const TinyTargetExtractor::Config& tiny_cfg,
                                const std::string& tiny_template_dir)
     : initial_pnp_(config.gpnp_min_pts)
-    , gpnp_solver_(camera_, config.gpnp_min_pts)
+    , gpnp_solver_(makeStereoCameraParams(K, R_rl, t_rl), config.gpnp_min_pts)
 {
     camera_ = makeStereoCameraParams(K, R_rl, t_rl);
     config_ = config;
+    validateStereoFlowConfig(config_.stereo_flow);
 
     initExtractors(template_path, binary_cfg, binary_template_dir, tiny_cfg, tiny_template_dir);
 }
@@ -185,7 +186,7 @@ std::pair<bool, PoseEstimate> StereoTracker::solveBcPnpChain(
             std::chrono::high_resolution_clock::now() - t_init_pnp).count();
 
         if (init_pose.success) {
-            pose = gpnp_solver_.solve(result, pnp_pts_3d, &init_pose.R, &init_pose.t, gpnp_timing);
+            pose = gpnp_solver_.solve(result, pnp_pts_3d, &init_pose.R, &init_pose.t, gpnp_timing, {PoseInitializationSource::InitialPnP});
             if (!pose.success) {
                 // GPNP failed but InitialPnP succeeded → use InitialPnP (no degradation)
                 if (verbose_console_) std::cout << "  [BinaryCorner] GPNP failed, falling back to InitialPnP result" << "\n";
@@ -210,7 +211,7 @@ std::pair<bool, PoseEstimate> StereoTracker::solveBcPnpChain(
                 }
             }
             Eigen::Vector3d t_id(0, 0, depth_from_disp);
-            pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
+            pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing, {PoseInitializationSource::DepthGuess});
         }
     } else {
         if (verbose_console_) std::cout << "  [InitialPnP] Skipped (use_initial_pnp=false)" << "\n";
@@ -226,7 +227,7 @@ std::pair<bool, PoseEstimate> StereoTracker::solveBcPnpChain(
             }
         }
         Eigen::Vector3d t_id(0, 0, depth_from_disp);
-        pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing);
+        pose = gpnp_solver_.solve(result, pnp_pts_3d, &R_id, &t_id, gpnp_timing, {PoseInitializationSource::DepthGuess});
     }
 
     return {pose.success, pose};
@@ -314,15 +315,152 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
                                         bool visualize,
                                         const RoiGroup* left_group,
                                         const RoiGroup* right_group) {
+    if(config_.stereo_flow.disparity_only && config_.stereo_flow.dual_roi_flow &&
+        left_group && left_group->is_dual && right_group) {
+        // Existing ROI-based callers already supplied the right detection.
+        const auto l=*left_group,r=*right_group;
+        return process(left_img,right_img,visualize,left_group,right_group,[l,r](){return std::make_pair(l,r);});
+    }
+    return process(left_img,right_img,visualize,left_group,right_group,LegacyStereoProvider{});
+}
+
+PipelineResult StereoTracker::process(const cv::Mat& left_img, const cv::Mat& right_img,
+                                      bool visualize, const RoiGroup* left_group,
+                                      const RoiGroup* right_group, const LegacyStereoProvider& legacy_provider) {
     ++state_.frame_count;
+
+    if (config_.stereo_flow.disparity_only && (!left_group || !prefersLeftStereoFlow(*left_group))) {
+        PipelineResult skipped;
+        skipped.disparity_only = true;
+        skipped.stereo_method = "LK";
+        skipped.failure_reason = "disparity_only_requires_supported_flow_strategy";
+        addLogEntry(skipped, !state_.has_cache, false);
+        return skipped;
+    }
 
     binary_extractor_->setDebugCapture(visualize);
     tiny_extractor_->setDebugCapture(visualize);
 
+    if (config_.stereo_flow.enabled && config_.stereo_flow.dual_roi_flow && left_group &&
+        left_group->is_dual && (!right_group || config_.stereo_flow.disparity_only)) {
+        PoseEstimate pose;
+        const bool first=!state_.has_cache;
+        auto flow=processDualRoiFlow(left_img,right_img,*left_group,visualize,pose);
+        if(flow.disparity_only && !flow.disparity_success &&
+            !terminalDisparityFailure(flow.failure_reason) && config_.stereo_flow.dual_roi_legacy_fallback &&
+            config_.dual_roi_class1_fallback && !config_.dual_roi_tier1_only && legacy_provider) {
+            const auto groups=legacy_provider();
+            auto tiny=runDualTinyDisparity(left_img,right_img,groups.first,groups.second,visualize);
+            tiny.route_detail=flow.route_detail+" -> C1TT:"+(tiny.disparity_success?std::string("OK"):tiny.failure_reason);
+            if(tiny.disparity_success) {
+                tiny.extract_ms+=flow.extract_ms;tiny.stereo_match_ms+=flow.stereo_match_ms;
+                tiny.flow_coarse_attempts+=flow.flow_coarse_attempts;tiny.flow_pyramid_builds+=flow.flow_pyramid_builds;
+                tiny.timing["failed_flow_attempt"]=flow.extract_ms;
+                flow=std::move(tiny);
+            } else {
+                flow.route_detail=tiny.route_detail;flow.extract_ms+=tiny.extract_ms;
+                flow.stereo_match_ms+=tiny.stereo_match_ms;flow.flow_coarse_attempts+=tiny.flow_coarse_attempts;
+                flow.flow_pyramid_builds+=tiny.flow_pyramid_builds;
+                flow.timing["failed_tt_attempt"]=tiny.extract_ms;
+            }
+            flow.legacy_frontend_fallback=true;flow.fallback_used=true;
+        }
+        if(flow.disparity_only && config_.stereo_flow.disparity_full_chain)writeDisparityResult(flow);
+        if (!flow.disparity_only && !pose.success && config_.stereo_flow.dual_roi_legacy_fallback && legacy_provider) {
+            const auto groups=legacy_provider();
+            if (groups.first.valid() && groups.second.valid() && groups.first.is_dual &&
+                (groups.second.is_dual || groups.second.is_class1)) {
+                // The failed flow attempt has not finalized a pose or appended a log.
+                // Legacy execution belongs to this same input frame.
+                const auto prior_state=state_;
+                const int prior_cache_age=cache_age_;
+                PipelineResult legacy;
+                if(groups.second.is_dual)legacy=processDualRoi(left_img,right_img,groups.first,groups.second,visualize);
+                else {
+                    // Right YOLO may see only class1 when class0 leaves its field of view.
+                    // Use its actual primary(class1) box; do not fabricate a class0 detection.
+                    auto [lc,lg]=loadImage(left_img,visualize);auto [rc,rg]=loadImage(right_img,visualize);
+                    const int pad=config_.dual_roi_secondary_expand;
+                    const auto lraw=groups.first.secondary,rraw=groups.second.primary;
+                    const cv::Rect a=cv::Rect(lraw.x-pad,lraw.y-pad,lraw.width+2*pad,lraw.height+2*pad)&cv::Rect(0,0,lg.cols,lg.rows);
+                    const cv::Rect b=cv::Rect(rraw.x-pad,rraw.y-pad,rraw.width+2*pad,rraw.height+2*pad)&cv::Rect(0,0,rg.cols,rg.rows);
+                    if(a.area()>0&&b.area()>0) {
+                        std::vector<Eigen::Vector3d> model;std::string strategy,detail;
+                        double extract_ms=0,pnp_ms=0;
+                        auto [ok,p]=runDualRoiClass1Chain(lg(a),rg(b),lc.empty()?cv::Mat():lc(a),rc.empty()?cv::Mat():rc(b),
+                            {a.x,a.y,a.width,a.height},{b.x,b.y,b.width,b.height},first,legacy,model,strategy,extract_ms,pnp_ms,&detail);
+                        legacy.strategy_name=strategy;legacy.pose_model_points=std::move(model);legacy.model_frame="class1";
+                        legacy.left_color=lc;legacy.right_color=rc;
+                        legacy.dual_c1_pairs=static_cast<int>(legacy.pts_left_good.size());legacy.is_class1=true;
+                        legacy.extract_ms=extract_ms;legacy.pnp_ms=pnp_ms;
+                        legacy.timing={{"legacy_extract",extract_ms},{"legacy_pnp",pnp_ms}};
+                        if(ok)finalizePose(legacy,p);
+                    }
+                }
+                if (legacy.success && legacy.pose_source==PoseSource::Unspecified)
+                    legacy.pose_source=PoseSource::LeftPnpFallback;
+                PoseEstimate legacy_pose;legacy_pose.success=legacy.success;legacy_pose.R=legacy.R;legacy_pose.t=legacy.t;
+                const auto& fc=config_.stereo_flow;
+                bool verified=checkFlowPose(legacy_pose,legacy,legacy.pose_model_points,camera_,
+                    legacy.pose_source==PoseSource::StereoGpnp,fc.max_mean_reprojection_px,fc.max_point_reprojection_px).success;
+                FlowMatchResult legacy_check;
+                if(legacy.success && legacy.pose_source==PoseSource::StereoGpnp) {
+                    auto [ignored_left,gray_left]=loadImage(left_img,false);
+                    auto [ignored_right,gray_right]=loadImage(right_img,false);
+                    auto check_config=fc;check_config.coarse_retry=false;
+                    legacy_check=StereoFlowMatcher(camera_,check_config).match(gray_left,gray_right,
+                        legacy.pts_left_good,legacy.pts_right_good);
+                    verified=verified&&legacy_check.success&&legacy_check.left_points.size()==legacy.pts_left_good.size();
+                    for(size_t i=0;i<legacy_check.left_indices.size();++i)
+                        if(cv::norm(legacy_check.right_points[i]-legacy.pts_right_good[legacy_check.left_indices[i]])>fc.max_fb_error_px)
+                            verified=false;
+                }
+                const bool accept=verified && (legacy.pose_source==PoseSource::StereoGpnp || fc.allow_left_pnp);
+                if (!accept) { state_=prior_state;cache_age_=prior_cache_age; }
+                else state_.logs.resize(prior_state.logs.size());
+                legacy.legacy_frontend_fallback=true;legacy.stereo_method="DualBC";
+                legacy.stereo_success=accept && legacy.pose_source==PoseSource::StereoGpnp;
+                legacy.route_detail=flow.route_detail+" -> legacy:"+legacy.strategy_name+(accept?":OK":":FAIL");
+                legacy.flow_pyramid_builds=flow.flow_pyramid_builds+legacy_check.pyramid_builds;
+                legacy.flow_coarse_attempts=flow.flow_coarse_attempts+legacy_check.coarse_attempts;
+                legacy.flow_roi=flow.flow_roi;
+                legacy.flow_full_fallback=flow.flow_full_fallback||legacy_check.full_frame_fallback;
+                legacy.stereo_match_ms=flow.stereo_match_ms+legacy_check.total_ms;
+                legacy.extract_ms+=flow.extract_ms+legacy_check.total_ms;legacy.pnp_ms+=flow.pnp_ms;
+                legacy.timing.erase("dual_roi");
+                legacy.timing["failed_flow_attempt"]=flow.extract_ms+flow.pnp_ms;
+                legacy.timing["legacy_stereo_check"]=legacy_check.total_ms;
+                legacy.success=accept;legacy.gpnp_success=accept;
+                legacy.failure_reason=accept ? "" : "legacy_pose_rejected_or_failed";
+                if(!accept){legacy.R=Eigen::Matrix3d::Identity();legacy.t=Eigen::Vector3d::Zero();}
+                if(!accept || legacy.pose_source==PoseSource::LeftPnpFallback) {
+                    legacy.pts_left_good.clear();legacy.pts_right_good.clear();legacy.idx_from_filtered.clear();
+                    legacy.pts_left_used.clear();legacy.pts_right_used.clear();legacy.disparity.clear();legacy.dx_filtered.clear();
+                    legacy.n_matched=0;legacy.dual_c0_pairs=0;legacy.dual_c1_pairs=0;
+                }
+                if(visualize)renderDualFlowResult(legacy,left_img,right_img,*left_group);
+                addLogEntry(legacy,first,true);
+                return legacy;
+            }
+            flow.route_detail+=" -> legacy:invalid_dual_detection";
+        }
+        if(pose.success)finalizePose(flow,pose);
+        if(visualize)renderDualFlowResult(flow,left_img,right_img,*left_group);
+        addLogEntry(flow,first,flow.fallback_used);
+        return flow;
+    }
+
+    if(config_.stereo_flow.disparity_only && config_.stereo_flow.disparity_full_chain && left_group) {
+        auto result=processSingleDisparity(left_img,right_img,*left_group,visualize);
+        addLogEntry(result,!state_.has_cache,result.fallback_used);
+        return result;
+    }
+
     // ---- Load images (P3: color 仅可视化需要; 灰度保持全图——无 ROI 全图回退路径依赖) ----
     auto [left_color, left_gray] = loadImage(left_img, visualize);
-    auto [right_color, right_gray] = loadImage(right_img, visualize);
-    if (left_gray.empty() || right_gray.empty())
+    auto [right_color, right_gray] = right_img.empty()
+        ? std::pair<cv::Mat, cv::Mat>{} : loadImage(right_img, visualize);
+    if (left_gray.empty() || (right_gray.empty() && (!config_.stereo_flow.enabled || right_group)))
         throw std::runtime_error("Cannot read input images");
 
     // ---- Save originals (for visualization & coordinate restore; P3: 非可视化共享不复制) ----
@@ -368,6 +506,11 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     int roi_area = roi_l.valid() ? roi_l.width * roi_l.height : 0;
     configureStrategyChain(roi_area, use_c1);
 
+    // Null right ROI is an explicit request for the new frontend, not a fabricated detection.
+    const bool flow_frame = config_.stereo_flow.enabled && (!right_group || config_.stereo_flow.disparity_only) &&
+                            !left_grp.is_dual && !use_c1 &&
+                            extractor_->strategyType() == StrategyType::BinaryCorner;
+
     // Expand ROI with padding for non-AKAZE extractors (corner context)
     applyRoiPadding(roi_l, roi_r, roi_area,
                     left_gray.cols, left_gray.rows,
@@ -386,7 +529,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
             left_color_cropped = left_color(cv::Rect(roi_l.x, roi_l.y, roi_l.width, roi_l.height)).clone();
         left_offset = cv::Point2d(static_cast<double>(roi_l.x), static_cast<double>(roi_l.y));
     }
-    if (roi_r.valid()) {
+    if (roi_r.valid() && !flow_frame) {
         right_cropped = right_gray(cv::Rect(roi_r.x, roi_r.y, roi_r.width, roi_r.height)).clone();
         if (!right_color.empty())
             right_color_cropped = right_color(cv::Rect(roi_r.x, roi_r.y, roi_r.width, roi_r.height)).clone();
@@ -401,6 +544,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     bool pose_ok = false;
     PoseEstimate final_pose;
     double extract_ms = 0.0, pnp_ms = 0.0;   // 阶段耗时: 特征提取 / 位姿解算 (跨退化链累加)
+    FlowMatchResult flow_diagnostics;
 
     // ========================================================================
     // Build the degradation chain dynamically
@@ -431,6 +575,48 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
             fallback_used = true;
             std::string from = chain[i - 1]->name();
             if (verbose_console_) std::cout << "[Degradation] " << from << " failed → " << strategy_name << "\n";
+        }
+
+        if (flow_frame) {
+            PoseEstimate pose;
+            if (is_primary) {
+                const bool extracted = runBcFlow(left_gray, right_gray, left_color_orig, right_color_orig,
+                                                 roi_l, result, pose, flow_diagnostics);
+                extract_ms += result.timing["binary_corner"] + result.stereo_match_ms;
+                pnp_ms += result.timing["initial_pnp"] + result.timing["gpnp"];
+                if (!extracted && config_.stereo_flow.allow_left_pnp && !config_.stereo_flow.disparity_only) continue;
+            } else {
+                // Existing BC→TT feature degradation, left-only and explicitly mono.
+                const auto previous_timing = result.timing;
+                const std::string previous_failure = result.failure_reason;
+                result = ext->extractMono(left_cropped, left_color_cropped);
+                result.success = false;
+                for (auto& p : result.pts_left_match) { p.x += roi_l.x; p.y += roi_l.y; }
+                for (auto& p : result.kp_left) { p.pt.x += roi_l.x; p.pt.y += roi_l.y; }
+                const auto own_timing = result.timing;
+                result.timing = previous_timing;
+                result.timing.insert(own_timing.begin(), own_timing.end());
+                result.stereo_method = "LK";
+                result.failure_reason = previous_failure;
+                extract_ms += result.timing["tiny_target"];
+                if (result.pts_left_match.size() >= 4) {
+                    auto solved = runTinyTargetPnP(result, ext->templateData().pts_3d);
+                    pose = solved.second;
+                    auto check = checkFlowPose(pose, result, ext->templateData().pts_3d, camera_, false,
+                                               config_.stereo_flow.initial_reprojection_px,
+                                               config_.stereo_flow.initial_reprojection_px);
+                    if (!check.success) pose.success = false;
+                    if (pose.success) pose.source = PoseSource::LeftPnpFallback;
+                    pnp_ms += result.timing["tiny_pnp"];
+                }
+                result.left_color = left_color_orig; result.right_color = right_color_orig;
+            }
+            result.strategy_name = strategy_name;
+            if (pose.success) {
+                pose_ok = true; final_pose = pose; winning_strategy = strategy_name; winner_ext = ext;
+                fallback_used = fallback_used || pose.source == PoseSource::LeftPnpFallback;
+            }
+            break; // Reject policy never silently runs a mono pose or right-side detector.
         }
 
         auto t_extract = std::chrono::steady_clock::now();
@@ -467,7 +653,10 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
         }
     }
 
-    if (!pose_ok) {
+    if (result.disparity_only) {
+        if (result.disparity_success) updateStickinessFromWinner("BinaryCorner");
+        fillTemporalMeta(result);
+    } else if (!pose_ok) {
         std::cerr << "[Degradation] All strategies failed for frame " << state_.frame_count << "\n";
     } else {
         // 帧末反馈: 锁定档位跟随实际胜者 (temporal 策略粘滞)
@@ -482,7 +671,11 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     }
 
     // ---- Visualization ----
-    if (visualize && pose_ok) {
+    if (visualize && flow_frame) {
+        renderBcFlow(result, flow_diagnostics, roi_l, left_color_orig, right_color_orig,
+                     winner_ext ? winner_ext : binary_extractor_.get());
+    }
+    if (visualize && pose_ok && !flow_frame) {
         std::string prefix = "_f" + std::to_string(current_frame_);
 
         // Normal 模式 (visualize_detailed_=false): 仅三维坐标轴叠加图
@@ -848,6 +1041,8 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img,
     // ---- Logging ----
     result.is_first_frame = is_first;
     result.is_class1 = use_c1;
+    if (flow_frame) result.fallback_used = fallback_used;
+    if (result.stereo_method.empty()) result.stereo_method = "dual_bc";
     result.n_matched = static_cast<int>(result.pts_left_good.size());
     result.n_projected = static_cast<int>(result.pts_right_projected.size());
     result.extract_ms = extract_ms;
@@ -1274,7 +1469,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
 
         if (init_pose.success) {
             if (verbose_console_) std::cout << "  [DualRoi] InitialPnP OK, warm-starting GPNP" << "\n";
-            pose = gpnp_solver_.solve(result, merged_pts3d, &init_pose.R, &init_pose.t, gpnp_timing);
+            pose = gpnp_solver_.solve(result, merged_pts3d, &init_pose.R, &init_pose.t, gpnp_timing, {PoseInitializationSource::InitialPnP});
             if (!pose.success) {
                 if (verbose_console_) std::cout << "  [DualRoi] GPNP failed, using InitialPnP result" << "\n";
                 pose = init_pose;
@@ -1284,13 +1479,13 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             if (verbose_console_) std::cout << "  [DualRoi] InitialPnP failed, trying GPNP with default depth" << "\n";
             Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
             Eigen::Vector3d t_id(0, 0, 5000);
-            pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing);
+            pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing, {PoseInitializationSource::DepthGuess});
         }
     } else {
         if (verbose_console_) std::cout << "  [DualRoi] InitialPnP skipped" << "\n";
         Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
         Eigen::Vector3d t_id(0, 0, 5000);
-        pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing);
+        pose = gpnp_solver_.solve(result, merged_pts3d, &R_id, &t_id, gpnp_timing, {PoseInitializationSource::DepthGuess});
     }
 
     // 运动门控 (与 MonoTracker::processDualRoi 同语义, 含陈旧放宽):
@@ -1452,7 +1647,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                 auto t_j = std::chrono::steady_clock::now();
                 double joint_gpnp_t = 0.0;
                 PoseEstimate pj = gpnp_solver_.solve(jr_res, j3d,
-                                                     &pose.R, &pose.t, joint_gpnp_t);
+                                                     &pose.R, &pose.t, joint_gpnp_t, {PoseInitializationSource::PreviousPose});
                 bool joint_ok = pj.success;
                 if (!joint_ok) {
                     MatchResult jm;
@@ -1461,12 +1656,12 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                     jm.pts_template_match = jr_res.pts_template_match;
                     PoseEstimate ip = initial_pnp_.solve(jm, j3d, camera_.K);
                     if (ip.success) {
-                        pj = gpnp_solver_.solve(jr_res, j3d, &ip.R, &ip.t, joint_gpnp_t);
+                        pj = gpnp_solver_.solve(jr_res, j3d, &ip.R, &ip.t, joint_gpnp_t, {PoseInitializationSource::InitialPnP});
                         if (!pj.success) pj = ip;
                     } else {
                         Eigen::Matrix3d R_id = Eigen::Matrix3d::Identity();
                         Eigen::Vector3d t_id(0, 0, 5000);
-                        pj = gpnp_solver_.solve(jr_res, j3d, &R_id, &t_id, joint_gpnp_t);
+                        pj = gpnp_solver_.solve(jr_res, j3d, &R_id, &t_id, joint_gpnp_t, {PoseInitializationSource::DepthGuess});
                     }
                     joint_ok = pj.success;
                 }
@@ -1570,6 +1765,10 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     // "DualRoi_BC"; class1 链胜出保留 C1 命名
     result.strategy_name = c1_fallback_used ? c1_strategy
                          : (joint_used ? "DualRoi_BCJ" : "DualRoi_BC");
+    result.dual_c0_pairs=bc_total;
+    result.dual_c1_pairs=std::max(0,total_use-bc_total);
+    result.pose_model_points=merged_pts3d;
+    result.model_frame=c1_fallback_used?"class1":"board";
 
     // BC 二值化过程面板: 不依赖位姿成功, 失败帧也输出 (排查主证据)
     if (visualize && visualize_detailed_ && !output_dir_.empty())
@@ -1842,7 +2041,8 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
             left_color, right_color, r);
         extract_ms_acc += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_ext).count();
-        if (!extract_ok || !(r.success && r.n_kp_left >= 3)) {
+        // extract() has not solved a pose, so PipelineResult::success is still false.
+        if (!extract_ok || r.n_kp_left < 3) {
             if (verbose_console_)
                 std::cout << "  [DualRoi] class1 " << ext->name()
                           << " extraction failed" << "\n";
@@ -1851,6 +2051,10 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
         }
 
         const auto& pts3d = ext->templateData().pts_3d;
+        if(is_bc && r.pts_left_match.size()!=pts3d.size()) {
+            legFail("BC","model_count");
+            continue; // Four rectangle corners cannot be paired to the first four of a ten-corner model.
+        }
         auto t_c1_pnp = std::chrono::steady_clock::now();
         auto [ok, c1_pose] = is_bc ? solveBcPnpChain(r, pts3d)
                                    : runTinyTargetPnP(r, pts3d);
@@ -1863,6 +2067,8 @@ std::pair<bool, PoseEstimate> StereoTracker::runDualRoiClass1Chain(
             legFail(is_bc ? "BC" : "TT", "pnp");
             continue;
         }
+
+        if(!is_bc)c1_pose.source=PoseSource::LeftPnpFallback;
 
         r.is_first_frame = is_first;
         r.is_class1 = true;

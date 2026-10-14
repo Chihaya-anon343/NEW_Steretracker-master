@@ -6219,3 +6219,11 @@ __pycache__/
 /.codex/skills/scientific-agent-skills-main/scan_skills.py
 /.codex/skills/scientific-agent-skills-main/SECURITY.md
 /.codex/
+/.idea/deployment.xml
+/.idea/NEW_Steretracker-master_COPY.iml
+
+/build-codex-bc-flow/
+/build-codex-bc-bench/
+/tests/output/
+/remote_output/
+/data/stereo_crop/

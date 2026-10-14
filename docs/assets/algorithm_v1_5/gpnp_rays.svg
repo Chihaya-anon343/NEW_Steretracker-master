@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1100" height="550" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1100 550" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1100" height="550"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-550)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="0" width="1100" height="550" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="32" y="510" style="font-family: DocumentChinese; font-size: 24px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,1020) scale(1,-1)">双目射线与 GPnP 位姿约束</text>
+			<text x="32" y="481" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,962) scale(1,-1)">XZ 剖面示意；不对应实测深度或姿态，右射线已变换到左相机坐标系</text>
+			<path d="M 60,95 L 680,95 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="680 95, 671.7105 98.50477, 671.7105 91.49523" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="675" y="68" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,136) scale(1,-1)">+X_L</text>
+			<path d="M 60,95 L 60,425 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="60 425, 56.49523 416.7105, 63.50477 416.7105" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="32" y="439" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(9%,14%,23%); stroke:none;" transform="translate(0,878) scale(1,-1)">+Z_L</text>
+			<path d="M 120,120 L 551.2,431.36 Z" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 2.4;"/>
+			<polygon points="551.2 431.36, 542.4276 429.3486, 546.5311 423.6657" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(14%,38%,92%); fill-rule: evenodd;"/>
+			<path d="M 375,120 L 520.6,431.36 Z" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 2.4;"/>
+			<polygon points="520.6 431.36, 513.9138 425.3355, 520.2633 422.3663" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(1%,58%,41%); fill-rule: evenodd;"/>
+			<circle cx="120" cy="120" r="7" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(14%,38%,92%); fill-rule: evenodd;"/>
+			<circle cx="375" cy="120" r="7" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(1%,58%,41%); fill-rule: evenodd;"/>
+			<text x="83" y="138" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,276) scale(1,-1)">O_L = 0</text>
+			<text x="326" y="138" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,276) scale(1,-1)">O_R = t_RL</text>
+			<path d="M 120,63 L 375,63 Z" style="stroke: rgb(85%,46%,2%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="375 63, 366.7105 66.50477, 366.7105 59.49523" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(85%,46%,2%); fill-rule: evenodd;"/>
+			<text x="185" y="40" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(85%,46%,2%); stroke:none;" transform="translate(0,80) scale(1,-1)">水平基线 B &gt; 0</text>
+			<text x="220" y="285" style="font-family: DocumentChinese; font-size: 16px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,570) scale(1,-1)">b_L</text>
+			<text x="422" y="300" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,600) scale(1,-1)">R_RL b_R</text>
+			<circle cx="505" cy="398" r="5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<text x="294" y="433" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,866) scale(1,-1)">理想观测射线交点</text>
+			<circle cx="560" cy="355" r="6" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(86%,14%,14%); fill-rule: evenodd;"/>
+			<text x="558" y="368" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(86%,14%,14%); stroke:none;" transform="translate(0,736) scale(1,-1)">P_i = R P_T,i + t</text>
+			<path d="M 520.742542,409.367342 L 560,355 Z" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 2; stroke-dasharray: 4, 3;"/>
+			<circle cx="520.7425424262447" cy="409.36734232336624" r="3" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(14%,38%,92%); fill-rule: evenodd;"/>
+			<path d="M 498.36915,383.820182 L 560,355 Z" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 2; stroke-dasharray: 4, 3;"/>
+			<circle cx="498.36914974942664" cy="383.82018177185086" r="3" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(1%,58%,41%); fill-rule: evenodd;"/>
+			<text x="540" y="303" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(86%,14%,14%); stroke:none;" transform="translate(0,606) scale(1,-1)">虚线：点到两条射线的偏离</text>
+			<rect x="735" y="359" width="328" height="71" rx="7" ry="7" style="stroke: rgb(14%,38%,92%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="747" y="389.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,779) scale(1,-1)">已知：模板点、像素射线、双目外参</text>
+			<rect x="735" y="263" width="328" height="71" rx="7" ry="7" style="stroke: rgb(86%,14%,14%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="747" y="293.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(86%,14%,14%); stroke:none;" transform="translate(0,587) scale(1,-1)">未知：旋转增量 3 维 + 平移 3 维</text>
+			<path d="M 899,350 L 899,338 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="899 338, 902.5048 346.2895, 895.4952 346.2895" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<path d="M 899,251 L 899,235 Z" style="stroke: rgb(39%,45%,54%); stroke-linecap: butt; stroke-width: 1.5;"/>
+			<polygon points="899 235, 902.5048 243.2895, 895.4952 243.2895" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(39%,45%,54%); fill-rule: evenodd;"/>
+			<rect x="735" y="154" width="328" height="71" rx="7" ry="7" style="stroke: rgb(1%,58%,41%); stroke-linecap: butt; stroke-width: 1; fill: rgb(97%,98%,98%); fill-rule: evenodd;"/>
+			<text x="747" y="184.5" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,369) scale(1,-1)">LM 候选 → 数值状态 → 几何验收</text>
+			<text x="737" y="117" style="font-family: DocumentChinese; font-size: 14px;fill: rgb(14%,38%,92%); stroke:none;" transform="translate(0,234) scale(1,-1)">e_L = b_L × P_i</text>
+			<text x="737" y="85" style="font-family: DocumentChinese; font-size: 13px;fill: rgb(1%,58%,41%); stroke:none;" transform="translate(0,170) scale(1,-1)">e_R = (R_RL b_R) × (P_i − t_RL)</text>
+			<text x="32" y="16" style="font-family: DocumentChinese; font-size: 12px;fill: rgb(39%,45%,54%); stroke:none;" transform="translate(0,32) scale(1,-1)">模板原点与局部回退模型仍需区分；输出为模板到左相机的 R、t。仅视差实验不执行此步骤。</text>
+		</g>
+	</g>
+</svg>

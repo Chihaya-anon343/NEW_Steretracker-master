@@ -13,7 +13,8 @@
  *             right ray: origin=t_rl,     direction=R_rl·(K⁻¹·(uR,vR,1) normalized)
  *
  *           Residual: cross(R·pt_3d + t - origin, direction) → 3 values per ray
- *           Total residuals: 6 × n_pts for 7 parameters [qw,qx,qy,qz,tx,ty,tz]
+ *           Residuals: 6 × n_pts + 3 translation-prior terms.
+ *           Six parameters: [rotation increment (3), translation (3)].
  *
  *           Optimized via Eigen::Levenberg-Marquardt (replaces scipy.optimize.least_squares).
  *
@@ -32,6 +33,15 @@
 #include <vector>
 
 namespace gpnp {
+
+enum class PoseInitializationSource { Provided, InitialPnP, DepthGuess, PreviousPose };
+
+struct GPnPOptions {
+    PoseInitializationSource initial_source{PoseInitializationSource::Provided};
+    int max_function_evaluations{200};
+    double max_mean_reprojection_px{8.0};
+    double max_point_reprojection_px{8.0};
+};
 
 class GPnPSolver {
 public:
@@ -72,13 +82,15 @@ public:
      * @param R_init         Warm-start rotation (3×3, optional)
      * @param t_init         Warm-start translation (mm, optional)
      * @param timing_ms_out  [out] Optimization timing in ms
+     * @param options        Explicit initialization source, budget and pixel acceptance limits
      * @return PoseEstimate with R, t, success flag
      */
     PoseEstimate solve(PipelineResult& result,
                        const std::vector<Eigen::Vector3d>& pts_3d_T,
                        const Eigen::Matrix3d* R_init,
                        const Eigen::Vector3d* t_init,
-                       double& timing_ms_out);
+                       double& timing_ms_out,
+                       const GPnPOptions& options = {});
 
     /**
      * @brief Get the most recent GPNP optimization monitor.

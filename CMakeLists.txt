@@ -31,7 +31,7 @@ find_package(Threads REQUIRED)
 
 # --- ONNX Runtime (YOLO detection, required) ---
 set(ONNXRUNTIME_ROOT
-    "/opt/onnxruntime-linux-x64-gpu-1.20.1"
+    "/opt/onnxruntime-linux-gpu-1.20.1"
     CACHE PATH "ONNX Runtime installation path")
 
 if(NOT EXISTS "${ONNXRUNTIME_ROOT}")
@@ -59,6 +59,7 @@ set(SOURCES
     src/feature/BinaryCornerExtractor.cpp
     src/feature/TinyTargetExtractor.cpp
     src/matching/TemplateMatcher.cpp
+    src/matching/StereoFlowMatcher.cpp
     src/pose/InitialPnPSolver.cpp
     src/pose/GPnPSolver.cpp
     src/pose/MonoPnPSolver.cpp
@@ -66,6 +67,9 @@ set(SOURCES
     src/tracker/TrackerBase.cpp
     src/tracker/MonoTracker.cpp
     src/tracker/StereoTracker.cpp
+    src/tracker/StereoTrackerFlow.cpp
+    src/tracker/StereoTrackerDualFlow.cpp
+    src/tracker/StereoTrackerDisparity.cpp
     src/detection/RoiGenerator.cpp
     src/detection/YoloRoiProvider.cpp
     # 输入系统 (Phase 1 + Phase 3 摄像头源)

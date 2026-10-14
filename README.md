@@ -4,6 +4,16 @@
 
 **技术栈**: C++17 · OpenCV 4.x · Eigen 3.x · ONNX Runtime
 
+普通 BC 双目可选左图检测与特征提取、右图光流匹配。启用配置、失败策略、日志与 Docker 验证见 [普通 BC 光流说明](docs/bc_stereo_flow.md)。原配置默认保留原流程。
+
+主配置已开启完整仅视差链 `disparity_full_chain=true`：支持直接 TT、普通 BC→TT、独立 class1 BC/TT 和 Dual-ROI 左 TT 退化。全程不求位姿，匹配成功使用 `disparity_success`；使用与验证见 [完整视差链说明](docs/disparity_full_chain.md)。
+
+光流粗匹配支持极线容差带搜索，主配置 `stereo_frontend.coarse_epipolar_band=true`；设置 false 可复现原单极线搜索。两种路径保留相同的 LK 与质量阈值。
+
+60 对人工双目图的原版/极线带 Release 对照见 [极线带实验报告](docs/stereo_epipolar_band_experiment.md)。
+
+Dual-ROI 也支持左图检测/BC、右图光流及仅视差输出，详见 [Dual-ROI 光流说明](docs/dual_roi_stereo_flow.md)。
+
 ---
 
 ## 0. 系统需求概述

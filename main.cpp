@@ -99,6 +99,14 @@ int main(int argc, char** argv) {
     double th = fs["strategies"]["board_template"]["template_real_height_mm"];
     int min_pts = fs["strategies"]["board_template"]["gpnp_min_pts"];
     bool use_init_pnp = static_cast<int>(fs["strategies"]["board_template"]["use_initial_pnp"]) != 0;
+    StereoFlowConfig stereo_flow_cfg;
+    try { stereo_flow_cfg = readStereoFlowConfig(fs["stereo_frontend"]); }
+    catch (const std::exception& e) {
+        std::cerr << "双目前端配置错误: " << e.what() << std::endl;
+        return 1;
+    }
+    const std::string output_override = fs["output"]["directory"].empty()
+        ? "" : static_cast<std::string>(fs["output"]["directory"]);
 
     // BinaryCorner 策略参数
     BinaryCornerExtractor::Config binary_cfg;
@@ -234,6 +242,10 @@ int main(int argc, char** argv) {
     cv::FileNode mono_node = fs["mono_mode"];
     if (!mono_node.empty()) {
         mono_mode = static_cast<int>(mono_node) != 0;
+    }
+    if (mono_mode && stereo_flow_cfg.disparity_only) {
+        std::cerr << "disparity_only requires stereo mode\n";
+        return 1;
     }
 
     // ========================================================================
@@ -463,7 +475,8 @@ int main(int argc, char** argv) {
         }
         output_dir = "output/" + img_name;
     }
-    if (visualize || log_file) fsp::create_directories(output_dir);
+    if (!output_override.empty()) output_dir = output_override;
+    if (visualize || log_file || stereo_flow_cfg.disparity_only) fsp::create_directories(output_dir);
     std::cout << "输出目录: " << output_dir << std::endl;
 
     // ========================================================================
@@ -485,6 +498,7 @@ int main(int argc, char** argv) {
     tracker_cfg.dual_roi_class0_points_path = dual_c0_points_path;
     tracker_cfg.dual_roi_class1_points_path = dual_c1_points_path;
     tracker_cfg.dual_roi_joint_match_gate_px = dual_joint_gate_px;
+    tracker_cfg.stereo_flow = stereo_flow_cfg;
     tracker_cfg.temporal = temporal_cfg;
 
     try {
@@ -574,6 +588,7 @@ int main(int argc, char** argv) {
         // ====================================================================
         // Phase 3.2: 位姿成功帧计数 (汇总统计用)
         int processed_ok = 0;
+        int disparity_ok = 0;
 
         // 阶段计时累加 (运行汇总: YOLO / 单帧跟踪 / 特征提取 / 位姿解算平均用时)
         double yolo_ms_total = 0.0;  int yolo_calls = 0;
@@ -599,6 +614,7 @@ int main(int argc, char** argv) {
         // 处理单帧: YOLO/ROI → 策略 → PnP; 返回 PipelineResult (失败帧 success=false)
         auto processFrame = [&](int frame, const cv::Mat& L, const cv::Mat& R) -> PipelineResult {
             PipelineResult result;
+            result.disparity_only=!mono_mode&&stereo_flow_cfg.disparity_only;
 
             if (mono_mode) {
                 auto* mt = static_cast<MonoTracker*>(tracker.get());
@@ -622,9 +638,13 @@ int main(int argc, char** argv) {
             } else {
                 auto* st = static_cast<StereoTracker*>(tracker.get());
                 RoiGroup lg, rg;
+                bool left_bc_flow = false;
+                StereoTracker::LegacyStereoProvider legacy_provider;
+                double legacy_yolo_ms=0;
                 if (use_manual_roi) {
                     lg = RoiGroup{manual_rl, {}, false};
                     rg = RoiGroup{manual_rr, {}, false};
+                    left_bc_flow = st->prefersLeftStereoFlow(lg);
                     if (verbose_console) {
                         std::cout << "  手动 ROI: left=(" << manual_rl.x << "," << manual_rl.y << ","
                                   << manual_rl.width << "," << manual_rl.height << "), right=("
@@ -633,7 +653,22 @@ int main(int argc, char** argv) {
                     }
                 } else if (yolo_ok) {
                     auto t_yolo = steadyNow();
-                    std::tie(lg, rg) = yolo.detect(L, R);
+                    if (stereo_flow_cfg.enabled) {
+                        const LeftDetection left_detection = yolo.detectLeft(L);
+                        lg = left_detection.group;
+                        left_bc_flow = st->prefersLeftStereoFlow(lg);
+                        if(left_bc_flow && lg.is_dual && stereo_flow_cfg.dual_roi_legacy_fallback)
+                            legacy_provider=[&,left_detection]() {
+                                const auto start=steadyNow();
+                                auto groups=yolo.completeStereo(left_detection,R);
+                                legacy_yolo_ms=elapsedMs(start);yolo_ms_total+=legacy_yolo_ms;
+                                return groups;
+                            };
+                        if (!left_bc_flow && !stereo_flow_cfg.disparity_only)
+                            std::tie(lg, rg) = yolo.completeStereo(left_detection, R);
+                    } else {
+                        std::tie(lg, rg) = yolo.detect(L, R);
+                    }
                     yolo_ms_total += elapsedMs(t_yolo); ++yolo_calls;
                     if (!lg.valid() && !rg.valid()) {
                         tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
@@ -646,7 +681,15 @@ int main(int argc, char** argv) {
                     }
                 }
                 tracker->setFrameNumber(frame);
-                if (lg.valid() && rg.valid()) {
+                if (stereo_flow_cfg.disparity_only && !left_bc_flow) {
+                    result.disparity_only = true;
+                    result.failure_reason = "disparity_only_requires_supported_flow_strategy";
+                    tracker->onFrameSkipped();
+                } else if (left_bc_flow) {
+                    auto t_pose = steadyNow();
+                    result = st->process(L, R, visualize, &lg, nullptr,legacy_provider);
+                    pose_ms_total += elapsedMs(t_pose)-legacy_yolo_ms; ++pose_calls;
+                } else if (lg.valid() && rg.valid()) {
                     // 双侧检测 → 双目
                     auto t_pose = steadyNow();
                     result = st->process(L, R, visualize, &lg, &rg);
@@ -666,6 +709,7 @@ int main(int argc, char** argv) {
 
             // ---- 详细输出（verbose / capture_log 时进日志）----
             if (result.success) ++processed_ok;   // 汇总统计
+            if(result.disparity_only&&result.disparity_success)++disparity_ok;
             if (verbose_console) {
                 std::cout << "  特征点: " << result.n_kp_left
                           << "  匹配: " << result.n_matched
@@ -678,12 +722,19 @@ int main(int argc, char** argv) {
                 }
                 // 耗时口径: 提取+解算两相之和 (与日志文件 extract_ms/pnp_ms 列一致,
                 // 跨退化链累加; 单/Dual 路径同口径可比)
-                std::cout << "  GPNP: " << (result.gpnp_success ? "成功" : "失败")
+                std::cout << "  GPNP: " << (result.disparity_only ? "跳过（仅视差）" : result.gpnp_success ? "成功" : "失败")
                           << "  耗时: " << (result.extract_ms + result.pnp_ms) << "ms";
                 if (result.success) {
                     std::cout << "  PnP t(mm)=[" << result.t.x() << ", "
                               << result.t.y() << ", " << result.t.z() << "]"
                               << "  rot_unwrap=" << result.rot_deg_unwrapped << "deg";
+                }
+                if (result.stereo_method == "LK") {
+                    std::cout << " frontend=LK source=" << poseSourceName(result.pose_source)
+                              << " stereo=" << result.stereo_success << " match=" << result.stereo_match_ms << "ms";
+                    if (!result.failure_reason.empty()) std::cout << " reason=" << result.failure_reason;
+                    if(result.disparity_only)std::cout << " match_ok=" << result.disparity_success;
+                    if(!result.route_detail.empty())std::cout << " route=" << result.route_detail;
                 }
                 std::cout << std::endl;
             }
@@ -736,7 +787,7 @@ int main(int argc, char** argv) {
                     PipelineResult result = processFrame(frame, packet.left_image, packet.right_image);
 
                     // ---- ESKF: PnP 位姿 → 相机观测 (同时更新合成源真值参考) ----
-                    if (fusion_active) {
+                    if (fusion_active && !result.disparity_only) {
                         fusion.feedCameraPose(t_cam, result.R, result.t, result.success);
                         if (result.success) {
                             last_R_cam_w = eskf_cfg.R_template_world * result.R.transpose();
@@ -748,7 +799,16 @@ int main(int argc, char** argv) {
                     if (!verbose_console || capture_log) {
                         std::ostringstream os;
                         fusion::FusionState st = fusion.getLatestState();
-                        if (fusion_active && st.initialized) {
+                        if (result.disparity_only) {
+                            os << "[Frame " << frame << "] disparity_only match="
+                               << (result.disparity_success ? "OK" : "FAIL") << " n=" << result.disparity.size();
+                            if (!result.disparity.empty()) os << " median=" << computeMedian(result.disparity) << "px";
+                            os << " pnp=SKIP match_ms=" << result.stereo_match_ms
+                               << " roi=" << result.flow_roi.width << 'x' << result.flow_roi.height
+                               << " full_retry=" << result.flow_full_fallback;
+                            if (!result.failure_reason.empty()) os << " reason=" << result.failure_reason;
+                            termLine(os.str());
+                        } else if (fusion_active && st.initialized) {
                             const char* qs =
                                 (st.quality == fusion::FusionQuality::Normal)   ? "N"
                               : (st.quality == fusion::FusionQuality::Degraded) ? "D"
@@ -762,6 +822,9 @@ int main(int argc, char** argv) {
                                 os << " | PnP t(mm)=[" << result.t.x() << ", "
                                    << result.t.y() << ", " << result.t.z() << "]";
                             }
+                            if (result.stereo_method == "LK")
+                                os << " | frontend=LK source=" << poseSourceName(result.pose_source)
+                                   << " stereo=" << result.stereo_success;
                             termLine(os.str());
                         } else if (result.success) {
                             Eigen::AngleAxisd aa(result.R);
@@ -772,9 +835,13 @@ int main(int argc, char** argv) {
                                << "  n=" << result.n_matched
                                << "  r=[" << rvec.x() << ", " << rvec.y() << ", " << rvec.z() << "]"
                                << "  t=[" << result.t.x() << ", " << result.t.y() << ", " << result.t.z() << "]";
+                            if (result.stereo_method == "LK")
+                                os << " frontend=LK source=" << poseSourceName(result.pose_source)
+                                   << " stereo=" << result.stereo_success << " match=" << result.stereo_match_ms << "ms";
                             termLine(os.str());
                         } else {
-                            termLine("[Frame " + std::to_string(frame) + "] FAILED");
+                            termLine("[Frame " + std::to_string(frame) + "] FAILED"
+                                     + (result.failure_reason.empty() ? "" : " reason=" + result.failure_reason));
                         }
                     }
                 } catch (const std::exception& e) {
@@ -805,6 +872,8 @@ int main(int argc, char** argv) {
                 termOut("处理帧数: " + std::to_string(frame)
                         + "  位姿成功: " + std::to_string(processed_ok)
                         + " (" + std::to_string(100.0 * processed_ok / frame) + "%)\n");
+                if(stereo_flow_cfg.disparity_only)termOut("视差匹配成功: "+std::to_string(disparity_ok)
+                    +" ("+std::to_string(100.0*disparity_ok/frame)+"%)\n");
                 if (secs > 0.0) {
                     termOut("实际处理 FPS: " + std::to_string(frame / secs) + "\n");
                 }
@@ -823,6 +892,11 @@ int main(int argc, char** argv) {
                 if (pnp_solve_calls > 0) {
                     termOut("位姿解算平均用时: " + std::to_string(pnp_solve_ms_total / pnp_solve_calls)
                             + " ms/帧  (共 " + std::to_string(pnp_solve_calls) + " 帧)\n");
+                }
+                if (yolo_ok) {
+                    const auto counts = yolo.inferenceCounts();
+                    termOut("YOLO推理次数: left=" + std::to_string(counts.left)
+                            + " right=" + std::to_string(counts.right) + "\n");
                 }
                 if (ist.captured > 0) {
                     termOut("输入统计 (线程化采集): 采集 " + std::to_string(ist.captured)
@@ -862,6 +936,10 @@ int main(int argc, char** argv) {
 
         if (verbose_console)
             tracker->printLogs();
+        if (verbose_console && yolo_ok) {
+            const auto counts = yolo.inferenceCounts();
+            std::cout << "YOLO推理次数: left=" << counts.left << " right=" << counts.right << "\n";
+        }
 
         // ---- 日志文件输出（normal + log_file 时已捕获 cout）----
         if (capture_log) {
