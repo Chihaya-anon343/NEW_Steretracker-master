@@ -29,23 +29,33 @@ bool CameraSource::open(const std::string& device, double target_fps) {
     close();
     target_fps_ = target_fps;
 
-    // "0" → 摄像头索引; "/dev/video0" 等 → 设备路径
-    int index = -1;
-    try {
-        index = std::stoi(device);
-    } catch (...) {
-        index = -1;
-    }
-
     cap_ = std::make_unique<cv::VideoCapture>();
-    bool ok = (index >= 0) ? cap_->open(index) : cap_->open(device);
+
+    // GStreamer 管线串 (含 appsink): Rockchip ISP 等 V4L2 multiplanar 节点
+    // 不被 OpenCV V4L2 后端支持, 必须走 GStreamer 后端
+    const bool is_pipeline = device.find("appsink") != std::string::npos;
+    bool ok = false;
+    if (is_pipeline) {
+        ok = cap_->open(device, cv::CAP_GSTREAMER);
+    } else {
+        // "0" → 摄像头索引; "/dev/video0" 等 → 设备路径
+        int index = -1;
+        try {
+            index = std::stoi(device);
+        } catch (...) {
+            index = -1;
+        }
+        ok = (index >= 0) ? cap_->open(index) : cap_->open(device);
+    }
     if (!ok) {
         std::cerr << "[CameraSource] 无法打开摄像头: " << device << std::endl;
         cap_.reset();
         return false;
     }
 
-    if (target_fps_ > 0) {
+    // 管线模式下帧率节流由管线自身 (sync/drop) 与 nextFrame() 的 sleep
+    // 限速负责; CAP_PROP_FPS 在 GStreamer 后端无实现
+    if (target_fps_ > 0 && !is_pipeline) {
         cap_->set(cv::CAP_PROP_FPS, target_fps_);
     }
 

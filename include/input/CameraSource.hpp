@@ -4,7 +4,8 @@
  * @file CameraSource.hpp
  * @brief 实时摄像头源 (Phase 3)。
  *
- * 通过 OpenCV VideoCapture 打开本机摄像头 (USB / 内置 webcam)，
+ * 通过 OpenCV VideoCapture 打开本机摄像头 (USB / 内置 webcam)，或直接传入
+ * GStreamer 管线串 (含 appsink，用于 Rockchip ISP 等 V4L2 multiplanar 节点)，
  * 逐帧返回单目图像；右图 = 左图副本 (与 SequenceSource 单目语义一致)。
  *
  * nextFrame() 内部阻塞在 VideoCapture::read() 上，天然按摄像头帧率
@@ -27,7 +28,8 @@ public:
     CameraSource() = default;
     ~CameraSource() override { close(); }
 
-    /// @param uri 设备描述: 数字索引 "0" 或平台路径 "/dev/video0"。
+    /// @param uri 设备描述: 数字索引 "0"、平台路径 "/dev/video0"、
+    ///             或 GStreamer 管线串 (含 appsink)。
     bool open(const std::string& uri) override;
 
     /// @param device      设备索引或路径。

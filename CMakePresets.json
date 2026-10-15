@@ -1,0 +1,52 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "onnx",
+      "displayName": "GPNP-onnx",
+      "description": "YOLO 走 ONNX Runtime (docker/开发机, RKNN 后端编译为存根); 运行期 config 指向 .onnx 模型",
+      "binaryDir": "${sourceDir}/build-onnx",
+      "cacheVariables": {
+        "ONNXRUNTIME_ROOT": "/opt/onnxruntime-linux-x64-gpu-1.20.1",
+        "GPNP_WITH_RKNN": "OFF"
+      },
+      "vendor": {
+        "jetbrains.com/clion": {
+          "toolchain": "Docker"
+        }
+      }
+    },
+    {
+      "name": "rknn",
+      "displayName": "GPNP-rknn",
+      "description": "YOLO 走 RKNN NPU (RK3588 板端, 强制要求系统 librknnrt, 缺失即配置失败); 运行期 config 指向 .rknn 模型",
+      "binaryDir": "${sourceDir}/build-rknn",
+      "cacheVariables": {
+        "ONNXRUNTIME_ROOT": "/opt/onnxruntime-linux-aarch64-1.20.1",
+        "GPNP_WITH_RKNN": "ON"
+      },
+      "vendor": {
+        "jetbrains.com/clion": {
+          "toolchain": "远程主机"
+        }
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "onnx",
+      "configurePreset": "onnx",
+      "description": "构建 GPNP-onnx (build-onnx/)"
+    },
+    {
+      "name": "rknn",
+      "configurePreset": "rknn",
+      "description": "构建 GPNP-rknn (build-rknn/)"
+    }
+  ]
+}

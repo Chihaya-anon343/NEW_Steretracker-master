@@ -4,6 +4,7 @@
  */
 
 #include "detection/YoloRoiProvider.hpp"
+#include "detection/RknnDetector.hpp"
 #include "detection/YoloDetector.hpp"
 #include "common/LogConfig.hpp"
 
@@ -18,7 +19,16 @@ YoloRoiProvider::~YoloRoiProvider() = default;
 bool YoloRoiProvider::initialize(const YoloConfig& yolo_cfg,
                                   const RoiGenerator::Config& roi_cfg) {
     try {
-        detector_ = std::make_unique<YoloDetector>(yolo_cfg);
+        const std::string& path = yolo_cfg.model_path;
+        const bool is_rknn = path.size() >= 5 &&
+            path.compare(path.size() - 5, 5, ".rknn") == 0;
+        if (is_rknn) {
+            std::cerr << "[YoloRoiProvider] Backend: RKNN NPU" << std::endl;
+            detector_ = std::make_unique<RknnDetector>(yolo_cfg);
+        } else {
+            std::cerr << "[YoloRoiProvider] Backend: ONNX Runtime" << std::endl;
+            detector_ = std::make_unique<YoloDetector>(yolo_cfg);
+        }
         roi_gen_  = std::make_unique<RoiGenerator>(roi_cfg);
         if (g_verbose_console)
             std::cout << "[YoloRoiProvider] Ready. Model: " << yolo_cfg.model_path
@@ -49,8 +59,9 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
     Status sl = Status::UnknownError;
     Status sr = Status::UnknownError;
 
-    // H1: 左右推理并行 — 两次推理完全独立且 YoloDetector::detect() 线程安全
-    // (共享成员构造后只读, Ort::Session::Run 支持并发, 输出向量各自独立)
+    // H1: 左右推理并行 — ONNX 后端 YoloDetector::detect() 线程安全
+    // (Ort::Session::Run 支持并发); RKNN 后端内部互斥锁把两路串行化
+    // (rknn_run 非线程安全), 结构不变仅退化为顺序执行
     try {
         ++inference_counts_.left;
         ++inference_counts_.right;

@@ -30,15 +30,29 @@ find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
 
 # --- ONNX Runtime (YOLO detection, required) ---
-set(ONNXRUNTIME_ROOT
-    "/opt/onnxruntime-linux-gpu-1.20.1"
-    CACHE PATH "ONNX Runtime installation path")
+# 候选路径依次探测 (docker x64 → 板端 aarch64), 两条环境都不用手传 -D;
+# 显式 -DONNXRUNTIME_ROOT=... / preset 覆盖时跳过探测。
+set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime installation path (empty = auto-detect)")
+
+if(NOT ONNXRUNTIME_ROOT)
+    set(ONNXRUNTIME_CANDIDATES
+        "/opt/onnxruntime-linux-x64-gpu-1.20.1"    # docker 工具链
+        "/opt/onnxruntime-linux-aarch64-1.20.1"    # LubanCat SSH 板端
+    )
+    foreach(_onnxrt_dir IN LISTS ONNXRUNTIME_CANDIDATES)
+        if(EXISTS "${_onnxrt_dir}")
+            set(ONNXRUNTIME_ROOT "${_onnxrt_dir}")
+            break()
+        endif()
+    endforeach()
+endif()
 
 if(NOT EXISTS "${ONNXRUNTIME_ROOT}")
     message(FATAL_ERROR
-            "ONNX Runtime not found:\n"
-            "  ${ONNXRUNTIME_ROOT}\n"
-            "Please verify Docker image installation.")
+            "ONNX Runtime not found. Probed:\n"
+            "  /opt/onnxruntime-linux-x64-gpu-1.20.1 (docker)\n"
+            "  /opt/onnxruntime-linux-aarch64-1.20.1 (board)\n"
+            "Set -DONNXRUNTIME_ROOT=<path> to override.")
 endif()
 
 message(STATUS "ONNX Runtime root: ${ONNXRUNTIME_ROOT}")
@@ -72,6 +86,8 @@ set(SOURCES
     src/tracker/StereoTrackerDisparity.cpp
     src/detection/RoiGenerator.cpp
     src/detection/YoloRoiProvider.cpp
+    # RKNN NPU 检测后端 (无 librknnrt 时编译为存根, 详见下方 RKNN 可选块)
+    src/detection/RknnDetector.cpp
     # 输入系统 (Phase 1 + Phase 3 摄像头源)
     src/input/FileStereoSource.cpp
     src/input/DirectoryStereoSource.cpp
@@ -112,6 +128,39 @@ target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime)
 
 # Link Threads (Phase 4: 融合工作线程 std::thread)
 target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
+
+# --- RKNN NPU (YOLO .rknn 后端, RK3588) ---
+# 头文件随仓库携带 (third_party/rknpu2), 运行库 librknnrt 由板端系统提供。
+# GPNP_WITH_RKNN 三态 (对应 CMakePresets.json 的 onnx/rknn 两个预设):
+#   AUTO (默认) - 探测 librknnrt, 找到则启用, 找不到编译存根 (构建不受影响)
+#   ON          - 强制启用, librknnrt 缺失时 FATAL_ERROR (配错环境立刻暴露)
+#   OFF         - 完全禁用, 不探测 (RknnDetector.cpp 编译为存根)
+# 注意: 构建期只决定 RKNN 后端代码是否编入, 运行期走哪个引擎由配置文件
+# yolo.model_path 的后缀 (.rknn/.onnx) 路由, 与用哪个预设构建无关。
+set(GPNP_WITH_RKNN "AUTO" CACHE STRING "RKNN backend: AUTO (detect) / ON (required) / OFF (disabled)")
+set_property(CACHE GPNP_WITH_RKNN PROPERTY STRINGS AUTO ON OFF)
+
+if(NOT GPNP_WITH_RKNN STREQUAL "OFF")
+    set(RKNN_API_INCLUDE_DIR
+        "${CMAKE_SOURCE_DIR}/third_party/rknpu2/include"
+        CACHE PATH "rknn_api.h include directory")
+    find_library(RKNN_RT_LIB rknnrt)
+    if(RKNN_RT_LIB)
+        target_include_directories(${PROJECT_NAME} PRIVATE ${RKNN_API_INCLUDE_DIR})
+        target_compile_definitions(${PROJECT_NAME} PRIVATE GPNP_RKNN_ENABLED=1)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${RKNN_RT_LIB})
+        message(STATUS "RKNN: enabled (${RKNN_RT_LIB})")
+    elseif(GPNP_WITH_RKNN STREQUAL "ON")
+        message(FATAL_ERROR
+            "GPNP_WITH_RKNN=ON but librknnrt not found.\n"
+            "GPNP-rknn 预设需在 RK3588 板端环境构建 (系统已装 librknnrt),\n"
+            "开发机/docker 请改用 GPNP_WITH_RKNN=AUTO 或 OFF (onnx 预设).")
+    else()
+        message(STATUS "RKNN: librknnrt not found -> .rknn backend disabled (stub)")
+    endif()
+else()
+    message(STATUS "RKNN: disabled by GPNP_WITH_RKNN=OFF (stub)")
+endif()
 
 # ============================================================================
 # Executable: pose_compare —— 对比 pipeline (YOLO框 → SIFT特征匹配 → PnP)

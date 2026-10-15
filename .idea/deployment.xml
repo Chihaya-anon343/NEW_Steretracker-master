@@ -9,9 +9,11 @@
           </mappings>
           <excludedPaths>
             <excludedPath local="true" path="$PROJECT_DIR$/output" />
+            <excludedPath local="true" path="$PROJECT_DIR$/build-onnx" />
+            <excludedPath local="true" path="$PROJECT_DIR$/build-rknn" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-" />
             <excludedPath local="true" path="$PROJECT_DIR$/tests" />
-            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-" />
-            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-" />
           </excludedPaths>
         </serverdata>
       </paths>

@@ -13,7 +13,9 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 #include "common/Types.hpp"
+#include "detection/IYoloBackend.hpp"
 #include "detection/YoloDecode.hpp"
+#include "detection/YoloPreprocess.hpp"
 
 #include <algorithm>
 #include <array>
@@ -32,7 +34,7 @@ namespace gpnp {
 // YOLO 目标检测器（纯头文件）
 // ============================================================================
 
-class YoloDetector {
+class YoloDetector : public IYoloBackend {
 public:
     explicit YoloDetector(const YoloConfig& cfg);
     ~YoloDetector();
@@ -40,20 +42,15 @@ public:
     YoloDetector(const YoloDetector&) = delete;
     YoloDetector& operator=(const YoloDetector&) = delete;
 
-    bool isInitialized() const { return session_ != nullptr; }
+    bool isInitialized() const override { return session_ != nullptr; }
 
     /// 对图像运行检测。成功时将填充 `detections`。
-    Status detect(const cv::Mat& image, std::vector<Detection>& detections);
+    Status detect(const cv::Mat& image, std::vector<Detection>& detections) override;
 
 private:
     // --- 预处理辅助函数 ---
 
-    static cv::Mat ensureBGR(const cv::Mat& img);
     static std::pair<int, int> resolveInputShape(const std::vector<int64_t>& shape);
-    static void letterbox(const cv::Mat& img, cv::Mat& out,
-                          const cv::Size& new_shape,
-                          float& ratio, float& dw, float& dh,
-                          const cv::Scalar& color = cv::Scalar(114, 114, 114));
     static std::vector<float> blobFromImage(const cv::Mat& img,
                                             std::array<int64_t, 4>& input_shape);
     void preprocess(const cv::Mat& img, cv::Mat& out,
@@ -180,7 +177,7 @@ inline Status YoloDetector::detect(const cv::Mat& image,
     }
 
     try {
-        cv::Mat bgr = ensureBGR(image);
+        cv::Mat bgr = yolo::ensureBGR(image);
 
         float ratio = 1.0f, dw = 0.0f, dh = 0.0f;
         cv::Mat input_tensor_img;
@@ -210,28 +207,6 @@ inline Status YoloDetector::detect(const cv::Mat& image,
     }
 }
 
-// --- 确保 BGR 格式 ---
-
-inline cv::Mat YoloDetector::ensureBGR(const cv::Mat& img) {
-    if (img.empty()) {
-        throw std::runtime_error("Input image is empty.");
-    }
-    if (img.channels() == 3) {
-        return img;
-    }
-    cv::Mat bgr;
-    if (img.channels() == 1) {
-        cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
-        return bgr;
-    }
-    if (img.channels() == 4) {
-        cv::cvtColor(img, bgr, cv::COLOR_BGRA2BGR);
-        return bgr;
-    }
-    throw std::runtime_error("Unsupported image channels: " +
-                             std::to_string(img.channels()));
-}
-
 // --- 从 ONNX 模型获取输入尺寸 ---
 
 inline std::pair<int, int> YoloDetector::resolveInputShape(
@@ -246,55 +221,13 @@ inline std::pair<int, int> YoloDetector::resolveInputShape(
     return {640, 640};
 }
 
-// --- Letterbox：缩放 + 填充 ---
-
-inline void YoloDetector::letterbox(const cv::Mat& img, cv::Mat& out,
-                                     const cv::Size& new_shape,
-                                     float& ratio, float& dw, float& dh,
-                                     const cv::Scalar& color) {
-    const int src_h = img.rows;
-    const int src_w = img.cols;
-
-    ratio = std::min(
-        static_cast<float>(new_shape.height) / static_cast<float>(src_h),
-        static_cast<float>(new_shape.width) / static_cast<float>(src_w));
-
-    int new_unpad_w = static_cast<int>(std::round(src_w * ratio));
-    int new_unpad_h = static_cast<int>(std::round(src_h * ratio));
-    new_unpad_w = std::max(1, new_unpad_w);
-    new_unpad_h = std::max(1, new_unpad_h);
-
-    dw = (new_shape.width - new_unpad_w) / 2.0f;
-    dh = (new_shape.height - new_unpad_h) / 2.0f;
-
-    cv::Mat resized;
-    cv::resize(img, resized, cv::Size(new_unpad_w, new_unpad_h));
-
-    int top = static_cast<int>(std::round(dh - 0.1f));
-    int bottom = static_cast<int>(std::round(dh + 0.1f));
-    int left = static_cast<int>(std::round(dw - 0.1f));
-    int right = static_cast<int>(std::round(dw + 0.1f));
-
-    top = std::max(0, top);
-    bottom = std::max(0, bottom);
-    left = std::max(0, left);
-    right = std::max(0, right);
-
-    cv::copyMakeBorder(resized, out, top, bottom, left, right,
-                       cv::BORDER_CONSTANT, color);
-
-    if (out.rows != new_shape.height || out.cols != new_shape.width) {
-        cv::resize(out, out, new_shape);
-    }
-}
-
 // --- 预处理：letterbox → BGR→RGB → 归一化 ---
 
 inline void YoloDetector::preprocess(const cv::Mat& img, cv::Mat& out,
                                       float& ratio, float& dw, float& dh) const {
     cv::Mat letterboxed;
-    letterbox(img, letterboxed,
-              cv::Size(input_hw_.second, input_hw_.first), ratio, dw, dh);
+    yolo::letterbox(img, letterboxed,
+                    cv::Size(input_hw_.second, input_hw_.first), ratio, dw, dh);
 
     cv::cvtColor(letterboxed, out, cv::COLOR_BGR2RGB);
     out.convertTo(out, CV_32FC3, 1.0 / 255.0);

@@ -9,6 +9,7 @@
  */
 
 #include "common/Types.hpp"
+#include "detection/IYoloBackend.hpp"
 #include "detection/RoiGenerator.hpp"
 
 #include <opencv2/core.hpp>
@@ -17,8 +18,6 @@
 #include <utility>
 
 namespace gpnp {
-
-class YoloDetector;
 
 struct LeftDetection {
     RoiGroup group;
@@ -62,7 +61,8 @@ public:
     InferenceCounts inferenceCounts() const { return inference_counts_; }
 
 private:
-    std::unique_ptr<YoloDetector> detector_;
+    /// 推理后端: *.onnx → YoloDetector (ONNX Runtime); *.rknn → RknnDetector (NPU)
+    std::unique_ptr<IYoloBackend> detector_;
     std::unique_ptr<RoiGenerator> roi_gen_;
     InferenceCounts inference_counts_;
 };
