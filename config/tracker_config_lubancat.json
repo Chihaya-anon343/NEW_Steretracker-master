@@ -71,8 +71,15 @@
 
   "output": {
     "_comment_visualize": "false: 实时运行不落盘可视化图",
-    "visualize": true,
-    "log_file": true
+    "visualize": false,
+    "log_file": true,
+    "live_view": {
+      "_comment": "实时预览: 浏览器打开 http://<板端IP>:8080/ (断流自动重连); 位姿成功帧叠加三维轴, 失败帧显示原图; 无人观看零开销",
+      "enabled": true,
+      "port": 8080,
+      "jpeg_quality": 70,
+      "max_fps": 10
+    }
   },
 
   "camera": {

@@ -78,6 +78,8 @@ set(SOURCES
     src/pose/GPnPSolver.cpp
     src/pose/MonoPnPSolver.cpp
     src/utils/PoseUtils.cpp
+    # 实时预览 MJPEG 服务器 (output.live_view, Linux/POSIX)
+    src/utils/LiveMjpegServer.cpp
     src/tracker/TrackerBase.cpp
     src/tracker/MonoTracker.cpp
     src/tracker/StereoTracker.cpp

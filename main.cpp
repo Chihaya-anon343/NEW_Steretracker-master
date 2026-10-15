@@ -13,6 +13,7 @@
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
+#include "utils/LiveMjpegServer.hpp"
 
 // 输入系统 (Phase 1)
 #include "input/InputProvider.hpp"
@@ -25,7 +26,10 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <iostream>
@@ -38,6 +42,42 @@ namespace {
 volatile std::sig_atomic_t g_stop_requested = 0;
 void handleSignal(int) {
     g_stop_requested = 1;
+}
+
+// ---- 实时预览 (live_view) 叠加绘制 ----
+// 位姿成功帧: 三维轴 X红/Y绿/Z蓝 (轴长随距离自适应) + 左上角状态行
+void drawLiveOverlay(cv::Mat& img, const Eigen::Matrix3d& K,
+                     const Eigen::Matrix3d& R, const Eigen::Vector3d& t,
+                     const std::string& status) {
+    double len_d = 0.2 * t.norm();
+    if (len_d < 50.0) len_d = 50.0;
+    const float L = static_cast<float>(len_d);
+    const std::vector<cv::Point3f> axes = {
+        cv::Point3f(0, 0, 0), cv::Point3f(L, 0, 0),
+        cv::Point3f(0, L, 0), cv::Point3f(0, 0, L)};
+
+    cv::Mat R_cv(3, 3, CV_64F);
+    cv::Matx33d K_cv;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            R_cv.at<double>(i, j) = R(i, j);
+            K_cv(i, j) = K(i, j);
+        }
+    }
+    cv::Mat rvec;
+    cv::Rodrigues(R_cv, rvec);
+
+    std::vector<cv::Point2f> pts;
+    cv::projectPoints(axes, rvec, cv::Mat(cv::Vec3d(t.x(), t.y(), t.z())), K_cv,
+                      cv::noArray(), pts);
+    const cv::Point origin(pts[0]);
+    const cv::Scalar axis_colors[3] = {{0, 0, 255}, {0, 255, 0}, {255, 0, 0}};
+    for (int i = 0; i < 3; ++i)
+        cv::line(img, origin, cv::Point(pts[i + 1]), axis_colors[i], 2, cv::LINE_AA);
+
+    if (!status.empty())
+        cv::putText(img, status, cv::Point(12, 28), cv::FONT_HERSHEY_SIMPLEX, 0.7,
+                    cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
 }
 
 // ---- 配置读取辅助 (ESKF 节) ----
@@ -214,6 +254,22 @@ int main(int argc, char** argv) {
     {
         cv::FileNode lf = fs["output"]["log_file"];
         if (!lf.empty()) log_file = static_cast<int>(lf) != 0;
+    }
+
+    // 实时预览配置 (output.live_view, 可选): 内嵌 MJPEG 服务器, 浏览器实时观看
+    LiveMjpegServer::Config live_cfg;
+    bool live_enabled = false;
+    {
+        cv::FileNode lv = fs["output"]["live_view"];
+        if (!lv.empty()) {
+            live_enabled = static_cast<int>(lv["enabled"]) != 0;
+            cv::FileNode p = lv["port"];
+            if (!p.empty()) live_cfg.port = static_cast<int>(p);
+            cv::FileNode q = lv["jpeg_quality"];
+            if (!q.empty()) live_cfg.jpeg_quality = static_cast<int>(q);
+            cv::FileNode f = lv["max_fps"];
+            if (!f.empty()) live_cfg.max_fps = static_cast<double>(f);
+        }
     }
 
     // 手动 ROI 配置 — 仅 debug 模式生效
@@ -584,6 +640,21 @@ int main(int argc, char** argv) {
         double last_cam_height = sim_radar_cfg.initial_height;
 
         // ====================================================================
+        // ③-d 实时预览服务器 (live_view, 仅 normal 模式)
+        // ====================================================================
+        LiveMjpegServer live_server;
+        if (live_enabled && use_input_system) {
+            if (live_server.start(live_cfg)) {
+                std::cerr << "[LiveView] 浏览器打开 http://<运行主机IP>:" << live_cfg.port
+                          << "/ 实时观看 (成功帧=三维轴, 失败帧=原图; 断流自动重连)"
+                          << std::endl;
+            } else {
+                std::cerr << "[LiveView] 端口 " << live_cfg.port
+                          << " 监听失败, 继续无预览运行" << std::endl;
+            }
+        }
+
+        // ====================================================================
         // ④ 逐帧处理
         // ====================================================================
         // Phase 3.2: 位姿成功帧计数 (汇总统计用)
@@ -795,6 +866,21 @@ int main(int argc, char** argv) {
                         }
                     }
 
+                    // ---- 实时预览: 位姿成功帧叠加三维轴, 失败帧显示原图 ----
+                    if (live_enabled && live_server.running()) {
+                        if (result.success && !packet.left_image.empty()) {
+                            cv::Mat disp = packet.left_image.clone();
+                            std::ostringstream os;
+                            os << result.strategy_name << "  t(mm)=["
+                               << result.t.x() << ", " << result.t.y() << ", "
+                               << result.t.z() << "]";
+                            drawLiveOverlay(disp, K, result.R, result.t, os.str());
+                            live_server.submitFrame(disp);
+                        } else {
+                            live_server.submitFrame(packet.left_image);
+                        }
+                    }
+
                     // ---- normal 模式: 每帧一行 → 终端 (ESKF 融合为主输出) ----
                     if (!verbose_console || capture_log) {
                         std::ostringstream os;
@@ -852,6 +938,9 @@ int main(int argc, char** argv) {
 
             // ---- 停止融合工作线程 (若已启动) ----
             if (fusion_active && eskf_cfg.threaded) fusion.stop();
+
+            // ---- 停止实时预览服务器 ----
+            live_server.stop();
 
             // ---- Phase 3.2: 收尾汇总 — 停止采集线程 → 打印统计 ----
             input_provider.shutdown();
