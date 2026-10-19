@@ -1,4 +1,5 @@
 #include "feature/TinyTargetExtractor.hpp"
+#include "common/TemplateGeometry.hpp"
 #include "utils/PoseUtils.hpp"
 #include "common/GeometryUtils.hpp"
 #include "common/LogConfig.hpp"
@@ -53,6 +54,7 @@ void TinyTargetExtractor::initPts3d() {
         { half_mm,  half_mm, 0.0},  // 右下
         {-half_mm,  half_mm, 0.0},  // 左下
     };
+    placeTemplateInClass0(template_data_.pts_3d, use_class1_, config_.template_geometry);
 
     if (g_verbose_console)
         std::cout << "[TinyTarget] 3D pts (mm): half=" << half_mm

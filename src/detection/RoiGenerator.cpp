@@ -9,8 +9,157 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
 
 namespace gpnp {
+
+RoiSelectionConfig readRoiSelectionConfig(const cv::FileNode &node) {
+  RoiSelectionConfig c;
+  if (node.empty())
+    return c;
+  if (!node.isMap())
+    throw std::invalid_argument("roi_selection must be an object");
+  for (auto item : {std::pair<const char *, bool *>{"enabled", &c.enabled},
+                    {"verify_mono", &c.verify_mono}}) {
+    auto v = node[item.first];
+    if (v.empty())
+      continue;
+    if (!v.isInt() || ((int)v != 0 && (int)v != 1))
+      throw std::invalid_argument("roi_selection boolean expected");
+    *item.second = (int)v != 0;
+  }
+  for (auto item :
+       {std::pair<const char *, int *>{"max_candidates", &c.max_candidates},
+        {"history_max_age", &c.history_max_age}}) {
+    auto v = node[item.first];
+    if (v.empty())
+      continue;
+    if (!v.isInt())
+      throw std::invalid_argument("roi_selection integer expected");
+    *item.second = (int)v;
+  }
+  for (auto item : {std::pair<const char *, double *>{"containment_min",
+                                                      &c.containment_min},
+                    {"containment_margin_px", &c.containment_margin_px},
+                    {"min_component_ratio", &c.min_component_ratio},
+                    {"min_observed_span_px", &c.min_observed_span_px}}) {
+    auto v = node[item.first];
+    if (v.empty())
+      continue;
+    if (!v.isInt() && !v.isReal())
+      throw std::invalid_argument("roi_selection numeric expected");
+    *item.second = (double)v;
+    if (!std::isfinite(*item.second))
+      throw std::invalid_argument("roi_selection finite threshold expected");
+  }
+  if (c.max_candidates < 1 || c.max_candidates > 8 || c.history_max_age < 0 ||
+      c.history_max_age > 1000 || c.containment_min <= 0 ||
+      c.containment_min > 1 || c.containment_margin_px < 0 ||
+      c.containment_margin_px > 50 || c.min_component_ratio <= 0 ||
+      c.min_component_ratio > 1 || c.min_observed_span_px < 2 ||
+      c.min_observed_span_px > 32)
+    throw std::invalid_argument("roi_selection threshold out of range");
+  return c;
+}
+
+std::vector<RoiCandidate>
+RoiGenerator::candidates(const std::vector<Detection> &detections,
+                         const cv::Size &image_size) const {
+  if (!config_.selection.enabled) {
+    auto group = generateGroup(detections, image_size);
+    return group.valid() ? std::vector<RoiCandidate>{{group, -1, -1, 0, 0}}
+                         : std::vector<RoiCandidate>{};
+  }
+  const cv::Rect2f image(0, 0, image_size.width, image_size.height);
+  std::vector<int> classes[2];
+  std::vector<cv::Rect2f> boxes(detections.size());
+  for (int i = 0; i < (int)detections.size(); ++i) {
+    const auto &d = detections[i];
+    const auto &b = d.bbox;
+    if (d.class_id < 0 || d.class_id > 1 || !std::isfinite(d.confidence) ||
+        d.confidence < 0 || d.confidence > 1 || !std::isfinite(b.x) ||
+        !std::isfinite(b.y) || !std::isfinite(b.width) ||
+        !std::isfinite(b.height) || b.width <= 0 || b.height <= 0)
+      continue;
+    boxes[i] = b & image;
+    if (boxes[i].area() > 0)
+      classes[d.class_id].push_back(i);
+  }
+  for (auto &list : classes) {
+    std::stable_sort(list.begin(), list.end(), [&](int a, int b) {
+      return detections[a].confidence > detections[b].confidence;
+    });
+    std::vector<int> unique;
+    for (int id : list) {
+      bool duplicate = false;
+      for (int kept : unique) {
+        double intersection = (boxes[id] & boxes[kept]).area();
+        if (intersection /
+                (boxes[id].area() + boxes[kept].area() - intersection) >
+            .7) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate)
+        unique.push_back(id);
+      if ((int)unique.size() >= config_.selection.max_candidates)
+        break;
+    }
+    list = std::move(unique);
+  }
+  std::vector<RoiCandidate> out;
+  for (int i : classes[0]) {
+    int inner = -1;
+    double best = -1, coverage = 0;
+    auto outer = boxes[i];
+    const float margin = (float)config_.selection.containment_margin_px;
+    outer.x -= margin;
+    outer.y -= margin;
+    outer.width += 2 * margin;
+    outer.height += 2 * margin;
+    for (int j : classes[1]) {
+      double fraction = (outer & boxes[j]).area() / boxes[j].area();
+      if (boxes[j].area() >= boxes[i].area() ||
+          fraction < config_.selection.containment_min)
+        continue;
+      double score = detections[j].confidence * fraction;
+      if (score > best) {
+        best = score;
+        inner = j;
+        coverage = fraction;
+      }
+    }
+    RoiGroup group{detectionToRoi(detections[i], image_size,
+                                  config_.roi_expand_ratio,
+                                  config_.roi_min_size),
+                   {},
+                   false};
+    if (inner >= 0 && group.primary.width * group.primary.height >
+                          config_.dual_trigger_area) {
+      group.secondary =
+          detectionToRoi(detections[inner], image_size,
+                         config_.roi_expand_ratio, config_.roi_min_size);
+      group.is_dual = group.secondary.valid();
+    }
+    if (group.valid())
+      out.push_back({group, i, inner,
+                     detections[i].confidence + (inner >= 0 ? .15 * best : 0),
+                     coverage});
+  }
+  if (close_range_cfg_.enabled)
+    for (int j : classes[1]) {
+      auto group = tryCloseRange({detections[j]}, image_size);
+      if (group.valid())
+        out.push_back({group, -1, j, detections[j].confidence - .25, 0});
+    }
+  std::stable_sort(out.begin(), out.end(), [](const auto &a, const auto &b) {
+    return a.score > b.score;
+  });
+  if ((int)out.size() > config_.selection.max_candidates)
+    out.resize(config_.selection.max_candidates);
+  return out;
+}
 
 // ============================================================================
 // 构造
@@ -65,6 +214,10 @@ RoiRect RoiGenerator::generate(const std::vector<Detection>& detections,
 
 RoiGroup RoiGenerator::generateGroup(const std::vector<Detection>& detections,
                                      const cv::Size& image_size) const {
+  if (config_.selection.enabled) {
+    auto choices = candidates(detections, image_size);
+    return choices.empty() ? RoiGroup{} : choices.front().group;
+  }
     // 1. 始终先尝试 class 0
     RoiRect class0_roi = generate(detections, image_size, 0);
     if (!class0_roi.valid()) {
@@ -232,6 +385,10 @@ std::pair<RoiGroup, RoiGroup> RoiGenerator::generateStereoGroup(
     if (!left_group.valid() || !right_group.valid()) {
         return {};
     }
+    // A class0 silhouette and the inner class1 pattern use different models;
+    // never normalize them into an apparently valid stereo observation pair.
+    if(config_.selection.enabled&&left_group.is_class1!=right_group.is_class1)
+        return {};
 
     // 2. 归一化主 ROI 立体对
     if (left_group.primary.valid() && right_group.primary.valid()) {
@@ -247,6 +404,14 @@ std::pair<RoiGroup, RoiGroup> RoiGenerator::generateStereoGroup(
                     }
                 }
             }
+        }
+        if (config_.selection.enabled) {
+          auto selected = candidates(detections_right, right_img_size);
+          int id = selected.empty()
+                       ? -1
+                       : (right_group.is_class1 ? selected[0].class1_index
+                                                : selected[0].class0_index);
+          best_right0 = id < 0 ? nullptr : &detections_right[id];
         }
         normalizeStereoPair(left_group.primary, right_group.primary,
                            best_right0, left_img_size, right_img_size);
@@ -266,6 +431,11 @@ std::pair<RoiGroup, RoiGroup> RoiGenerator::generateStereoGroup(
                         }
                     }
                 }
+            }
+            if (config_.selection.enabled) {
+              auto selected = candidates(detections_right, right_img_size);
+              int id = selected.empty() ? -1 : selected[0].class1_index;
+              best_right1 = id < 0 ? nullptr : &detections_right[id];
             }
             normalizeStereoPair(left_group.secondary, right_group.secondary,
                                best_right1, left_img_size, right_img_size);

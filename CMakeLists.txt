@@ -73,6 +73,7 @@ set(SOURCES
     src/feature/BinaryCornerExtractor.cpp
     src/feature/TinyTargetExtractor.cpp
     src/matching/TemplateMatcher.cpp
+    src/matching/MonoCornerIdentity.cpp
     src/matching/StereoFlowMatcher.cpp
     src/pose/InitialPnPSolver.cpp
     src/pose/GPnPSolver.cpp
@@ -276,6 +277,7 @@ install(TARGETS ${PROJECT_NAME} pose_compare pose_compare2 DESTINATION bin)
 option(GPNP_BUILD_TESTS "Build unit/integration tests under tests/" OFF)
 
 if(GPNP_BUILD_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif()
 

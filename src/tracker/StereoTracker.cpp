@@ -4,6 +4,7 @@
  */
 
 #include "tracker/StereoTracker.hpp"
+#include "common/TemplateGeometry.hpp"
 #include "common/GeometryUtils.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
@@ -42,6 +43,7 @@ StereoTracker::StereoTracker(const Eigen::Matrix3d& K,
                                const std::string& tiny_template_dir)
     : initial_pnp_(config.gpnp_min_pts)
     , gpnp_solver_(makeStereoCameraParams(K, R_rl, t_rl), config.gpnp_min_pts)
+    , mono_pnp_(config.mono_pose_prior)
 {
     camera_ = makeStereoCameraParams(K, R_rl, t_rl);
     config_ = config;
@@ -389,7 +391,8 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img, const cv::Mat& ri
                         double extract_ms=0,pnp_ms=0;
                         auto [ok,p]=runDualRoiClass1Chain(lg(a),rg(b),lc.empty()?cv::Mat():lc(a),rc.empty()?cv::Mat():rc(b),
                             {a.x,a.y,a.width,a.height},{b.x,b.y,b.width,b.height},first,legacy,model,strategy,extract_ms,pnp_ms,&detail);
-                        legacy.strategy_name=strategy;legacy.pose_model_points=std::move(model);legacy.model_frame="class1";
+                        legacy.strategy_name=strategy;legacy.pose_model_points=std::move(model);
+                        legacy.model_frame=config_.template_geometry.enabled?"class0":"class1";
                         legacy.left_color=lc;legacy.right_color=rc;
                         legacy.dual_c1_pairs=static_cast<int>(legacy.pts_left_good.size());legacy.is_class1=true;
                         legacy.extract_ms=extract_ms;legacy.pnp_ms=pnp_ms;
@@ -666,6 +669,7 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img, const cv::Mat& ri
 
     // ---- Finalize pose (if successful) ----
     if (pose_ok) {
+        if (winner_ext) result.pose_model_points = winner_ext->templateData().pts_3d;
         finalizePose(result, final_pose);
         result.success = final_pose.success;  // 确保终端 FAILED / 三维轴绘制检查通过
     }
@@ -1179,6 +1183,10 @@ void StereoTracker::prepareDualBcTemplate() {
             c.y / static_cast<double>(th) * real_h - cy, 0.0);
     }
 
+    // Rebuild each group in its local physical frame, then place it once.
+    // The annotation's previous board-space center must not be added twice.
+    placeTemplateInClass0(dual_bc_tmpl_pts3d_, false, config_.template_geometry);
+    placeTemplateInClass0(dual_c1_tmpl_pts3d_, true, config_.template_geometry);
     dual_bc_template_ready_ = true;
     if (verbose_console_)
         std::cout << "[DualRoi] BC template ready: c0=" << dual_bc_tmpl_corners_.size()
@@ -1768,7 +1776,7 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
     result.dual_c0_pairs=bc_total;
     result.dual_c1_pairs=std::max(0,total_use-bc_total);
     result.pose_model_points=merged_pts3d;
-    result.model_frame=c1_fallback_used?"class1":"board";
+    result.model_frame=config_.template_geometry.enabled?"class0":(c1_fallback_used?"class1":"board");
 
     // BC 二值化过程面板: 不依赖位姿成功, 失败帧也输出 (排查主证据)
     if (visualize && visualize_detailed_ && !output_dir_.empty())

@@ -19,10 +19,14 @@
  *  10. 按模板几何排序角点
  *
  * 从 legacy/BinaryCorner.cpp 迁移而来（原始 Python 端口）。
+ * 单目 class0 可通过 mono_identity.frontend="normalized" 使用独立入口：
+ * 清理前景 → 正方形粗归一化/四方向 → 标准空间轮廓十点 → 循环距离匹配
+ * → 可选原始轮廓边线交点精化 → H/完整形状校验；不调用上述24方向步骤。
  */
 
 #include "feature/FeatureExtractor.hpp"
 #include "common/Types.hpp"
+#include "matching/MonoCornerIdentity.hpp"
 
 #include <opencv2/core.hpp>
 
@@ -37,11 +41,13 @@ public:
     struct Config {
         int corners = 10;                     ///< 期望的角点数量
         int kernel_size = 3;                  ///< 形态学核大小（强制为奇数）
-        double scale = 1.0;                   ///< 内部放大系数，用于亚像素精度
+        double scale = 1.0;                   ///< 旧入口轮廓坐标缩放，不增加图像信息
         cv::Size target_size{100, 100};       ///< 模板匹配归一化尺寸
         double pixel_to_meter_scale_class0 = 0.0;  ///< class0 比例：1 模板像素 = ? 米
         double pixel_to_meter_scale_class1 = 0.0;  ///< class1 比例（0 则回退 class0）
         int roi_pad_pixels = 0;               ///< 在所有方向上扩展 ROI N 个像素
+        TemplateGeometryConfig template_geometry;
+        MonoCornerIdentityConfig mono_identity;
     };
 
     /// 用配置和模板目录构造。
@@ -82,6 +88,10 @@ public:
 
     /// 关闭后跳过 last_*_ 调试快照 clone (可视化/单测需要时置 true, 默认 true 保持原行为)
     void setDebugCapture(bool v) { debug_capture_ = v; }
+    // Only MonoTracker enables this context; StereoTracker also calls extractMono
+    // for LK, so method name alone must never activate the new front end.
+    void setMonoContext(bool v) { mono_context_ = v; }
+    const MonoCornerIdentityResult& lastMonoIdentity() const { return last_mono_identity_; }
 
     // ---- 提取后状态 ----
 
@@ -189,6 +199,10 @@ private:
     // ========================================================================
 
     Config config_;
+    MonoCornerIdentity mono_identity_;
+    MonoCornerIdentityResult last_mono_identity_;
+    cv::Mat mono_identity_mask_;
+    bool mono_context_{false};
     cv::Mat kernel_;
     bool use_class1_ = false;                    ///< 当前使用 class1 尺寸
     bool debug_capture_ = true;                  ///< last_*_ 调试快照开关

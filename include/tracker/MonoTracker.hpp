@@ -10,6 +10,7 @@
 
 #include "tracker/TrackerBase.hpp"
 #include "pose/MonoPnPSolver.hpp"
+#include "detection/RoiGenerator.hpp"
 
 #include <opencv2/core.hpp>
 #include <memory>
@@ -32,8 +33,11 @@ public:
     PipelineResult process(const cv::Mat& left_img,
                            bool visualize = false,
                            const RoiGroup* left_group = nullptr);
+    PipelineResult
+    processCandidates(const cv::Mat &image, bool visualize,
+                      const std::vector<RoiCandidate> &candidates);
 
-private:
+  private:
     PipelineResult processDualRoi(const cv::Mat& left_img,
                                    const RoiGroup& left_group,
                                    bool visualize);
@@ -55,6 +59,11 @@ private:
         std::string* out_route_detail = nullptr);
 
     MonoPnPSolver mono_pnp_;
+    bool has_verified_roi_{false};
+    RoiRect verified_roi_;
+    int verified_roi_frame_{-1};
+    bool has_prepared_bc_{false}, has_prepared_tt_{false};
+    PipelineResult prepared_bc_, prepared_tt_;
 
     bool dual_bc_template_ready_{false};
     std::vector<cv::Point2f> dual_bc_tmpl_corners_;

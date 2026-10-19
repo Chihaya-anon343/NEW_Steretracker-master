@@ -52,6 +52,7 @@ public:
     /// 单目模式：仅对左图运行 YOLO，返回单个 RoiGroup。
     /// 右图不做任何处理。
     RoiGroup detectMono(const cv::Mat& left_img);
+    std::vector<RoiCandidate> detectMonoCandidates(const cv::Mat &left_img);
 
     /// Left-only detection, retaining raw detections for legacy pairing if needed.
     LeftDetection detectLeft(const cv::Mat& left_img);

@@ -6,7 +6,7 @@
 复用 generate_synthetic_dataset.py 的平面单应几何 (make_homography / render /
 write_points / load_points), 把"每帧随机采样"换成"时间参数化的确定性轨迹":
 
-    size(i)  = SIZE_START · GROWTH^i                  短边视尺寸, 几何增长 (匀速接近)
+    size(i)  = SIZE_START · GROWTH^i                  短边视尺寸, 几何增长 (非匀速接近)
     yaw(i)   = YAW_RATE · i                           面内匀速旋转
     pitch(i) = PITCH_AMP · (sin(2πi/Pp) − sin(0))     俯仰慢摆 (i=0 时为 0)
     roll(i)  = ROLL_AMP · (sin(2πi/Pr+φ) − sin(φ))    滚转慢摆 (i=0 时为 0)
@@ -24,6 +24,12 @@ SequenceSource 按扩展名过滤图像, 同目录 txt 不会被误读):
 
 用法:
     python scripts/generate_approach_sequence.py [--out tests/data/approach_seq]
+    python scripts/generate_approach_sequence.py \
+        --suite-config config/experiments/mono_robustness_suite.json \
+        --out tests/data/mono_robustness_20261015
+
+压力测试入口使用独立 JSON 配置；统一当前靶板和相机参数，保存 R/t/H 与
+完整点 ID、可见性真值，不沿用下方旧版面积档位标签。输出目录须为空。
 
 依赖:
     numpy, opencv-python
@@ -68,7 +74,7 @@ CAM_CX = 516.4761400598917
 CAM_CY = 856.0291167973786
 
 SIZE_START = 20.0         # 起始短边视尺寸 (px, 第 0 帧正位 20x20)
-GROWTH = 1.06             # 每帧尺寸倍率 (几何增长 = 匀速接近)
+GROWTH = 1.06             # 每帧尺寸倍率 (深度按反比几何衰减)
 YAW_RATE = 2.5            # 面内旋转速度 (度/帧)
 PITCH_AMP = 8.0           # 俯仰摆动幅度 (度)
 PITCH_PERIOD = 40.0       # 俯仰摆动周期 (帧)
@@ -127,11 +133,15 @@ def _parse_args(argv=None):
         description="生成连续接近+旋转的单目序列及特征点标注",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--out", default="tests/data/approach_seq", help="输出目录")
+    ap.add_argument("--suite-config", help="压力测试配置 JSON；启用后生成多组带 R/t 真值的序列")
     return ap.parse_args(argv)
 
 
 def main(argv=None):
     args = _parse_args(argv)
+    if args.suite_config:
+        from generate_mono_robustness_suite import generate_suite
+        return generate_suite(args.suite_config, args.out)
     os.makedirs(args.out, exist_ok=True)
 
     target = cv2.imread(TARGET_IMG, cv2.IMREAD_COLOR)

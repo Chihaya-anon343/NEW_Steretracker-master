@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "tracker_config": "config/tracker_config.json",
+  "target": "data/clean_target2.png",
+  "background": "tests/data/approach_seq/frame_000000.png",
+  "background_clean_rect": [854, 854, 36, 36],
+  "class0_points": "scripts/class0_points.txt",
+  "class1_points": "scripts/class1_points.txt",
+  "canvas": [1744, 1744],
+  "seed": 20261015,
+  "minimum_board_depth_mm": 40.0,
+  "profiles": [
+    {"name": "reference", "frames": 120, "trajectory": "reference"},
+    {"name": "oblique_clean", "frames": 180, "trajectory": "oblique"},
+    {"name": "grazing", "frames": 180, "trajectory": "grazing"},
+    {"name": "normal_ambiguity", "frames": 180, "trajectory": "ambiguity"},
+    {"name": "fast_rotation", "frames": 180, "trajectory": "fast"},
+    {"name": "oblique_degraded", "frames": 180, "trajectory": "oblique", "degradation": true}
+  ]
+}

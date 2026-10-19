@@ -92,6 +92,7 @@ inline std::vector<Detection> finalizeDetections(
         detections.push_back(out[i]);
         for (int j : order) {
             if (i == j || suppressed[j]) continue;
+            if (out[i].class_id != out[j].class_id) continue;
             if (iou(out[i].bbox, out[j].bbox) > iou_threshold) {
                 suppressed[j] = true;
             }

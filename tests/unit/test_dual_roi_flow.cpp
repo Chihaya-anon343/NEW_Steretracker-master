@@ -1,5 +1,9 @@
 #include "../framework/TestAssert.hpp"
 #include "common/Config.hpp"
+#include "common/TemplateGeometry.hpp"
+#include "tracker/MonoTracker.hpp"
+#include "pose/GPnPSolver.hpp"
+#include "pose/InitialPnPSolver.hpp"
 #include "common/LogConfig.hpp"
 #include "tracker/StereoTracker.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -275,6 +279,231 @@ void test_full_chain_dual_negative_disparity_does_not_retry_tt() {
     TEST_ASSERT(r.route_detail.find("C1TT")==std::string::npos);
 }
 }
+namespace {
+Eigen::Vector2d modelCenter(const std::vector<Eigen::Vector3d>& points) {
+    TEST_ASSERT(!points.empty());
+    Eigen::Vector2d lo=points.front().head<2>(),hi=lo;
+    for(const auto& p:points){lo=lo.cwiseMin(p.head<2>());hi=hi.cwiseMax(p.head<2>());}
+    return (lo+hi)*.5;
+}
+void test_template_geometry_config_validation_and_legacy_default() {
+    cv::FileStorage old("{}",cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);
+    TEST_ASSERT(!readTemplateGeometryConfig(old["template_geometry"]).enabled);
+    cv::FileStorage good("{\"template_geometry\":{\"enabled\":true,\"class1_center_in_class0_mm\":[12.5,-7]}}",
+        cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);
+    const auto c=readTemplateGeometryConfig(good["template_geometry"]);
+    TEST_ASSERT(c.enabled);TEST_ASSERT((c.class1_center_in_class0_mm-Eigen::Vector2d(12.5,-7)).norm()<1e-12);
+    for(const std::string body:{"{\"enabled\":true}","{\"enabled\":true,\"class1_center_in_class0_mm\":[1,2,3]}",
+        "{\"enabled\":true,\"class1_center_in_class0_mm\":[\"bad\",2]}","{\"enabled\":2}"}) {
+        cv::FileStorage fs("{\"template_geometry\":"+body+"}",cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);
+        TEST_ASSERT_THROWS(readTemplateGeometryConfig(fs["template_geometry"]),std::invalid_argument);
+    }
+    auto bad=c;bad.class1_center_in_class0_mm.x()=std::numeric_limits<double>::infinity();
+    TEST_ASSERT_THROWS(validateTemplateGeometry(bad),std::invalid_argument);
+}
+void test_template_geometry_extractor_centers_and_repeated_switches() {
+    DualFixture f;
+    TemplateGeometryConfig g;g.enabled=true;g.class1_center_in_class0_mm={12,-7};
+    f.bc.template_geometry=g;f.tt.template_geometry=g;
+    BinaryCornerExtractor bc(f.bc,f.root.string());TinyTargetExtractor tt(f.tt,f.root.string());
+    const auto base=bc.templateData().pts_3d;
+    TEST_ASSERT(modelCenter(base).norm()<1e-10);
+    for(int i=0;i<4;++i) {
+        bc.setUseClass1(true);tt.setUseClass1(true);
+        TEST_ASSERT((modelCenter(bc.templateData().pts_3d)-g.class1_center_in_class0_mm).norm()<1e-10);
+        TEST_ASSERT((modelCenter(tt.templateData().pts_3d)-g.class1_center_in_class0_mm).norm()<1e-10);
+        // Offset must preserve class-specific physical dimensions and point IDs.
+        const double ratio=f.bc.pixel_to_meter_scale_class1/f.bc.pixel_to_meter_scale_class0;
+        for(size_t j=1;j<base.size();++j)
+            TEST_ASSERT(std::abs((bc.templateData().pts_3d[j]-bc.templateData().pts_3d[0]).norm()-ratio*(base[j]-base[0]).norm())<1e-10);
+        bc.setUseClass1(false);tt.setUseClass1(false);
+        TEST_ASSERT(modelCenter(bc.templateData().pts_3d).norm()<1e-10);
+        TEST_ASSERT(modelCenter(tt.templateData().pts_3d).norm()<1e-10);
+        for(size_t j=0;j<base.size();++j)TEST_ASSERT((bc.templateData().pts_3d[j]-base[j]).norm()<1e-10);
+    }
+    // Bbox center differs from vertex mean for an asymmetric polygon.
+    std::vector<Eigen::Vector3d> pts{{0,0,0},{10,0,0},{10,10,0},{0,10,0},{1,2,0}};
+    auto legacy=pts;placeTemplateInClass0(legacy,true,TemplateGeometryConfig{});
+    for(size_t j=0;j<pts.size();++j)TEST_ASSERT((legacy[j]-pts[j]).norm()==0);
+    placeTemplateInClass0(pts,true,g);
+    TEST_ASSERT((pts[0]-Eigen::Vector3d(7,-12,0)).norm()<1e-12);
+}
+PipelineResult geometryObservations(const StereoCameraParams& c,const std::vector<Eigen::Vector3d>& model,
+                                    const Eigen::Matrix3d& r,const Eigen::Vector3d& t) {
+    PipelineResult result;
+    for(int i=0;i<static_cast<int>(model.size());++i) {
+        const Eigen::Vector3d pl=r*model[i]+t,pr=c.R_rl.transpose()*(pl-c.t_rl);
+        const Eigen::Vector3d l=c.K*pl,rr=c.K*pr;
+        result.pts_left_match.emplace_back(l.x()/l.z(),l.y()/l.z());
+        result.pts_left_good.push_back(result.pts_left_match.back());
+        result.pts_right_good.emplace_back(rr.x()/rr.z(),rr.y()/rr.z());
+        result.idx_from_filtered.push_back(i);result.good_matches.emplace_back(i,i,0);
+        result.disparity.push_back(result.pts_left_good.back().x-result.pts_right_good.back().x);
+    }
+    return result;
+}
+void test_template_geometry_gpnp_switches_and_seed_use_one_origin() {
+    const auto c=calibration();
+    TemplateGeometryConfig geometry;geometry.enabled=true;geometry.class1_center_in_class0_mm={32,-19};
+    std::vector<Eigen::Vector3d> c0{{-140,-110,0},{140,-110,0},{140,110,0},{-140,110,0},{-100,-30,0},{60,70,0}};
+    std::vector<Eigen::Vector3d> c1{{-20,-15,0},{20,-15,0},{20,15,0},{-20,15,0},{-10,-6,0},{12,7,0}};
+    std::vector<Eigen::Vector3d> tt{{-18,-18,0},{18,-18,0},{18,18,0},{-18,18,0}};
+    placeTemplateInClass0(c0,false,geometry);placeTemplateInClass0(c1,true,geometry);placeTemplateInClass0(tt,true,geometry);
+    auto merged=c0;merged.insert(merged.end(),c1.begin(),c1.end());
+    const Eigen::Matrix3d r=(Eigen::AngleAxisd(.31,Eigen::Vector3d::UnitY())*
+        Eigen::AngleAxisd(-.19,Eigen::Vector3d::UnitX())).toRotationMatrix();
+    const Eigen::Vector3d t(90,-45,1300);
+    Eigen::Matrix3d seed_r=r;Eigen::Vector3d seed_t=t;
+    std::filesystem::create_directories("output/template_geometry_optimization");
+    std::ofstream metrics("output/template_geometry_optimization/synthetic_pose.csv");
+    metrics<<"point_count,solver,translation_error_mm,rotation_matrix_error\n";
+    for(const auto& model:{c0,c1,merged,tt,c0}) {
+        auto data=geometryObservations(c,model,r,t);
+        if(model.size()==4) {
+            // The production TT path uses left PnP, not InitialPnP or stereo GPnP.
+            MonoPnPSolver solver;PoseSeed seed;seed.R=seed_r;seed.t=seed_t;
+            for(const PoseSeed* previous:{static_cast<const PoseSeed*>(nullptr),static_cast<const PoseSeed*>(&seed)}) {
+                const auto pose=solver.solve(data.pts_left_match,model,c.K,previous,.3);
+                TEST_ASSERT(pose.success);TEST_ASSERT((pose.t-t).norm()<.2);
+                metrics<<model.size()<<",TT_left_PnP,"<<(pose.t-t).norm()<<','<<(pose.R-r).norm()<<'\n';
+                seed_r=pose.R;seed_t=pose.t;
+            }
+            continue;
+        }
+        MatchResult matches;matches.good_matches=data.good_matches;matches.pts_left_match=data.pts_left_match;
+        InitialPnPSolver initial;const auto cold=initial.solve(matches,model,c.K);
+        TEST_ASSERT(cold.success);TEST_ASSERT((cold.t-t).norm()<.2);
+        GPnPSolver solver(c);double elapsed=0;
+        auto pose=solver.solve(data,model,&seed_r,&seed_t,elapsed,{PoseInitializationSource::PreviousPose});
+        TEST_ASSERT(pose.success&&pose.source==PoseSource::StereoGpnp);
+        TEST_ASSERT((pose.t-t).norm()<.2);TEST_ASSERT((pose.R-r).norm()<.01);
+        metrics<<model.size()<<",StereoGpnp,"<<(pose.t-t).norm()<<','<<(pose.R-r).norm()<<'\n';
+        seed_r=pose.R;seed_t=pose.t;
+    }
+}
+void shiftCenterPatch(DualFixture& f) {
+    const auto patch=f.left(cv::Rect(300,220,40,40)).clone();
+    f.left(cv::Rect(300,220,40,40)).setTo(30);
+    patch.copyTo(f.left(cv::Rect(305,217,40,40)));
+    const cv::Mat transform=(cv::Mat_<double>(2,3)<<1,0,-60,0,1,0);
+    cv::warpAffine(f.left,f.right,transform,f.left.size(),cv::INTER_LINEAR,cv::BORDER_CONSTANT,0);
+    f.left_roi.secondary.x+=5;f.left_roi.secondary.y-=3;
+    f.right_roi.secondary.x+=5;f.right_roi.secondary.y-=3;
+    f.config.template_geometry.enabled=true;f.config.template_geometry.class1_center_in_class0_mm={5,-3};
+    f.bc.pixel_to_meter_scale_class0=.006;
+}
+void test_template_geometry_dual_joint_class1_recovery_and_visuals() {
+    DualFixture f;shiftCenterPatch(f);auto tracker=f.tracker();
+    tracker->setFrameNumber(21);
+    auto joint=tracker->process(f.left,f.right,true,&f.left_roi,nullptr);report(joint);
+    TEST_ASSERT(joint.success&&joint.dual_c1_pairs>=4);TEST_ASSERT_EQ(joint.model_frame,std::string("class0"));
+    auto close=f.left_roi;close.primary={0,0,640,480};tracker->setFrameNumber(22);
+    auto fallback=tracker->process(f.left,f.right,true,&close,nullptr);report(fallback);
+    TEST_ASSERT(fallback.success&&fallback.is_class1);TEST_ASSERT_EQ(fallback.model_frame,std::string("class0"));
+    TEST_ASSERT((modelCenter(fallback.pose_model_points)-Eigen::Vector2d(5,-3)).norm()<1e-9);
+    TEST_ASSERT((fallback.t-joint.t).norm()<30);
+    tracker->setFrameNumber(23);auto recovered=tracker->process(f.left,f.right,false,&f.left_roi,nullptr);
+    TEST_ASSERT(recovered.success);TEST_ASSERT((recovered.t-joint.t).norm()<1);
+    TEST_ASSERT_EQ(tracker->getLogs().size(),size_t(3));
+    std::filesystem::create_directories("output/template_geometry_optimization");
+    std::ofstream metrics("output/template_geometry_optimization/route_switch.csv");
+    metrics<<"strategy,frame,tx_mm,ty_mm,tz_mm,model_frame\n";
+    for(const auto* r:{&joint,&fallback,&recovered})
+        metrics<<r->strategy_name<<','<<(&joint==r?21:&fallback==r?22:23)<<','
+               <<r->t.x()<<','<<r->t.y()<<','<<r->t.z()<<','<<r->model_frame<<'\n';
+    utils::AsyncImageSaver::flush();
+    for(const auto* name:{"dual_roi_reproj_f21.png","dual_roi_reproj_f22.png","stereo_f22.png"})
+        TEST_ASSERT(!cv::imread((f.root/name).string()).empty());
+    const auto dest=std::filesystem::path("output/template_geometry_optimization/visuals");
+    std::filesystem::create_directories(dest);
+    for(const auto& p:std::filesystem::directory_iterator(f.root))if(p.path().filename().string().find("_f2")!=std::string::npos)
+        std::filesystem::copy_file(p.path(),dest/p.path().filename(),std::filesystem::copy_options::overwrite_existing);
+}
+void test_template_geometry_single_class1_mono_and_stereo() {
+    DualFixture f;shiftCenterPatch(f);
+    cv::Mat bgr;cv::cvtColor(f.left,bgr,cv::COLOR_GRAY2BGR);
+    auto c=calibration();
+    MonoTracker mono(c.K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    mono.setVerboseConsole(false);
+    RoiGroup c1{f.left_roi.secondary,{},false};c1.is_class1=true;
+    auto mr=mono.process(bgr,false,&c1);
+    TEST_ASSERT(mr.success);TEST_ASSERT_EQ(mr.model_frame,std::string("class0"));
+    TEST_ASSERT((modelCenter(mr.pose_model_points)-Eigen::Vector2d(5,-3)).norm()<1e-9);
+    auto stereo=f.tracker();RoiGroup right{f.right_roi.secondary,{},false};right.is_class1=true;
+    auto sr=stereo->process(f.left,f.right,false,&c1,&right);report(sr);
+    TEST_ASSERT(sr.success);TEST_ASSERT_EQ(sr.model_frame,std::string("class0"));
+    TEST_ASSERT((modelCenter(sr.pose_model_points)-Eigen::Vector2d(5,-3)).norm()<1e-9);
+    // Force the existing class1 TT routes without changing their solver choice.
+    f.config.tiny_max_area_class1=100000;
+    MonoTracker mono_tt(c.K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    mono_tt.setVerboseConsole(false);
+    const auto mt=mono_tt.process(bgr,false,&c1);
+    TEST_ASSERT(mt.success&&mt.strategy_name=="TinyTarget");
+    TEST_ASSERT_EQ(mt.model_frame,std::string("class0"));
+    TEST_ASSERT((modelCenter(mt.pose_model_points)-Eigen::Vector2d(5,-3)).norm()<1e-9);
+    const auto st=f.tracker()->process(f.left,f.right,false,&c1,&right);
+    TEST_ASSERT(st.success&&st.strategy_name=="TinyTarget");
+    TEST_ASSERT_EQ(st.model_frame,std::string("class0"));
+    TEST_ASSERT((modelCenter(st.pose_model_points)-Eigen::Vector2d(5,-3)).norm()<1e-9);
+}
+void test_normalized_mono_dual_secondary_keeps_class1_context() {
+    DualFixture f;
+    f.bc.mono_identity.enabled=true;f.bc.mono_identity.frontend="normalized";
+    f.bc.mono_identity.class1_enabled=false;
+    cv::Mat bgr;cv::cvtColor(f.left,bgr,cv::COLOR_GRAY2BGR);auto c=calibration();
+    MonoTracker mono(c.K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    mono.setVerboseConsole(false);mono.setOutputDir(f.root.string());mono.setFrameNumber(31);
+    auto r=mono.process(bgr,true,&f.left_roi);
+    TEST_ASSERT(r.success);TEST_ASSERT(r.strategy_name=="DualRoi_BCJ");
+    TEST_ASSERT(r.n_matched>10);utils::AsyncImageSaver::flush();
+    TEST_ASSERT(std::filesystem::exists(f.root/"mono_identity_c0_f31.png"));
+    // No class0 identity panel must be produced for the inner class1 ROI.
+    TEST_ASSERT(!std::filesystem::exists(f.root/"mono_identity_joint_c1_f31.png"));
+    auto again=mono.process(bgr,false,&f.left_roi);
+    TEST_ASSERT(again.success);TEST_ASSERT((r.t-again.t).norm()<1e-5);
+}
+void test_template_geometry_disparity_is_independent_of_offset() {
+    DualFixture f;f.config.stereo_flow.disparity_only=true;f.config.stereo_flow.disparity_full_chain=true;
+    auto baseline=f.tracker()->process(f.left,f.right,false,&f.left_roi,nullptr);
+    f.config.template_geometry.enabled=true;f.config.template_geometry.class1_center_in_class0_mm={130,-85};
+    auto changed=f.tracker()->process(f.left,f.right,false,&f.left_roi,nullptr);
+    TEST_ASSERT(baseline.disparity_success&&changed.disparity_success&&!changed.success);
+    TEST_ASSERT_EQ(changed.model_frame,std::string("unresolved"));
+    TEST_ASSERT_EQ(baseline.disparity.size(),changed.disparity.size());
+    for(size_t i=0;i<changed.disparity.size();++i) {
+        TEST_ASSERT(baseline.disparity[i]==changed.disparity[i]);
+        TEST_ASSERT(cv::norm(baseline.pts_right_good[i]-changed.pts_right_good[i])==0);
+        TEST_ASSERT_EQ(baseline.flow_template_indices[i],changed.flow_template_indices[i]);
+    }
+    TEST_ASSERT(changed.pnp_ms==0&&changed.pose_model_points.empty());
+}
+}
+void test_mono_roi_verification_rejects_background_and_reuses_valid_candidate() {
+    DualFixture f;f.config.roi_selection.enabled=true;f.config.roi_selection.verify_mono=true;
+    f.bc.mono_identity.enabled=true;f.bc.mono_identity.frontend="normalized";
+    f.bc.mono_identity.quality_filter=true;f.bc.mono_identity.partial_matching=true;
+    cv::Mat color;cv::cvtColor(f.left,color,cv::COLOR_GRAY2BGR);auto c=calibration();
+    MonoTracker mono(c.K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    mono.setVerboseConsole(false);mono.setOutputDir(f.root.string());mono.setFrameNumber(41);
+    RoiGroup background{{2,2,28,25},{},false};
+    auto wrong=mono.processCandidates(color,false,{{background,0,-1,.99,0}});
+    TEST_ASSERT(!wrong.success);TEST_ASSERT(wrong.failure_reason=="roi_appearance_rejected");
+    auto result=mono.processCandidates(color,true,{{background,0,-1,.99,0},{f.left_roi,1,2,.8,1}});
+    TEST_ASSERT(result.success);TEST_ASSERT(result.roi_selected==1);TEST_ASSERT(result.roi_verified==2);
+    TEST_ASSERT(result.bc_detected_count==10);TEST_ASSERT(result.good_matches.size()==result.pts_left_match.size());
+    TEST_ASSERT(mono.getLogs().size()==2);
+    TEST_ASSERT(std::abs(mono.getLogs().back().extract_ms-result.extract_ms)<1e-9);
+    for(auto match:result.good_matches)TEST_ASSERT(match.trainIdx>=0&&match.trainIdx<(int)result.pose_model_points.size());
+    utils::AsyncImageSaver::flush();TEST_ASSERT(std::filesystem::exists(f.root/"mono_roi_selection_f41.png"));
+}
+REGISTER_TEST(test_mono_roi_verification_rejects_background_and_reuses_valid_candidate);
+REGISTER_TEST(test_template_geometry_config_validation_and_legacy_default);
+REGISTER_TEST(test_template_geometry_extractor_centers_and_repeated_switches);
+REGISTER_TEST(test_template_geometry_gpnp_switches_and_seed_use_one_origin);
+REGISTER_TEST(test_template_geometry_dual_joint_class1_recovery_and_visuals);
+REGISTER_TEST(test_template_geometry_single_class1_mono_and_stereo);
+REGISTER_TEST(test_normalized_mono_dual_secondary_keeps_class1_context);
+REGISTER_TEST(test_template_geometry_disparity_is_independent_of_offset);
 REGISTER_TEST(test_dual_pose_uses_board_model_and_augments_class1);
 REGISTER_TEST(test_dual_disparity_only_has_no_pnp_and_exports_region_ids);
 REGISTER_TEST(test_dual_occlusion_preserves_original_corner_and_model_ids);

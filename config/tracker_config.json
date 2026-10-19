@@ -1,16 +1,28 @@
 {
-  "mode": "normal",
-
+  "mode": "debug",
+  "mono_pose_prior": {
+    "_comment": "仅MonoPnP(含双目单侧退化): 靶板水平、图案朝上、相机近垂直向下; 模板+Z朝板背面/地面, 与相机光轴+Z总夹角<=30度; 边界候选在约束内重优化, 锥内仍可能二义; 面内旋转不限; 缺省/关闭保留旧行为, 不约束GPNP或仅视差",
+    "enabled": true,
+    "max_tilt_deg": 30.0
+  },
+  "template_geometry": {
+    "_comment": "共面同轴模板: 原点=class0角点包围框中心; [x,y]为class1中心在class0轴下的位置(mm), +X向模板右,+Y向模板下; [0,0]待填实测值; enabled=false或缺省此节保留旧坐标; 不修正尺寸/角点错配",
+    "enabled": true,
+    "class1_center_in_class0_mm": [
+      0.0,
+      0.0
+    ]
+  },
   "_comment_normal": "═════ Normal 模式 (mode=normal) — InputProvider ═════",
   "input_system": {
-    "_comment": "type: file / directory / sequence",
+    "_comment": "type: file / directory双目模式 / sequence单目模式",
     "max_frames": 0,
     "use_threaded_capture": false,
     "image": {
-      "type": "directory",
+      "type": "sequence",
       "left_path": "tests/data/fixtures_rich/synthetic_dual/left_000.png",
       "right_path": "tests/data/fixtures_rich/synthetic_dual/right_000.png",
-      "directory_path": "data/stereo_crop",
+      "directory_path": "tests/data/mono_robustness_20261015/fast_rotation",
       "left_pattern": "left",
       "right_pattern": "right",
       "sequence_pattern": "frame"
@@ -29,35 +41,39 @@
       "type": "can"
     }
   },
-
   "_comment_debug": "═════ Debug 模式 (mode=debug) — cv::imread ═════",
   "input": {
     "_comment": "Debug 模式图像路径",
-    "left": "data/big/cj01_image_0032.jpg",
-    "right": "data/big/cj01_image_0032 - 副本.jpg"
+    "left": "tests/data/mono_robustness_20261015/fast_rotation/frame_000167.png",
+    "right": "tests/data/mono_robustness_20261015/fast_rotation/frame_000167.png"
   },
-
   "manual_roi": {
     "_comment": "enabled=true 跳过 YOLO (仅 debug 模式生效)",
     "enabled": false,
-    "left":  { "x": 416, "y": 113, "width": 300, "height": 300 },
-    "right": { "x": 410, "y": 113, "width": 300, "height": 300 }
+    "left": {
+      "x": 416,
+      "y": 113,
+      "width": 300,
+      "height": 300
+    },
+    "right": {
+      "x": 410,
+      "y": 113,
+      "width": 300,
+      "height": 300
+    }
   },
-
   "_comment_common": "═════ 公用参数（Normal / Debug 均生效）═════",
   "_comment_mono": "true=单目(MonoTracker+EPnP)  false=双目(StereoTracker+GPNP)",
-  "mono_mode": false,
-
+  "mono_mode": true,
   "temporal": {
     "_comment": "序列时序连贯性: 位姿链热启动 + 策略粘滞 + 运动门控 (所有阈值以帧为单位, 不依赖时间戳)",
     "enabled": true,
-
     "pose_chain": {
       "_comment": "位姿链: 上帧成功位姿作为本帧 PnP 候选初值",
       "max_cache_age_frames": 30,
       "tie_epsilon_px": 0.3
     },
-
     "motion_gate": {
       "_comment": "运动一致性门控: 平移=|Δt|或径向比值任一满足即过, 跳变时冷启动重解(直接采纳)→退化链→帧失败; 参数<=0关闭对应检查",
       "max_trans_ratio": 0.35,
@@ -65,7 +81,6 @@
       "max_rot_deg": 15.0,
       "switch_margin": 2.0
     },
-
     "stickiness": {
       "_comment": "策略粘滞: 迟滞+去抖+越级硬切; 相邻档切换需 EMA 面积越过阈值×余量且连续确认",
       "hold_frames": 3,
@@ -73,16 +88,13 @@
       "hysteresis_down": 0.8,
       "locked_fail_limit": 3
     },
-
     "area_ema_alpha": 0.5
   },
-
   "output": {
     "_comment_visualize": "是否保存可视化图像 (Normal=三维轴图  Debug=完整面板)",
-    "visualize": false,
+    "visualize": true,
     "log_file": true
   },
-
   "camera": {
     "fx": 1370.1815888598676,
     "fy": 1373.0103114278359,
@@ -90,7 +102,6 @@
     "cy": 856.0291167973786,
     "baseline_mm": 60.0
   },
-
   "yolo": {
     "model_path": "yolo_onnx/yolov8n_p2.onnx",
     "conf_threshold": 0.2,
@@ -98,7 +109,6 @@
     "roi_expand_ratio": 0.0,
     "roi_min_size": 0
   },
-
   "stereo_frontend": {
     "method": "left_bc_lk",
     "dual_roi_flow": true,
@@ -120,7 +130,6 @@
     "tiny_max_area": 2000,
     "dual_trigger_area": 18000,
     "stereo_mono_fallback": false,
-
     "close_range": {
       "_comment": "近距离回退: class0 未检测到 + class1 有效时触发",
       "enabled": true,
@@ -129,7 +138,6 @@
       "min_expand_pixels": 1,
       "tiny_max_area": 400
     },
-
     "board_template": {
       "template_path": "data/clean_target2.png",
       "template_real_width_mm": 400,
@@ -137,7 +145,6 @@
       "gpnp_min_pts": 4,
       "use_initial_pnp": true
     },
-
     "binary_corner": {
       "template_dir": "data/NewMuBan(reordered)",
       "corners": 10,
@@ -147,9 +154,28 @@
       "target_height": 100,
       "pixel_to_meter_scale_class0": 0.0059,
       "pixel_to_meter_scale_class1": 0.00046,
-      "roi_pad_pixels": 3
+      "roi_pad_pixels": 3,
+      "mono_identity": {
+        "_comment": "仅单目class0：四方向粗归一化→浮点轮廓角点→原图边线精化→H/完整形状验证；quality_filter保留至少8个可靠观测并传递真实编号；partial_matching允许有限缺角/伪角；class1与双目提取保持原流程。",
+        "enabled": true,
+        "class1_enabled": false,
+        "method": "hybrid",
+        "frontend": "normalized",
+        "refine_original": true,
+        "normalized_size": 128,
+        "min_span_px": 16.0,
+        "min_roi_span_ratio": 0.25,
+        "min_iou": 0.75,
+        "min_score_gap": 0.05,
+        "max_fit_error_px": 4.0,
+        "max_fit_error_ratio": 0.03,
+        "quality_filter": true,
+        "partial_matching": true,
+        "min_reliable_points": 8,
+        "max_partial_hypotheses": 16,
+        "min_model_coverage": 0.6
+      }
     },
-
     "tiny_target": {
       "template_dir": "data/NewMuBan(reordered)",
       "target_width": 50,
@@ -159,7 +185,6 @@
       "square_size_m_class1": 0.017,
       "roi_pad_pixels": 5
     },
-
     "dual_roi": {
       "_comment": "双ROI class1 拓展像素; class1_fallback_enabled=合并与BC-only解算均失败后在class1 ROI上跑 BC→TT 三级退化链 (DualRoi_C1BC/DualRoi_C1TT); primary_span_ratio=primary边长覆盖画幅≥该比例时跳过Tier1/2直接class1链 (<=0关闭); tier1_only=消融开关, true=屏蔽Tier2/Tier3/短路仅保留合并解算; class0/class1_points_path=人工标注点txt (class0空=approxPolyDP自动推导, class1空=Tier1b联合解算停用); joint_match_gate_px=Tier1b NN匹配门限",
       "secondary_expand_pixels": 0,
@@ -170,5 +195,16 @@
       "class1_points_path": "scripts/class1_points.txt",
       "joint_match_gate_px": 12
     }
+  },
+  "roi_selection": {
+    "enabled": true,
+    "verify_mono": true,
+    "max_candidates": 3,
+    "containment_min": 0.95,
+    "containment_margin_px": 2.0,
+    "min_component_ratio": 0.25,
+    "min_observed_span_px": 4.0,
+    "history_max_age": 15,
+    "_comment": "单靶板物理先验：每类最多一个真实目标，class1包含在class0内；保留少量候选做单目图案验证，支持class1-only近距离回退。"
   }
 }

@@ -118,6 +118,17 @@ std::pair<RoiGroup, RoiGroup> YoloRoiProvider::detect(const cv::Mat& left_img,
     return {lg, rg};
 }
 
+std::vector<RoiCandidate>
+YoloRoiProvider::detectMonoCandidates(const cv::Mat &image) {
+  if (!isReady())
+    return {};
+  std::vector<Detection> detections;
+  ++inference_counts_.left;
+  if (detector_->detect(image, detections) != Status::Success)
+    return {};
+  return roi_gen_->candidates(detections, image.size());
+}
+
 RoiGroup YoloRoiProvider::detectMono(const cv::Mat& left_img) {
     if (!isReady()) return {};
 

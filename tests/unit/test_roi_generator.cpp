@@ -4,6 +4,8 @@
 #include <opencv2/core.hpp>
 
 #include <vector>
+#include <limits>
+#include <stdexcept>
 
 using namespace gpnp;
 
@@ -224,6 +226,41 @@ static void test_generate_stereo_group_dual() {
 // 注册与入口
 // ============================================================================
 
+static void test_physical_prior_selects_nested_pair_before_expansion() {
+    RoiGenerator::Config c;c.roi_min_size=0;c.roi_expand_ratio=0;c.dual_trigger_area=100;c.selection.enabled=true;
+    RoiGenerator g(c);
+    std::vector<Detection> detections{makeDet(0,10,10,200,200,.85f),makeDet(1,300,300,40,40,.99f),makeDet(1,80,80,40,40,.8f)};
+    auto choices=g.candidates(detections,{640,480});TEST_ASSERT(!choices.empty());
+    TEST_ASSERT(choices[0].class1_index==2);TEST_ASSERT(choices[0].containment==1);TEST_ASSERT(choices[0].group.is_dual);
+    detections.erase(detections.begin()+2);auto group=g.generateGroup(detections,{640,480});
+    TEST_ASSERT(group.valid());TEST_ASSERT(!group.is_dual);
+    c.roi_expand_ratio=2.;RoiGenerator expanded(c);TEST_ASSERT(!expanded.generateGroup(detections,{640,480}).is_dual);
+}
+static void test_physical_prior_duplicates_bad_boxes_and_class1_only() {
+    RoiGenerator::Config c;c.roi_min_size=0;c.selection.enabled=true;RoiGenerator g(c);
+    auto ds=std::vector<Detection>{makeDet(0,10,10,200,200),makeDet(0,11,11,200,200,.8f)};
+    TEST_ASSERT(g.candidates(ds,{640,480}).size()==1);
+    auto invalid=makeDet(0,0,0,20,20);invalid.bbox.x=std::numeric_limits<float>::quiet_NaN();ds={invalid};
+    TEST_ASSERT(g.candidates(ds,{640,480}).empty());
+    RoiGenerator::CloseRangeConfig close;close.enabled=true;close.class1_min_area=100;close.min_expand_pixels=0;close.roi_expand_ratio=1;g.setCloseRangeConfig(close);
+    auto result=g.generateGroup({makeDet(1,30,30,40,40)},{640,480});TEST_ASSERT(result.valid()&&result.is_class1);
+    cv::FileStorage fs("{\"roi_selection\":{\"enabled\":true,\"containment_min\":0.95}}",cv::FileStorage::READ|cv::FileStorage::MEMORY);
+    TEST_ASSERT(readRoiSelectionConfig(fs["roi_selection"]).enabled);
+    bool threw=false;try{cv::FileStorage bad("{\"roi_selection\":{\"max_candidates\":0}}",cv::FileStorage::READ|cv::FileStorage::MEMORY);readRoiSelectionConfig(bad["roi_selection"]);}catch(const std::invalid_argument&){threw=true;}TEST_ASSERT(threw);
+}
+static void test_prior_stereo_anchor_uses_selected_pair_and_same_class() {
+    RoiGenerator::Config c;c.roi_min_size=0;c.roi_expand_ratio=0;c.dual_trigger_area=100;c.selection.enabled=true;
+    RoiGenerator g(c);RoiGenerator::CloseRangeConfig cr;cr.enabled=true;cr.class1_min_area=100;cr.roi_expand_ratio=1;cr.min_expand_pixels=0;g.setCloseRangeConfig(cr);
+    std::vector<Detection> left{makeDet(0,200,100,200,200,.85f),makeDet(0,600,100,200,200,.95f),makeDet(1,260,160,40,40,.9f)};
+    std::vector<Detection> right{makeDet(0,140,100,200,200,.85f),makeDet(0,600,100,200,200,.95f),makeDet(1,200,160,40,40,.9f)};
+    auto pair=g.generateStereoGroup(left,right,{1000,600},{1000,600});
+    TEST_ASSERT(pair.first.is_dual&&pair.second.is_dual);TEST_ASSERT(pair.second.primary.x==140);
+    auto mixed=g.generateStereoGroup(left,{makeDet(1,200,160,40,40,.9f)},{1000,600},{1000,600});
+    TEST_ASSERT(!mixed.first.valid()&&!mixed.second.valid());
+}
+REGISTER_TEST(test_prior_stereo_anchor_uses_selected_pair_and_same_class);
+REGISTER_TEST(test_physical_prior_selects_nested_pair_before_expansion);
+REGISTER_TEST(test_physical_prior_duplicates_bad_boxes_and_class1_only);
 REGISTER_TEST(test_state1_tiny_area);
 REGISTER_TEST(test_state2_medium_area);
 REGISTER_TEST(test_state3_medium_close_area);

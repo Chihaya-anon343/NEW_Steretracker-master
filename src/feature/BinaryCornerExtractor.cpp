@@ -1,4 +1,5 @@
 #include "feature/BinaryCornerExtractor.hpp"
+#include "common/TemplateGeometry.hpp"
 #include "utils/PoseUtils.hpp"
 #include "common/GeometryUtils.hpp"
 #include "common/LogConfig.hpp"
@@ -25,7 +26,7 @@ constexpr double CPSAGL = 20.0;  // 角点重排序角度容差
 
 BinaryCornerExtractor::BinaryCornerExtractor(const Config& config,
                                                const std::string& template_dir)
-    : config_(config)
+    : config_(config), mono_identity_(config.mono_identity)
 {
     // 强制使用奇数核尺寸
     if (config_.kernel_size % 2 == 0) {
@@ -47,6 +48,7 @@ BinaryCornerExtractor::BinaryCornerExtractor(const Config& config,
 
     // 一次性初始化 3D 模板点（0° 模板 × pixel_to_meter_scale）
     initPts3dFromTemplates();
+    for(const auto& t:templates_) if(t.angle==0) { mono_identity_.setModel(t.corners);break; }
 }
 
 // ============================================================================
@@ -81,6 +83,7 @@ void BinaryCornerExtractor::initPts3dFromTemplates() {
         template_data_.pts_3d.emplace_back(p.x * s_mm_per_px - mx,
                                            p.y * s_mm_per_px - my, 0.0);
     }
+    placeTemplateInClass0(template_data_.pts_3d, use_class1_, config_.template_geometry);
 
     if (g_verbose_console)
         std::cout << "[BinaryCorner] 3D pts (mm): " << template_data_.pts_3d.size()
@@ -103,6 +106,8 @@ void BinaryCornerExtractor::setTemplateData(const std::string& template_dir,
                                              double /*real_width_mm*/,
                                              double /*real_height_mm*/) {
     templates_ = loadTemplates(template_dir, false);
+    mono_identity_.setModel({});
+    for(const auto& t:templates_) if(t.angle==0) { mono_identity_.setModel(t.corners);break; }
     if (!templates_.empty()) {
         if (g_verbose_console)
             std::cout << "[BinaryCorner] Reloaded " << templates_.size()
@@ -119,6 +124,7 @@ PipelineResult BinaryCornerExtractor::extract(const cv::Mat& left_gray,
                                                const cv::Mat& left_color,
                                                const cv::Mat& right_color) {
     PipelineResult result;
+    last_mono_identity_=MonoCornerIdentityResult{};
     result.left_color = left_color;
     result.right_color = right_color;
 
@@ -448,6 +454,28 @@ Status BinaryCornerExtractor::extractFromBinary(const cv::Mat& binary_img,
             pt.x = rx + center_orig.x;
             pt.y = ry + center_orig.y;
         }
+    }
+
+    // Identity evidence must be the SAME selected component as the corners.
+    // The pre-rotation cleanup can select outer board/background in a padded
+    // class1 ROI, while the final cleanup correctly selects the inner mark.
+    // Rasterize the dense final contour (not the sparse fitted polygon) back
+    // in original ROI coordinates, preserving independent edge evidence.
+    if(mono_context_ && config_.mono_identity.enabled && (!use_class1_ || config_.mono_identity.class1_enabled)) {
+        std::vector<cv::Point> original_contour;original_contour.reserve(contour.size());
+        const double rad=rot_angle*CV_PI/180.,cos_a=std::cos(rad),sin_a=std::sin(rad);
+        for(const auto& p:contour) {
+            double x=p.x,y=p.y;
+            if(did_rotate) {
+                const double dx=x-center_rot.x,dy=y-center_rot.y;
+                x=dx*cos_a+dy*sin_a+center_orig.x;
+                y=-dx*sin_a+dy*cos_a+center_orig.y;
+            }
+            original_contour.emplace_back(cvRound(x),cvRound(y));
+        }
+        mono_identity_mask_=cv::Mat::zeros(work_img.size(),CV_8U);
+        cv::drawContours(mono_identity_mask_,std::vector<std::vector<cv::Point>>{original_contour},
+                         0,cv::Scalar(255),cv::FILLED);
     }
 
     // ---- 第7步: 按模板几何重排角点顺序 ----
@@ -1237,6 +1265,8 @@ void BinaryCornerExtractor::logStep(const std::string& step, const std::string& 
 PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
                                                    const cv::Mat& color) {
     PipelineResult result;
+    last_mono_identity_=MonoCornerIdentityResult{};
+    mono_identity_mask_.release();
     result.left_color = color;
 
     if (gray.empty()) {
@@ -1257,11 +1287,75 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
 
     // 从二值图像提取角点
     std::vector<cv::Point2f> corners;
-    Status s = extractFromBinary(binary, corners);
-    if (s != Status::Success || corners.empty()) {
+    const bool identity_enabled=mono_context_ && config_.mono_identity.enabled &&
+        (!use_class1_ || config_.mono_identity.class1_enabled);
+    const bool normalized_frontend=identity_enabled && config_.mono_identity.frontend=="normalized";
+    Status s=Status::Success;
+    if(normalized_frontend) {
+        process_log_.clear();last_matched_template_=nullptr;last_match_overlap_=0;
+        last_contour_.clear();last_contour_binary_.release();last_upright_binary_.release();
+        auto snap=[&](const char* key,const cv::Mat& image) {
+            if(debug_capture_) last_binary_process_.emplace_back(stage_prefix_+key,image.clone());
+        };
+        snap("1.otsu",binary);
+        auto start=std::chrono::steady_clock::now();
+        cv::Mat largest=keepLargestRegion(binary);snap("2.largest",largest);
+        cv::Mat filled=fillHoles(largest);snap("3.filled",filled);
+        mono_identity_mask_=smoothBoundary(filled);snap("4.smoothed",mono_identity_mask_);
+        result.timing["mono_cleanup"]=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
+        if(debug_capture_) {
+            last_largest_region_=largest.clone();last_contour_binary_=mono_identity_mask_.clone();
+            last_upright_binary_=mono_identity_mask_.clone();
+            last_contour_=extractLargestContour(mono_identity_mask_);
+        }
+        last_mono_identity_=mono_identity_.extractNormalized(mono_identity_mask_,debug_capture_);
+        corners=last_mono_identity_.points;
+        last_corners_before_reorder_=last_mono_identity_.before_refinement;
+        // Canonical identity is already established. Do not report the old
+        // angle as a template orientation to Dual-ROI downstream consumers.
+        for(const auto& t:templates_) if(t.angle==0) {last_matched_template_=&t;break;}
+        last_match_overlap_=last_mono_identity_.iou;
+        result.timing["mono_normalize"]=last_mono_identity_.normalization_ms;
+        result.timing["mono_corners"]=last_mono_identity_.corners_ms;
+        result.timing["mono_refine"]=last_mono_identity_.refinement_ms;
+        result.timing["mono_validate"]=last_mono_identity_.validation_ms;
+    } else {
+        s=extractFromBinary(binary,corners);
+    }
+    if (!normalized_frontend && (s != Status::Success || corners.empty())) {
         std::cerr << "[BinaryCorner::extractMono] extraction failed (status="
                   << static_cast<int>(s) << ")" << std::endl;
         return result;
+    }
+
+    if(identity_enabled) {
+        if(!normalized_frontend) last_mono_identity_=mono_identity_.match(corners,mono_identity_mask_,debug_capture_);
+        const auto& d=last_mono_identity_;
+        result.bc_detected_count = d.detected_count;
+        result.bc_rejected_points = d.rejected_points;
+        result.bc_rejected_ids = d.rejected_ids;
+        result.bc_rejected_count = (int)d.rejected_points.size();
+        result.bc_residuals_px = d.residuals_px;
+        if (config_.mono_identity.quality_filter ||
+            config_.mono_identity.partial_matching)
+          result.pose_min_inliers = config_.mono_identity.min_reliable_points;
+        result.timing["mono_identity"]=d.elapsed_ms;
+        result.route_detail="MonoIdentity:"+d.status+":"+d.path;
+        logStep("MonoIdentity",d.status+" path="+d.path+" iou="+std::to_string(d.iou)+
+            " fit_px="+std::to_string(d.fit_error_px)+" gap="+std::to_string(d.score_gap));
+        if(!d.accepted) {
+            result.failure_reason="mono_identity_"+d.status;
+            result.timing["binary_corner"]=std::chrono::duration<double,std::milli>(
+                std::chrono::steady_clock::now()-t_extract_start).count();
+            return result;
+        }
+        if(!normalized_frontend) {
+            std::vector<cv::Point2f> ordered; ordered.reserve(d.indices.size());
+            for(int index:d.indices) ordered.push_back(corners[index]);
+            corners=std::move(ordered);
+        }
+    } else if(mono_context_ && config_.mono_identity.enabled && use_class1_) {
+        last_mono_identity_.status="class1_disabled";
     }
 
     // kp_left
@@ -1286,21 +1380,19 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
         double scale_x = static_cast<double>(gray.cols) / tmpl_0->image.cols;
         double scale_y = static_cast<double>(gray.rows) / tmpl_0->image.rows;
 
-        result.pts_template_match = tmpl_0->corners;
-        for (auto& pt : result.pts_template_match) {
-            pt.x *= static_cast<float>(scale_x);
-            pt.y *= static_cast<float>(scale_y);
-        }
-        result.n_template_match = static_cast<int>(result.pts_template_match.size());
-
-        int n_match = std::min(static_cast<int>(corners.size()),
-                               static_cast<int>(tmpl_0->corners.size()));
-        result.good_matches.reserve(n_match);
+        result.pts_template_match.clear();
+        const int n_match =
+            std::min((int)corners.size(), (int)tmpl_0->corners.size());
         for (int i = 0; i < n_match; ++i) {
-            result.good_matches.emplace_back(i, i, 0.0f);
+          int id = identity_enabled ? last_mono_identity_.template_ids[i] : i;
+          if (id < 0 || id >= (int)tmpl_0->corners.size())
+            continue;
+          const auto &point = tmpl_0->corners[id];
+          result.pts_template_match.emplace_back(point.x * scale_x,
+                                                 point.y * scale_y);
+          result.good_matches.emplace_back(i, id, 0.0f);
         }
-
-
+        result.n_template_match = (int)result.good_matches.size();
     }
 
     result.n_matched = static_cast<int>(result.good_matches.size());

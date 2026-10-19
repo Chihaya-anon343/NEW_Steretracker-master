@@ -183,6 +183,14 @@ static void test_null_data_empty() {
 // 注册与入口
 // ============================================================================
 
+static void test_nms_keeps_nested_different_classes() {
+    std::vector<Detection> candidates(2);
+    candidates[0].class_id=0;candidates[0].confidence=.9f;candidates[0].bbox={100,100,100,100};
+    candidates[1].class_id=1;candidates[1].confidence=.8f;candidates[1].bbox={110,110,80,80};
+    auto result=finalizeDetections(candidates,1,0,0,640,480,.45f);
+    TEST_ASSERT(result.size()==2);
+}
+REGISTER_TEST(test_nms_keeps_nested_different_classes);
 REGISTER_TEST(test_bcn_decode);
 REGISTER_TEST(test_bnc_decode);
 REGISTER_TEST(test_conf_threshold_filter);

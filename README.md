@@ -4,6 +4,14 @@
 
 **技术栈**: C++17 · OpenCV 4.x · Eigen 3.x · ONNX Runtime
 
+单目 class0 BC 可启用 TT 四点粗归一化、四方向定向及十点 H 编号验证；主配置已启用，class1 和双目保持原路径。配置、误差、拒绝率及端到端对照见 [单目编号修复实验](docs/mono_corner_identity_20261016.md)。
+
+单目 BC 新增先归一化入口：四方向粗定向、标准空间浮点轮廓十点提取、原图边线精化及 H 验证，绕过 BC 内原有 24 方向匹配。配置、流程图与三组对比见 [单目 BC 归一化提取实验](docs/mono_bc_normalized_20261016.md)。
+
+九个具体帧的角点/位姿对比、实际归一化中间图和 CPU/内存开销见 [代表帧可视化与资源测量](docs/mono_bc_representative_frames_20261016.md)。
+
+单目新增 ROI 包含关系与候选验证、BC 可靠点编号传递和有限缺角匹配。配置、4,080 帧对照结果、耗时与拒绝代价见 [单目 BC 优先项优化实验](docs/mono_bc_priority_20261019.md)。
+
 普通 BC 双目可选左图检测与特征提取、右图光流匹配。启用配置、失败策略、日志与 Docker 验证见 [普通 BC 光流说明](docs/bc_stereo_flow.md)。原配置默认保留原流程。
 
 主配置已开启完整仅视差链 `disparity_full_chain=true`：支持直接 TT、普通 BC→TT、独立 class1 BC/TT 和 Dual-ROI 左 TT 退化。全程不求位姿，匹配成功使用 `disparity_success`；使用与验证见 [完整视差链说明](docs/disparity_full_chain.md)。

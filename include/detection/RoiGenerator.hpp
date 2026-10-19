@@ -16,6 +16,13 @@
 
 namespace gpnp {
 
+RoiSelectionConfig readRoiSelectionConfig(const cv::FileNode &node);
+struct RoiCandidate {
+  RoiGroup group;
+  int class0_index{-1}, class1_index{-1};
+  double score{0}, containment{0};
+};
+
 // ============================================================================
 // ROI 生成器
 // ============================================================================
@@ -27,6 +34,7 @@ public:
         float roi_expand_ratio{0.1f};   ///< 在每侧按该比例扩展 ROI
         int roi_min_size{100};          ///< ROI 的最小宽度和高度（像素）
         int dual_trigger_area{490000};  ///< class 0 面积超过此值时触发双 ROI (700×700)
+        RoiSelectionConfig selection;
     };
 
     /// 近距离回退配置（class0 丢失, class1 有效时触发）
@@ -54,6 +62,9 @@ public:
     /// 存在次级 ROI 时返回 is_dual=true 的 RoiGroup。
     RoiGroup generateGroup(const std::vector<Detection>& detections,
                            const cv::Size& image_size) const;
+    std::vector<RoiCandidate>
+    candidates(const std::vector<Detection> &detections,
+               const cv::Size &image_size) const;
 
     /// 从分别的检测集生成左右 ROI 对。
     /// 若右侧检测为空，则将左侧 ROI 复制到右侧。

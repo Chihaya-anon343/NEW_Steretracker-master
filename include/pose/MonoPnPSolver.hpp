@@ -17,6 +17,7 @@
  */
 
 #include "common/Types.hpp"
+#include "pose/PlanarPosePrior.hpp"
 
 #include <Eigen/Dense>
 #include <opencv2/core.hpp>
@@ -28,6 +29,13 @@ namespace gpnp {
 class MonoPnPSolver {
 public:
     MonoPnPSolver() = default;
+    explicit MonoPnPSolver(const MonoPosePriorConfig& config) : prior_(config) {
+        validateMonoPosePrior(prior_);
+    }
+    void setPosePrior(const MonoPosePriorConfig& config) {
+        validateMonoPosePrior(config);
+        prior_ = config;
+    }
     ~MonoPnPSolver() = default;
 
     // 不可拷贝
@@ -66,11 +74,16 @@ public:
     ///
     /// @param seed            上帧位姿种子（nullptr = 与无 seed 版本等价）
     /// @param tie_epsilon_px  平票窗口 (px)，<=0 时退化为纯重投影最小
-    PoseEstimate solve(const std::vector<cv::Point2f>& pts_2d,
-                       const std::vector<Eigen::Vector3d>& pts_3d,
-                       const Eigen::Matrix3d& K,
-                       const PoseSeed* seed,
-                       double tie_epsilon_px);
+    PoseEstimate solve(const std::vector<cv::Point2f> &pts_2d,
+                       const std::vector<Eigen::Vector3d> &pts_3d,
+                       const Eigen::Matrix3d &K, const PoseSeed *seed,
+                       double tie_epsilon_px, int min_support = 4);
+
+    const std::string& lastRejectionReason() const { return last_rejection_; }
+
+  private:
+    MonoPosePriorConfig prior_;
+    std::string last_rejection_;
 };
 
 } // namespace gpnp

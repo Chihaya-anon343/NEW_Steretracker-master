@@ -10,6 +10,7 @@
 #include "tracker/MonoTracker.hpp"
 #include "detection/YoloRoiProvider.hpp"
 #include "common/GeometryUtils.hpp"
+#include "common/TemplateGeometry.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -36,6 +37,7 @@
 #include <filesystem>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 
 namespace {
 // Phase 3.2: 优雅退出 — Ctrl+C (SIGINT) / kill (SIGTERM) 置位, 帧循环检测后收尾
@@ -139,10 +141,25 @@ int main(int argc, char** argv) {
     double th = fs["strategies"]["board_template"]["template_real_height_mm"];
     int min_pts = fs["strategies"]["board_template"]["gpnp_min_pts"];
     bool use_init_pnp = static_cast<int>(fs["strategies"]["board_template"]["use_initial_pnp"]) != 0;
+    // 单目模式下 stereo_frontend (视差链) 配置整体不读取、不校验、不生效
+    bool mono_mode = false;
+    cv::FileNode mono_node = fs["mono_mode"];
+    if (!mono_node.empty()) {
+        mono_mode = static_cast<int>(mono_node) != 0;
+    }
+
     StereoFlowConfig stereo_flow_cfg;
-    try { stereo_flow_cfg = readStereoFlowConfig(fs["stereo_frontend"]); }
+    TemplateGeometryConfig template_geometry_cfg;
+    MonoPosePriorConfig mono_pose_prior_cfg;
+    RoiSelectionConfig roi_selection_cfg;
+    try {
+        if (!mono_mode) stereo_flow_cfg = readStereoFlowConfig(fs["stereo_frontend"]);
+        template_geometry_cfg = readTemplateGeometryConfig(fs["template_geometry"]);
+        mono_pose_prior_cfg = readMonoPosePriorConfig(fs["mono_pose_prior"]);
+        roi_selection_cfg = readRoiSelectionConfig(fs["roi_selection"]);
+    }
     catch (const std::exception& e) {
-        std::cerr << "双目前端配置错误: " << e.what() << std::endl;
+        std::cerr << "跟踪配置错误: " << e.what() << std::endl;
         return 1;
     }
     const std::string output_override = fs["output"]["directory"].empty()
@@ -159,6 +176,7 @@ int main(int argc, char** argv) {
     binary_cfg.pixel_to_meter_scale_class0 = fs["strategies"]["binary_corner"]["pixel_to_meter_scale_class0"];
     binary_cfg.pixel_to_meter_scale_class1 = fs["strategies"]["binary_corner"]["pixel_to_meter_scale_class1"];
     binary_cfg.roi_pad_pixels = fs["strategies"]["binary_corner"]["roi_pad_pixels"];
+    binary_cfg.mono_identity = readMonoCornerIdentityConfig(fs["strategies"]["binary_corner"]["mono_identity"]);
     std::string binary_template_dir = fs["strategies"]["binary_corner"]["template_dir"];
 
     // TinyTarget 策略参数
@@ -251,9 +269,12 @@ int main(int argc, char** argv) {
     std::string right_path = fs["input"]["right"];
     bool visualize = static_cast<int>(fs["output"]["visualize"]) != 0;
     bool log_file   = false;
+    bool pose_csv_enabled = false;  // Optional full-precision experiment diagnostics.
     {
         cv::FileNode lf = fs["output"]["log_file"];
         if (!lf.empty()) log_file = static_cast<int>(lf) != 0;
+        cv::FileNode pc = fs["output"]["pose_csv"];
+        if (!pc.empty()) pose_csv_enabled = static_cast<int>(pc) != 0;
     }
 
     // 实时预览配置 (output.live_view, 可选): 内嵌 MJPEG 服务器, 浏览器实时观看
@@ -291,17 +312,6 @@ int main(int argc, char** argv) {
                 manual_rr.height = manual_node["right"]["height"];
             }
         }
-    }
-
-    // 单目模式配置
-    bool mono_mode = false;
-    cv::FileNode mono_node = fs["mono_mode"];
-    if (!mono_node.empty()) {
-        mono_mode = static_cast<int>(mono_node) != 0;
-    }
-    if (mono_mode && stereo_flow_cfg.disparity_only) {
-        std::cerr << "disparity_only requires stereo mode\n";
-        return 1;
     }
 
     // ========================================================================
@@ -532,7 +542,55 @@ int main(int argc, char** argv) {
         output_dir = "output/" + img_name;
     }
     if (!output_override.empty()) output_dir = output_override;
-    if (visualize || log_file || stereo_flow_cfg.disparity_only) fsp::create_directories(output_dir);
+    if (visualize || log_file || pose_csv_enabled || stereo_flow_cfg.disparity_only) fsp::create_directories(output_dir);
+    std::ofstream pose_csv;
+    if (pose_csv_enabled) {
+        pose_csv.open(output_dir + "/poses.csv");
+        if (!pose_csv) throw std::runtime_error("Cannot open pose CSV in " + output_dir);
+        pose_csv << "frame,success,strategy,is_class1,model_frame,n_matched,warm_start,gate_status,seed_age,fallback,extract_ms,pnp_ms,tx,ty,tz";
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j) pose_csv << ",R" << i << j;
+        pose_csv << ",failure_reason,roi_candidates,roi_verified,roi_selected,"
+                    "roi_containment,roi_reason,roi_verify_ms,bc_detected,bc_"
+                    "rejected,pose_points\n"
+                 << std::setprecision(17);
+    }
+    auto exportPose = [&](int frame, const PipelineResult& result) {
+        if (!pose_csv_enabled) return;
+        auto csvString = [&](const std::string& value) {
+            pose_csv << '"';
+            for (char c : value) { if (c == '"') pose_csv << '"'; pose_csv << c; }
+            pose_csv << '"';
+        };
+        const bool valid = result.success && !result.disparity_only;
+        pose_csv << frame << ',' << valid << ',';
+        csvString(result.strategy_name);
+        pose_csv << ',' << result.is_class1 << ',';
+        csvString(result.model_frame);
+        pose_csv << ',' << result.n_matched << ',' << result.warm_start_used
+                 << ',' << static_cast<int>(result.gate_status) << ',' << result.seed_age
+                 << ',' << result.fallback_used << ',' << result.extract_ms << ',' << result.pnp_ms;
+        for (int i = 0; i < 3; ++i) {
+            pose_csv << ',';
+            if (valid) pose_csv << result.t(i);
+        }
+        for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) {
+            pose_csv << ',';
+            if (valid) pose_csv << result.R(i, j);
+        }
+        pose_csv << ',';
+        csvString(result.failure_reason);
+        pose_csv << ',' << result.roi_candidates << ',' << result.roi_verified
+                 << ',' << result.roi_selected << ',' << result.roi_containment
+                 << ',';
+        csvString(result.roi_selection_reason);
+        auto roi_timing = result.timing.find("roi_verify");
+        pose_csv << ','
+                 << (roi_timing == result.timing.end() ? 0 : roi_timing->second)
+                 << ',' << result.bc_detected_count << ','
+                 << result.bc_rejected_count << ',' << result.gpnp_n_pts
+                 << '\n';
+    };
     std::cout << "输出目录: " << output_dir << std::endl;
 
     // ========================================================================
@@ -555,6 +613,9 @@ int main(int argc, char** argv) {
     tracker_cfg.dual_roi_class1_points_path = dual_c1_points_path;
     tracker_cfg.dual_roi_joint_match_gate_px = dual_joint_gate_px;
     tracker_cfg.stereo_flow = stereo_flow_cfg;
+    tracker_cfg.template_geometry = template_geometry_cfg;
+    tracker_cfg.mono_pose_prior = mono_pose_prior_cfg;
+    tracker_cfg.roi_selection = roi_selection_cfg;
     tracker_cfg.temporal = temporal_cfg;
 
     try {
@@ -588,7 +649,8 @@ int main(int argc, char** argv) {
             YoloConfig yolo_cfg = makeYoloConfig(model_path, DeviceType::CPU, conf);
             yolo_cfg.target_class_id = target_cls;
             yolo_cfg.roi_expand_ratio = expand;
-            RoiGenerator::Config roi_cfg{target_cls, expand, min_roi, dual_trigger_area};
+            RoiGenerator::Config roi_cfg{target_cls, expand, min_roi,
+                                         dual_trigger_area, roi_selection_cfg};
             yolo_ok = yolo.initialize(yolo_cfg, roi_cfg);
             if (yolo_ok) yolo.setCloseRangeConfig(close_range_cfg);
         }
@@ -690,11 +752,18 @@ int main(int argc, char** argv) {
             if (mono_mode) {
                 auto* mt = static_cast<MonoTracker*>(tracker.get());
                 RoiGroup left_group;
+                std::vector<RoiCandidate> roi_candidates;
                 if (use_manual_roi) {
                     left_group = RoiGroup{manual_rl, {}, false};
                 } else if (yolo_ok) {
                     auto t_yolo = steadyNow();
-                    left_group = yolo.detectMono(L);
+                    if (roi_selection_cfg.enabled &&
+                        roi_selection_cfg.verify_mono) {
+                      roi_candidates = yolo.detectMonoCandidates(L);
+                      if (!roi_candidates.empty())
+                        left_group = roi_candidates.front().group;
+                    } else
+                      left_group = yolo.detectMono(L);
                     yolo_ms_total += elapsedMs(t_yolo); ++yolo_calls;
                     if (!left_group.valid()) {
                         tracker->onFrameSkipped();   // skip 帧也让位姿 seed 老化
@@ -704,7 +773,10 @@ int main(int argc, char** argv) {
                 }
                 tracker->setFrameNumber(frame);
                 auto t_pose = steadyNow();
-                result = mt->process(L, visualize, &left_group);
+                result =
+                    roi_candidates.empty()
+                        ? mt->process(L, visualize, &left_group)
+                        : mt->processCandidates(L, visualize, roi_candidates);
                 pose_ms_total += elapsedMs(t_pose); ++pose_calls;
             } else {
                 auto* st = static_cast<StereoTracker*>(tracker.get());
@@ -856,6 +928,7 @@ int main(int argc, char** argv) {
                         std::cout << "\n===== 第 " << frame << " 帧"
                                   << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
                     PipelineResult result = processFrame(frame, packet.left_image, packet.right_image);
+                    exportPose(frame, result);
 
                     // ---- ESKF: PnP 位姿 → 相机观测 (同时更新合成源真值参考) ----
                     if (fusion_active && !result.disparity_only) {
@@ -1013,7 +1086,8 @@ int main(int argc, char** argv) {
                     if (verbose_console)
                         std::cout << "\n===== 第 " << frame << " 帧"
                                   << (mono_mode ? " (单目)" : "") << " =====" << std::endl;
-                    processFrame(frame, left_img, right_img);
+                    const auto result = processFrame(frame, left_img, right_img);
+                    exportPose(frame, result);
                 } catch (const std::exception& e) {
                     std::cerr << "[Frame " << frame << "] 异常: " << e.what() << std::endl;
                 }

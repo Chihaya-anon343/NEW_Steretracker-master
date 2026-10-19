@@ -5,6 +5,7 @@
 
 #include "tracker/TrackerBase.hpp"
 #include "common/GeometryUtils.hpp"
+#include "common/TemplateGeometry.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 
@@ -48,8 +49,15 @@ void TrackerBase::initExtractors(const std::string& template_path,
         template_.template_height = template_.gray_image.rows;
     }
 
-    binary_extractor_ = std::make_unique<BinaryCornerExtractor>(binary_cfg, binary_template_dir);
-    tiny_extractor_ = std::make_unique<TinyTargetExtractor>(tiny_cfg, tiny_template_dir);
+    validateTemplateGeometry(config_.template_geometry);
+    auto bc = binary_cfg;
+    auto tt = tiny_cfg;
+    bc.template_geometry = tt.template_geometry = config_.template_geometry;
+    binary_extractor_ = std::make_unique<BinaryCornerExtractor>(bc, binary_template_dir);
+    tiny_extractor_ = std::make_unique<TinyTargetExtractor>(tt, tiny_template_dir);
+    if (config_.template_geometry.enabled)
+        std::cout << "[TemplateGeometry] frame=class0 center=bbox mm class1_offset="
+                  << config_.template_geometry.class1_center_in_class0_mm.transpose() << '\n';
 
     tiny_max_area_  = config_.tiny_max_area;
     tiny_max_area_class1_  = config_.tiny_max_area_class1;
@@ -360,6 +368,8 @@ std::pair<cv::Mat, cv::Mat> TrackerBase::loadImage(const cv::Mat& img, bool need
 // ============================================================
 
 void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose) {
+    if (config_.template_geometry.enabled && !result.disparity_only)
+        result.model_frame = "class0";
     result.R = pose.R;
     result.t = pose.t;
     result.gpnp_success = pose.success;
@@ -406,9 +416,10 @@ void TrackerBase::finalizePose(PipelineResult& result, const PoseEstimate& pose)
         }
         state_.q_prev = q;
         state_.has_quat_cache = true;
-        // class1 退化解（DualRoi Tier3 / State 5）位于 class1 模板系，误锁跳变
-        // 会毒化帧间缓存 → 后续板系好解被门控拒掉。板系解无条件入缓存；class1 解
-        // 需过原始门控（不吃陈旧放宽）才允许刷新，被拒时保留旧 seed。
+        // Unified mode already solves every model in class0; no output correction
+        // is needed before caching or drawing axes. Keep the class1 quality gate:
+        // coordinate alignment does not protect against an incorrectly locked target.
+        // Legacy mode retains its original local-frame cache policy.
         bool accept_into_cache = true;
         if (result.is_class1 && state_.has_cache) {
             PoseSeed c1_seed;

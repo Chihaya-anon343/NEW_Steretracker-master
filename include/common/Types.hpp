@@ -107,6 +107,31 @@ inline const char* poseSourceName(PoseSource source) {
     }
 }
 
+/// Common planar frame: offset is class1 center in class0 axes (mm).
+/// Centers are XY bounding-box midpoints of canonical template points.
+struct TemplateGeometryConfig {
+    bool enabled{false}; ///< Missing old config retains original model frames.
+    Eigen::Vector2d class1_center_in_class0_mm{Eigen::Vector2d::Zero()};
+};
+
+/// Mono PnP: horizontal single-sided board, camera optical axis near nadir.
+/// Template +X right/+Y down makes +Z point into the board (toward ground).
+struct MonoPosePriorConfig {
+    bool enabled{false}; ///< Absent configuration retains legacy solver behavior.
+    double max_tilt_deg{30.0}; ///< Total angle: template +Z versus camera +Z.
+};
+
+struct RoiSelectionConfig {
+  bool enabled{false};
+  bool verify_mono{false};
+  int max_candidates{3};
+  double containment_min{0.95};
+  double containment_margin_px{2.0};
+  double min_component_ratio{0.25};
+  double min_observed_span_px{4.0};
+  int history_max_age{15};
+};
+
 /// 跟踪器级别配置（构造时一次性设置）。
 struct TrackerConfig {
     int gpnp_min_pts{4};                 ///< GPNP 最少点数要求
@@ -124,6 +149,9 @@ struct TrackerConfig {
     double dual_roi_joint_match_gate_px{12.0}; ///< Tier1b NN 匹配门限 (px, 投影预测点↔提取角点)
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
     StereoFlowConfig stereo_flow;
+    TemplateGeometryConfig template_geometry;
+    MonoPosePriorConfig mono_pose_prior;
+    RoiSelectionConfig roi_selection;
 };
 
 // ============================================================================
@@ -304,95 +332,113 @@ struct LogEntry {
 /// 单次 process() 调用的聚合结果。
 /// 替代 Python 版本中 process() 返回的字典。
 struct PipelineResult {
-    GPNPMonitor last_gpnp_monitor; ///< Solver snapshot for the selected pose attempt.
-    // --- 特征提取 ---
-    std::vector<cv::KeyPoint> kp_left;
-    int n_kp_left{0};
+  // BC observations retain canonical IDs after quality/partial filtering.
+  int bc_detected_count{0}, bc_rejected_count{0};
+  int pose_min_inliers{4};
+  std::vector<cv::Point2f> bc_rejected_points;
+  std::vector<int> bc_rejected_ids;
+  std::vector<double> bc_residuals_px;
+  int roi_candidates{0}, roi_verified{0}, roi_selected{-1};
+  double roi_containment{0.0};
+  std::string roi_selection_reason;
+  GPNPMonitor
+      last_gpnp_monitor; ///< Solver snapshot for the selected pose attempt.
+  // --- 特征提取 ---
+  std::vector<cv::KeyPoint> kp_left;
+  int n_kp_left{0};
 
-    // --- 光流跟踪 ---
-    std::vector<cv::Point2f> pts_left_good;
-    std::vector<cv::Point2f> pts_right_good;
-    std::vector<double> disparity;
-    std::vector<double> dx_filtered;
-    std::vector<int> idx_from_filtered;
+  // --- 光流跟踪 ---
+  std::vector<cv::Point2f> pts_left_good;
+  std::vector<cv::Point2f> pts_right_good;
+  std::vector<double> disparity;
+  std::vector<double> dx_filtered;
+  std::vector<int> idx_from_filtered;
 
-    // --- 立体投影 ---
-    std::vector<cv::Point2f> pts_right_projected;
-    std::vector<cv::Point2f> pts_left_used;
-    std::vector<cv::Point2f> pts_right_used;
+  // --- 立体投影 ---
+  std::vector<cv::Point2f> pts_right_projected;
+  std::vector<cv::Point2f> pts_left_used;
+  std::vector<cv::Point2f> pts_right_used;
 
-    // --- 模板匹配 ---
-    std::vector<cv::DMatch> good_matches;
-    std::vector<cv::Point2f> pts_left_match;
-    std::vector<cv::Point2f> pts_template_match;
-    int n_template_match{0};
+  // --- 模板匹配 ---
+  std::vector<cv::DMatch> good_matches;
+  std::vector<cv::Point2f> pts_left_match;
+  std::vector<cv::Point2f> pts_template_match;
+  int n_template_match{0};
 
-    // --- 位姿估计 ---
-    Eigen::Matrix3d R{Eigen::Matrix3d::Identity()};
-    Eigen::Vector3d t{Eigen::Vector3d::Zero()};
-    bool gpnp_success{false};
-    int gpnp_n_pts{0};
-    bool success{false};  ///< 流水线整体成功标志（提取 + PnP，单目/双目通用）
-    std::string strategy_name; ///< 本帧胜出的策略名（如 "BinaryCorner", "TinyTarget"）
-    std::string stereo_method;
-    PoseSource pose_source{PoseSource::Unspecified};
-    bool stereo_success{false};
-    bool disparity_only{false};
-    bool disparity_success{false};
-    std::string failure_reason;
-    int flow_coarse_attempts{0};
-    double stereo_match_ms{0.0};
-    cv::Rect flow_roi;
-    bool flow_full_fallback{false};
-    int flow_pyramid_builds{0}, dual_c0_pairs{0}, dual_c1_pairs{0};
-    bool legacy_frontend_fallback{false};
-    std::string route_detail;
-    std::string flow_planar_status{"disabled"};
-    int flow_planar_rejected{0};
-    double flow_planar_ms{0};
-    // Aligned with pts_left_good; original class-local IDs survive filtering.
-    std::vector<int> flow_regions, flow_original_indices, flow_template_indices;
-    std::string model_frame;
-    std::vector<Eigen::Vector3d> pose_model_points; ///< Explicit model table indexed by good_matches.trainIdx.
-    double quat_w{1.0}, quat_x{0.0}, quat_y{0.0}, quat_z{0.0};///< 符号连续化四元数 (w,x,y,z, 由 finalizePose 填充)
-    double rot_deg_unwrapped{0.0};  ///< 累计 unwrapped 旋转角 (度, 由 finalizePose 填充)
+  // --- 位姿估计 ---
+  Eigen::Matrix3d R{Eigen::Matrix3d::Identity()};
+  Eigen::Vector3d t{Eigen::Vector3d::Zero()};
+  bool gpnp_success{false};
+  int gpnp_n_pts{0};
+  bool success{false}; ///< 流水线整体成功标志（提取 + PnP，单目/双目通用）
+  std::string
+      strategy_name; ///< 本帧胜出的策略名（如 "BinaryCorner", "TinyTarget"）
+  std::string stereo_method;
+  PoseSource pose_source{PoseSource::Unspecified};
+  bool stereo_success{false};
+  bool disparity_only{false};
+  bool disparity_success{false};
+  std::string failure_reason;
+  int flow_coarse_attempts{0};
+  double stereo_match_ms{0.0};
+  cv::Rect flow_roi;
+  bool flow_full_fallback{false};
+  int flow_pyramid_builds{0}, dual_c0_pairs{0}, dual_c1_pairs{0};
+  bool legacy_frontend_fallback{false};
+  std::string route_detail;
+  std::string flow_planar_status{"disabled"};
+  int flow_planar_rejected{0};
+  double flow_planar_ms{0};
+  // Aligned with pts_left_good; original class-local IDs survive filtering.
+  std::vector<int> flow_regions, flow_original_indices, flow_template_indices;
+  std::string model_frame;
+  std::vector<Eigen::Vector3d>
+      pose_model_points; ///< Explicit model table indexed by
+                         ///< good_matches.trainIdx.
+  double quat_w{1.0}, quat_x{0.0}, quat_y{0.0},
+      quat_z{0.0}; ///< 符号连续化四元数 (w,x,y,z, 由 finalizePose 填充)
+  double rot_deg_unwrapped{
+      0.0}; ///< 累计 unwrapped 旋转角 (度, 由 finalizePose 填充)
 
-    // --- 耗时统计 ---
-    std::map<std::string, double> timing; ///< 阶段 → 毫秒
-    double extract_ms{0.0}; ///< 特征提取总耗时 (ms, 含退化链多次尝试 / Dual-ROI 并行两路)
-    double pnp_ms{0.0};     ///< 位姿解算总耗时 (ms, 含 InitialPnP/GPnP/TinyPnP/MonoPnP 及退化重解)
+  // --- 耗时统计 ---
+  std::map<std::string, double> timing; ///< 阶段 → 毫秒
+  double extract_ms{
+      0.0}; ///< 特征提取总耗时 (ms, 含退化链多次尝试 / Dual-ROI 并行两路)
+  double pnp_ms{0.0}; ///< 位姿解算总耗时 (ms, 含
+                      ///< InitialPnP/GPnP/TinyPnP/MonoPnP 及退化重解)
 
-    // --- 帧元数据 ---
-    cv::Mat left_color;
-    cv::Mat right_color;
-    bool is_first_frame{false};
-    bool fallback_used{false};
-    bool is_class1{false};             ///< class1-only 回退帧标志
-    int n_matched{0};
-    int n_projected{0};
+  // --- 帧元数据 ---
+  cv::Mat left_color;
+  cv::Mat right_color;
+  bool is_first_frame{false};
+  bool fallback_used{false};
+  bool is_class1{false}; ///< class1-only 回退帧标志
+  int n_matched{0};
+  int n_projected{0};
 
-    // --- ROI 偏移（0626: 用于将 ROI 坐标映射回全图） ---
-    int left_roi_offset_x{0};
-    int left_roi_offset_y{0};
-    int right_roi_offset_x{0};
-    int right_roi_offset_y{0};
+  // --- ROI 偏移（0626: 用于将 ROI 坐标映射回全图） ---
+  int left_roi_offset_x{0};
+  int left_roi_offset_y{0};
+  int right_roi_offset_x{0};
+  int right_roi_offset_y{0};
 
-    // --- 时序连贯性观测 (temporal, 由 TrackerBase::fillTemporalMeta 填充) ---
-    bool warm_start_used{false};
-    GateStatus gate_status{GateStatus::NotApplicable};
-    int seed_age{0};
-    bool sticky_hold{false};
-    std::string nominated_strategy;
-    std::string switch_reason;
+  // --- 时序连贯性观测 (temporal, 由 TrackerBase::fillTemporalMeta 填充) ---
+  bool warm_start_used{false};
+  GateStatus gate_status{GateStatus::NotApplicable};
+  int seed_age{0};
+  bool sticky_hold{false};
+  std::string nominated_strategy;
+  std::string switch_reason;
 
-    // --- MAD 同步所需的中间数据（0626） ---
-    std::vector<bool> valid_mask;  ///< 投影步骤的 valid_mask
+  // --- MAD 同步所需的中间数据（0626） ---
+  std::vector<bool> valid_mask; ///< 投影步骤的 valid_mask
 
-    /// 从所有耗时条目计算总处理时间。
-    double total_time_ms() const {
-        double total = 0.0;
-        for (const auto& [_, t] : timing) total += t;
-        return total;
+  /// 从所有耗时条目计算总处理时间。
+  double total_time_ms() const {
+    double total = 0.0;
+    for (const auto &[_, t] : timing)
+      total += t;
+    return total;
     }
 };
 
