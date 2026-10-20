@@ -121,18 +121,8 @@ struct Candidate {
 
 // Fit only the middle of an observed edge: rounded/morphologically altered
 // vertices must not pull the supporting line away from the actual boundary.
-bool supportingLine(const std::vector<cv::Point>& contour,cv::Point2f a,
-                    cv::Point2f b,cv::Vec4f& line) {
-    const cv::Point2f edge=b-a;const double length=cv::norm(edge);
-    if(length<6) return false;
-    std::vector<cv::Point2f> samples;
-    const double band=std::max(2.,.025*length);
-    for(auto p:contour) {
-        cv::Point2f delta=cv::Point2f(p)-a;
-        double t=delta.dot(edge)/(length*length);
-        double d=std::abs(delta.x*edge.y-delta.y*edge.x)/length;
-        if(t>=.15 && t<=.85 && d<=band) samples.emplace_back(p);
-    }
+bool fitSupportingLine(const std::vector<cv::Point2f>& samples,
+                       double length, cv::Vec4f& line) {
     if(samples.size()<4) return false;
     cv::fitLine(samples,line,cv::DIST_HUBER,0,.01,.01);
     double sum=0;
@@ -141,6 +131,74 @@ bool supportingLine(const std::vector<cv::Point>& contour,cv::Point2f a,
     }
     return std::sqrt(sum/samples.size())<=std::max(.8,.005*length);
 }
+
+std::vector<bool> supportingLines(const std::vector<cv::Point>& contour,
+        const std::vector<cv::Point2f>& vertices, std::vector<cv::Vec4f>& lines) {
+    struct Edge {
+        cv::Point2f origin, delta;
+        double length, squared_length, band;
+        std::vector<cv::Point2f> samples;
+    };
+    const size_t count=vertices.size();
+    std::vector<Edge> edges;
+    edges.reserve(count);
+    for(size_t i=0;i<count;++i) {
+        const auto delta=vertices[(i+1)%count]-vertices[i];
+        const double length=cv::norm(delta);
+        edges.push_back({vertices[i],delta,length,length*length,
+                         std::max(2.,.025*length),{}});
+    }
+    // Preserve each edge's original point order and allow shared support.
+    // This fuses contour reads; geometric membership is still O(points*edges).
+    for(auto p:contour) for(auto& edge:edges) {
+        if(edge.length<6) continue;
+        const cv::Point2f delta=cv::Point2f(p)-edge.origin;
+        const double t=delta.dot(edge.delta)/edge.squared_length;
+        const double d=std::abs(delta.x*edge.delta.y-delta.y*edge.delta.x)/edge.length;
+        if(t>=.15 && t<=.85 && d<=edge.band) edge.samples.emplace_back(p);
+    }
+    std::vector<bool> valid(count,false);
+    lines.resize(count);
+    for(size_t i=0;i<count;++i)
+        if(edges[i].length>=6)
+            valid[i]=fitSupportingLine(edges[i].samples,edges[i].length,lines[i]);
+    return valid;
+}
+
+// Owned by one extraction call only. A changed mask requires a new context.
+struct ContourGeometry {
+    std::vector<cv::Point> contour;
+    cv::Rect bounds;
+    cv::RotatedRect rectangle;
+    bool rectangle_ready{false};
+    void extract(const cv::Mat& mask) {
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(mask,contours,cv::RETR_EXTERNAL,cv::CHAIN_APPROX_NONE);
+        if(contours.empty()) return;
+        auto largest=std::max_element(contours.begin(),contours.end(),
+            [](const auto& a,const auto& b){return cv::contourArea(a)<cv::contourArea(b);});
+        contour=std::move(*largest);
+        bounds=cv::boundingRect(contour);
+    }
+    const cv::RotatedRect& minRectangle() {
+        if(!rectangle_ready) {
+            rectangle=cv::minAreaRect(contour);
+            rectangle_ready=true;
+        }
+        return rectangle;
+    }
+    std::vector<cv::Point> simpleContour() const {
+        // Compress a CHAIN_APPROX_NONE chain without rescanning the image.
+        if(contour.size()<3) return contour;
+        std::vector<cv::Point> simple;
+        for(size_t i=0;i<contour.size();++i) {
+            const auto previous=contour[(i+contour.size()-1)%contour.size()];
+            const auto next=contour[(i+1)%contour.size()];
+            if(contour[i]-previous != next-contour[i]) simple.push_back(contour[i]);
+        }
+        return simple;
+    }
+};
 
 double cross(cv::Point2f a,cv::Point2f b) {return a.x*b.y-a.y*b.x;}
 bool coversModel(const std::vector<cv::Point2f> &subset,
@@ -181,18 +239,18 @@ MonoCornerIdentityResult MonoCornerIdentity::extractNormalized(const cv::Mat& ma
     const auto begin=std::chrono::steady_clock::now();
     auto milliseconds=[](auto start) {return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();};
     MonoCornerIdentityResult out;out.status="invalid_input";
-    auto finish=[&]() {out.elapsed_ms=milliseconds(begin);if(capture) {out.reference=reference_;out.foreground=mask;}return out;};
+    ContourGeometry geometry;
+    auto finish=[&]() {out.elapsed_ms=milliseconds(begin);if(capture) {out.reference=reference_;out.foreground=mask;out.source_contour=geometry.simpleContour();}return out;};
     if(model_.size()<4 || mask.empty() || mask.type()!=CV_8UC1) return finish();
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask,contours,cv::RETR_EXTERNAL,cv::CHAIN_APPROX_NONE);
-    if(contours.empty()) {out.status="empty_contour";return finish();}
-    const auto& contour=*std::max_element(contours.begin(),contours.end(),[](const auto& a,const auto& b){return cv::contourArea(a)<cv::contourArea(b);});
-    auto bounds=cv::boundingRect(contour);
+    geometry.extract(mask);
+    const auto& contour=geometry.contour;
+    if(contour.empty()) {out.status="empty_contour";return finish();}
+    const auto bounds=geometry.bounds;
     if(std::max(bounds.width,bounds.height)<config_.min_span_px) {out.status="below_resolvable_span";return finish();}
     if(bounds.width<mask.cols*config_.min_roi_span_ratio || bounds.height<mask.rows*config_.min_roi_span_ratio) {
         out.status="component_too_small_for_roi";return finish();
     }
-    auto rect=cv::minAreaRect(contour);cv::Point2f raw[4];rect.points(raw);
+    const auto& rect=geometry.minRectangle();cv::Point2f raw[4];rect.points(raw);
     if(rect.size.width<2 || rect.size.height<2) {out.status="degenerate_contour";return finish();}
     std::vector<cv::Point2f> quad(raw,raw+4);
     const float m=config_.normalized_size/16.f,e=config_.normalized_size-1-m;
@@ -273,8 +331,8 @@ MonoCornerIdentityResult MonoCornerIdentity::extractNormalized(const cv::Mat& ma
     auto refine_start=std::chrono::steady_clock::now();
     int refined=0;
     if(config_.refine_original) {
-        const int n=(int)points.size();std::vector<cv::Vec4f> lines(n);std::vector<bool> valid(n);
-        for(int i=0;i<n;++i) valid[i]=supportingLine(contour,before[i],before[(i+1)%n],lines[i]);
+        const int n=(int)points.size();std::vector<cv::Vec4f> lines;
+        const auto valid=supportingLines(contour,before,lines);
         for(int i=0;i<n;++i) {
             const int prev=(i+n-1)%n,next=(i+1)%n;
             if(!valid[prev] || !valid[i]) continue;

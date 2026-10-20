@@ -90,6 +90,7 @@ set(TEST_SHARED_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerFlow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerDualFlow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerDisparity.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracker/StereoTrackerRobust.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/BinaryCornerExtractor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/feature/TinyTargetExtractor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matching/TemplateMatcher.cpp
@@ -223,6 +224,30 @@ target_link_libraries(test_mono_corner_identity PRIVATE ${OpenCV_LIBS} Eigen3::E
 add_test(NAME test_mono_corner_identity COMMAND test_mono_corner_identity)
 set_tests_properties(test_mono_corner_identity PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
+add_executable(test_tiny_target_robustness unit/test_tiny_target_robustness.cpp
+    ../src/feature/TinyTargetExtractor.cpp ../src/utils/PoseUtils.cpp)
+target_include_directories(test_tiny_target_robustness PRIVATE ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(test_tiny_target_robustness PRIVATE ${OpenCV_LIBS} Eigen3::Eigen)
+add_test(NAME test_tiny_target_robustness COMMAND test_tiny_target_robustness)
+set_tests_properties(test_tiny_target_robustness PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+add_executable(evaluate_tt_priority ../scripts/evaluate_tt_priority.cpp
+    ../src/feature/TinyTargetExtractor.cpp ../src/utils/PoseUtils.cpp)
+target_include_directories(evaluate_tt_priority PRIVATE ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(evaluate_tt_priority PRIVATE ${OpenCV_LIBS} Eigen3::Eigen)
+
+add_executable(test_mono_dual_roi unit/test_mono_dual_roi.cpp)
+target_include_directories(test_mono_dual_roi PRIVATE ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(test_mono_dual_roi PRIVATE ${OpenCV_LIBS} Eigen3::Eigen)
+add_test(NAME test_mono_dual_roi COMMAND test_mono_dual_roi)
+
+add_executable(evaluate_mono_dual_roi ../scripts/evaluate_mono_dual_roi.cpp
+    ../src/tracker/MonoTracker.cpp ../src/tracker/TrackerBase.cpp
+    ../src/feature/BinaryCornerExtractor.cpp ../src/feature/TinyTargetExtractor.cpp
+    ../src/matching/MonoCornerIdentity.cpp ../src/utils/PoseUtils.cpp ../src/pose/MonoPnPSolver.cpp)
+target_include_directories(evaluate_mono_dual_roi PRIVATE ${TEST_PROJECT_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(evaluate_mono_dual_roi PRIVATE ${OpenCV_LIBS} Eigen3::Eigen Threads::Threads)
+
 gpnp_add_test(test_pose_solvers
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_pose_solvers.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gpnp_boundaries.cpp
@@ -298,6 +323,7 @@ gpnp_add_test(test_eskf_multimodal
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS test_config test_roi_generator test_yolo_decode test_pose_solvers test_mono_pose_prior test_mono_corner_identity
+            test_tiny_target_robustness test_mono_dual_roi
             test_extractors test_integration test_eskf_fusion test_eskf_multimodal test_stereo_flow test_dual_roi_flow test_disparity_chain
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "运行 Steretracker 单元与集成测试"
@@ -307,6 +333,7 @@ add_custom_target(check
 # 摘要
 # ============================================================================
 set(GPNP_TEST_LIST "test_config, test_roi_generator, test_yolo_decode, test_pose_solvers, test_mono_pose_prior, test_mono_corner_identity, test_extractors, test_integration, test_eskf_fusion, test_eskf_multimodal, test_stereo_flow, test_dual_roi_flow, test_disparity_chain")
+string(APPEND GPNP_TEST_LIST ", test_tiny_target_robustness, test_mono_dual_roi")
 if(GPNP_ONNXRUNTIME_FOUND)
     set(GPNP_TEST_LIST "${GPNP_TEST_LIST}, test_input_system, test_yolo_detector, test_synthetic_pipeline")
 endif()

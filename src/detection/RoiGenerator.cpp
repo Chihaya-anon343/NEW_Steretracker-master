@@ -5,6 +5,7 @@
 
 #include "detection/RoiGenerator.hpp"
 #include "common/LogConfig.hpp"
+#include "common/TinyTargetPolicy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +20,7 @@ RoiSelectionConfig readRoiSelectionConfig(const cv::FileNode &node) {
     return c;
   if (!node.isMap())
     throw std::invalid_argument("roi_selection must be an object");
+  c.tt_verification = readTinyTargetVerificationConfig(node["tt_verification"]);
   for (auto item : {std::pair<const char *, bool *>{"enabled", &c.enabled},
                     {"verify_mono", &c.verify_mono}}) {
     auto v = node[item.first];

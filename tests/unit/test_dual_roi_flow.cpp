@@ -1,6 +1,8 @@
 #include "../framework/TestAssert.hpp"
 #include "common/Config.hpp"
 #include "common/TemplateGeometry.hpp"
+#include "common/MonoDualRoiPolicy.hpp"
+#include "common/StereoRobustness.hpp"
 #include "tracker/MonoTracker.hpp"
 #include "pose/GPnPSolver.hpp"
 #include "pose/InitialPnPSolver.hpp"
@@ -85,6 +87,77 @@ void report(const PipelineResult& r) {
     if(!r.success&&!r.disparity_success)std::cerr<<"Dual result: "<<r.failure_reason<<" route="<<r.route_detail
         <<" c0="<<r.dual_c0_pairs<<" c1="<<r.dual_c1_pairs<<'\n';
 }
+void test_mono_dual_policy_is_inert_in_stereo() {
+    DualFixture f;f.config.stereo_flow.disparity_only=true;
+    auto a=f.tracker();auto before=a->process(f.left,f.right,false,&f.left_roi,nullptr);
+    f.config.mono_dual_roi.enabled=true;
+    auto b=f.tracker();auto after=b->process(f.left,f.right,false,&f.left_roi,nullptr);
+    TEST_ASSERT(before.disparity_success&&after.disparity_success);
+    TEST_ASSERT(before.pts_left_good==after.pts_left_good);
+    TEST_ASSERT(before.pts_right_good==after.pts_right_good);
+    TEST_ASSERT(before.disparity==after.disparity);
+    TEST_ASSERT(before.strategy_name==after.strategy_name);
+}
+REGISTER_TEST(test_mono_dual_policy_is_inert_in_stereo);
+void test_mono_dual_rejects_joint_that_degrades_primary() {
+    DualFixture f;f.config.mono_dual_roi.enabled=true;
+    f.bc.mono_identity.enabled=true;f.bc.mono_identity.frontend="normalized";
+    f.bc.mono_identity.quality_filter=true;
+    MonoTracker tracker(calibration().K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    tracker.setVerboseConsole(false);auto r=tracker.process(f.left,false,&f.left_roi);
+    TEST_ASSERT(r.success);TEST_ASSERT(r.strategy_name=="DualRoi_BC");
+    TEST_ASSERT(r.route_detail.find("primary_reprojection_worse")!=std::string::npos);
+    // Rasterized small-target corners have different sampling errors. The
+    // geometric board is consistent, but the joint measurement fit is worse.
+    // With the new gate explicitly ablated the same candidate is accepted.
+    f.config.mono_dual_roi.joint_quality_check=false;
+    MonoTracker unguarded(calibration().K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    unguarded.setVerboseConsole(false);auto q=unguarded.process(f.left,false,&f.left_roi);
+    TEST_ASSERT(q.success&&q.strategy_name=="DualRoi_BCJ");
+    TEST_ASSERT(q.pts_left_match.size()>10);
+    std::vector<Eigen::Vector3d> primary_model;
+    for(auto m:r.good_matches)primary_model.push_back(r.pose_model_points[m.trainIdx]);
+    PoseEstimate a,b;a.success=b.success=true;a.R=r.R;a.t=r.t;b.R=q.R;b.t=q.t;
+    TEST_ASSERT(monoGroupReprojection(b,r.pts_left_match,primary_model,calibration().K)>
+        monoGroupReprojection(a,r.pts_left_match,primary_model,calibration().K)+.25);
+    TEST_ASSERT(r.n_template_match==(int)r.good_matches.size());
+    std::vector<bool> used(20,false);
+    for(auto m:q.good_matches){TEST_ASSERT(m.trainIdx>=0&&m.trainIdx<20);TEST_ASSERT(!used[m.trainIdx]);used[m.trainIdx]=true;}
+    TEST_ASSERT(std::abs(r.t.z()-900)<25);
+}
+REGISTER_TEST(test_mono_dual_rejects_joint_that_degrades_primary);
+void test_mono_dual_class1_bc_uses_annotation_model_without_scale_leak() {
+    DualFixture f;f.config.mono_dual_roi.enabled=true;
+    auto group=f.left_roi;group.primary={0,0,640,480};
+    MonoTracker tracker(calibration().K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    tracker.setVerboseConsole(false);
+    auto r=tracker.process(f.left,false,&group);
+    TEST_ASSERT(r.success);TEST_ASSERT(r.strategy_name=="DualRoi_C1BC");
+    TEST_ASSERT(r.is_class1&&r.pose_model_points.size()==10);
+    TEST_ASSERT(r.n_template_match==(int)r.good_matches.size());
+    // Annotation span is 36mm; BC scale setting would instead give 36px here.
+    double lo=1e9,hi=-1e9;for(auto p:r.pose_model_points){lo=std::min(lo,p.x());hi=std::max(hi,p.x());}
+    TEST_ASSERT_NEAR(hi-lo,36,1e-4);
+    const auto first=r.pts_left_match;
+    tracker.clearCache();auto primary=tracker.process(f.left,false,&f.left_roi);
+    TEST_ASSERT(primary.success&&!primary.is_class1);
+    tracker.clearCache();auto again=tracker.process(f.left,false,&group);
+    TEST_ASSERT(again.success&&again.strategy_name==r.strategy_name);
+    TEST_ASSERT(again.pts_left_match==first);
+}
+REGISTER_TEST(test_mono_dual_class1_bc_uses_annotation_model_without_scale_leak);
+void test_mono_dual_tiny_class1_goes_directly_to_guarded_tt() {
+    DualFixture f;f.config.mono_dual_roi.enabled=true;f.config.tiny_max_area_class1=3000;
+    f.tt.robustness.enabled=true;
+    auto group=f.left_roi;group.primary={0,0,640,480};
+    MonoTracker tracker(calibration().K,(f.root/"board.png").string(),f.config,f.bc,f.root.string(),f.tt,f.root.string());
+    tracker.setVerboseConsole(false);auto r=tracker.process(f.left,false,&group);
+    TEST_ASSERT(r.success&&r.strategy_name=="DualRoi_C1TT");
+    TEST_ASSERT(r.pts_left_match.size()==4&&r.pose_model_points.size()==4);
+    TEST_ASSERT(r.route_detail.find("BC:skip_tiny_roi")!=std::string::npos);
+    TEST_ASSERT(r.tt_status=="success");
+}
+REGISTER_TEST(test_mono_dual_tiny_class1_goes_directly_to_guarded_tt);
 void test_dual_pose_uses_board_model_and_augments_class1() {
     DualFixture f;auto tracker=f.tracker();tracker->setFrameNumber(11);
     auto r=tracker->process(f.left,f.right,true,&f.left_roi,nullptr);report(r);
@@ -521,4 +594,140 @@ REGISTER_TEST(test_full_chain_dual_left_tt_precedes_right_detection);
 REGISTER_TEST(test_full_chain_dual_switches_respect_fallback_and_tier1);
 REGISTER_TEST(test_full_chain_dual_still_supports_lazy_right_tt_attempt);
 REGISTER_TEST(test_full_chain_dual_negative_disparity_does_not_retry_tt);
+void test_stereo_robust_bc_uses_right_observations() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.bc.pixel_to_meter_scale_class0=.006;
+    auto g=f.left_roi;g.is_dual=false;auto tracker=f.tracker();
+    auto r=tracker->process(f.left,f.right,false,&g,nullptr);report(r);
+    TEST_ASSERT(r.success&&r.stereo_success&&r.pose_source==PoseSource::StereoGpnp);
+    TEST_ASSERT(r.pts_left_good.size()>=6&&r.good_matches.size()>=6);
+    TEST_ASSERT(std::abs(r.t.z()-900)<35);
+    auto bad=tracker->process(f.left,cv::Mat(f.right.size(),f.right.type(),cv::Scalar(100)),false,&g,nullptr);
+    TEST_ASSERT(!bad.success&&!bad.stereo_success);
+}
+REGISTER_TEST(test_stereo_robust_bc_uses_right_observations);
+void test_stereo_robust_tt_is_stereo_in_pose_mode() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.config.tiny_max_area=1000000;
+    // This fixture's oblique polygon has an ~81.35-source-pixel minimum
+    // enclosing square, at 3 mm/source pixel (not its 90px axis-aligned box).
+    f.tt.square_size_m_class0=.244;
+    auto g=f.left_roi;g.is_dual=false;auto tracker=f.tracker();
+    TEST_ASSERT(tracker->prefersLeftStereoFlow(g));
+    auto r=tracker->process(f.left,f.right,false,&g,nullptr);report(r);
+    TEST_ASSERT(r.success&&r.stereo_success&&r.pose_source==PoseSource::StereoGpnp);
+    TEST_ASSERT(r.strategy_name=="TinyTarget"&&r.pts_right_good.size()==4);
+    TEST_ASSERT(r.tt_status=="success");
+    TEST_ASSERT(std::abs(r.t.z()-900)<40);
+}
+REGISTER_TEST(test_stereo_robust_tt_is_stereo_in_pose_mode);
+void test_stereo_robust_disparity_skips_every_pose_candidate() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.config.stereo_flow.disparity_only=true;
+    auto tracker=f.tracker();auto r=tracker->process(f.left,f.right,false,&f.left_roi,nullptr);report(r);
+    TEST_ASSERT(r.disparity_success&&!r.success&&!r.gpnp_success&&!r.stereo_success);
+    TEST_ASSERT(r.pnp_ms==0&&r.pose_model_points.empty()&&r.pose_source==PoseSource::Unspecified);
+    TEST_ASSERT(r.flow_pyramid_builds==1);
+    for(size_t k=0;k<r.idx_from_filtered.size();++k) {
+        auto q=r.idx_from_filtered[k];
+        TEST_ASSERT(r.pts_left_good[k]==r.pts_left_match[q]);
+        bool found=false;for(auto m:r.good_matches)if(m.queryIdx==q){found=true;TEST_ASSERT(m.trainIdx==r.flow_template_indices[k]);}
+        TEST_ASSERT(found);
+    }
+}
+REGISTER_TEST(test_stereo_robust_disparity_skips_every_pose_candidate);
+void test_stereo_robust_class1_model_and_state_restore() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;
+    auto tracker=f.tracker();auto a=tracker->process(f.left,f.right,false,&f.left_roi,nullptr);
+    auto g=f.left_roi;g.primary={0,0,640,480};auto b=tracker->process(f.left,f.right,false,&g,nullptr);report(b);
+    TEST_ASSERT(b.success&&b.stereo_success&&b.strategy_name=="DualRoi_C1BC");
+    double lo=1e9,hi=-1e9;for(auto p:b.pose_model_points){lo=std::min(lo,p.x());hi=std::max(hi,p.x());}
+    TEST_ASSERT_NEAR(hi-lo,36,1e-4);
+    tracker->clearCache();auto c=tracker->process(f.left,f.right,false,&f.left_roi,nullptr);
+    TEST_ASSERT(a.success&&c.success);TEST_ASSERT(a.pts_left_match==c.pts_left_match);TEST_ASSERT((a.t-c.t).norm()<1e-6);
+}
+REGISTER_TEST(test_stereo_robust_class1_model_and_state_restore);
+void test_stereo_robust_config_boundaries() {
+    auto read=[](const char* text){cv::FileStorage fs(text,cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);return readStereoRobustnessConfig(fs["r"]);};
+    TEST_ASSERT(!read("{}").enabled);
+    TEST_ASSERT(read("{\"r\":{\"enabled\":true,\"min_bc_points\":6}}").enabled);
+    TEST_ASSERT_THROWS(read("{\"r\":{\"enabled\":2}}"),std::invalid_argument);
+    TEST_ASSERT_THROWS(read("{\"r\":{\"min_bc_points\":3}}"),std::invalid_argument);
+    TEST_ASSERT_THROWS(read("{\"r\":{\"joint_limits\":{\"max_rotation_delta_deg\":181}}}"),std::invalid_argument);
+}
+REGISTER_TEST(test_stereo_robust_config_boundaries);
+void test_stereo_joint_gate_uses_both_cameras_and_same_pairs() {
+    const auto camera=calibration();PoseEstimate p;p.success=true;p.t={0,0,900};
+    std::vector<Eigen::Vector3d> model{{-100,-100,0},{100,-100,0},{100,100,0},{-100,100,0}};
+    PipelineResult r;
+    for(int i=0;i<4;++i) {
+        auto a=camera.K*(model[i]+p.t);auto b=camera.K*(model[i]+p.t-camera.t_rl);
+        r.pts_left_match.emplace_back(a.x()/a.z(),a.y()/a.z());r.pts_left_good.push_back(r.pts_left_match.back());
+        r.pts_right_good.emplace_back(b.x()/b.z(),b.y()/b.z());r.idx_from_filtered.push_back(i);r.good_matches.emplace_back(i,i,0);
+    }
+    MonoDualRoiConfig limits;
+    TEST_ASSERT(checkStereoDualJoint(p,p,r,r,model,camera,limits).empty());
+    auto changed=p;changed.t.x()+=2;
+    TEST_ASSERT(checkStereoDualJoint(p,changed,r,r,model,camera,limits)=="primary_reprojection_worse");
+    auto bad_right=r;for(auto& pixel:bad_right.pts_right_good)pixel.x+=10;
+    TEST_ASSERT(checkStereoDualJoint(p,p,r,bad_right,model,camera,limits)=="group_reprojection");
+    auto nonpositive=p;nonpositive.t.z()=-100;
+    TEST_ASSERT(checkStereoDualJoint(p,nonpositive,r,r,model,camera,limits)=="nonfinite_or_depth");
+}
+REGISTER_TEST(test_stereo_joint_gate_uses_both_cameras_and_same_pairs);
+void test_stereo_robust_left_fallback_requires_permission() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.bc.pixel_to_meter_scale_class0=.006;
+    auto g=f.left_roi;g.is_dual=false;
+    cv::Mat blank(f.right.size(),f.right.type(),cv::Scalar(100));
+    auto a=f.tracker();auto rejected=a->process(f.left,blank,false,&g,nullptr);
+    TEST_ASSERT(!rejected.success&&!rejected.stereo_success);
+    f.config.stereo_flow.allow_left_pnp=true;auto b=f.tracker();auto accepted=b->process(f.left,blank,false,&g,nullptr);
+    TEST_ASSERT(accepted.success&&!accepted.stereo_success&&accepted.pose_source==PoseSource::LeftPnpFallback);
+}
+REGISTER_TEST(test_stereo_robust_left_fallback_requires_permission);
+void test_stereo_robust_negative_disparity_does_not_run_tt() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.config.stereo_flow.disparity_only=true;
+    auto g=f.right_roi;g.is_dual=false;auto tracker=f.tracker();
+    auto r=tracker->process(f.right,f.left,false,&g,nullptr);
+    TEST_ASSERT(!r.disparity_success);
+    TEST_ASSERT(r.failure_reason=="negative_disparity_check_input_order");
+    TEST_ASSERT(r.route_detail.find("TT:")==std::string::npos);
+}
+REGISTER_TEST(test_stereo_robust_negative_disparity_does_not_run_tt);
+void test_stereo_robust_visualization_is_inert_and_has_both_camera_axes() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;auto tracker=f.tracker();tracker->setFrameNumber(91);
+    cv::theRNG().state=20261020;auto a=tracker->process(f.left,f.right,false,&f.left_roi,nullptr);
+    tracker->clearCache();cv::theRNG().state=20261020;auto b=tracker->process(f.left,f.right,true,&f.left_roi,nullptr);
+    TEST_ASSERT(a.success&&b.success);TEST_ASSERT(a.pts_left_good==b.pts_left_good);TEST_ASSERT(a.pts_right_good==b.pts_right_good);
+    TEST_ASSERT((a.t-b.t).norm()<1e-7&&(a.R-b.R).norm()<1e-7);
+    utils::AsyncImageSaver::flush();
+    TEST_ASSERT(std::filesystem::exists(f.root/"stereo_axes_lr_f91.png"));
+    TEST_ASSERT(std::filesystem::exists(f.root/"stereo_f91.png"));
+}
+REGISTER_TEST(test_stereo_robust_visualization_is_inert_and_has_both_camera_axes);
+void test_stereo_robust_dual_class1_tt_uses_metric_stereo() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.config.tiny_max_area_class1=3000;
+    f.tt.square_size_m_class1=.0325;
+    auto g=f.left_roi;g.primary={0,0,640,480};auto tracker=f.tracker();
+    auto r=tracker->process(f.left,f.right,false,&g,nullptr);report(r);
+    TEST_ASSERT(r.success&&r.stereo_success&&r.is_class1&&r.strategy_name=="DualRoi_C1TT");
+    TEST_ASSERT(r.pts_right_good.size()==4&&r.pose_model_points.size()==4);
+    TEST_ASSERT(r.route_detail.find("C1BC:skip_tiny")!=std::string::npos);
+    TEST_ASSERT(std::abs(r.t.z()-900)<45);
+}
+REGISTER_TEST(test_stereo_robust_dual_class1_tt_uses_metric_stereo);
+void test_stereo_robust_initial_pnp_off_uses_stereo_seed() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.config.use_initial_pnp=false;
+    f.bc.pixel_to_meter_scale_class0=.006;auto g=f.left_roi;g.is_dual=false;auto tracker=f.tracker();
+    auto r=tracker->process(f.left,f.right,false,&g,nullptr);report(r);
+    TEST_ASSERT(r.success&&r.stereo_success);
+    TEST_ASSERT(r.last_gpnp_monitor.initial_source=="StereoTriangulation");
+}
+REGISTER_TEST(test_stereo_robust_initial_pnp_off_uses_stereo_seed);
+void test_stereo_robust_respects_disparity_full_chain_switch() {
+    DualFixture f;f.config.stereo_robustness.enabled=true;f.config.stereo_flow.disparity_only=true;
+    f.config.stereo_flow.disparity_full_chain=false;f.config.tiny_max_area=1000000;
+    auto g=f.left_roi;g.is_dual=false;auto tracker=f.tracker();
+    TEST_ASSERT(!tracker->prefersLeftStereoFlow(g));
+    auto r=tracker->process(f.left,f.right,false,&g,nullptr);
+    TEST_ASSERT(!r.disparity_success&&r.failure_reason=="disparity_only_requires_supported_flow_strategy");
+}
+REGISTER_TEST(test_stereo_robust_respects_disparity_full_chain_switch);
 int main(){g_verbose_console=false;return gpnp_test::TestRegistry::instance().runAll();}

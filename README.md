@@ -4,6 +4,8 @@
 
 **技术栈**: C++17 · OpenCV 4.x · Eigen 3.x · ONNX Runtime
 
+位姿可视化：红色为 +X、绿色为 +Y，蓝色箭头标注 `-Z (up)`，表示朝靶板上方的法向。仅改变显示，PnP 的右手坐标系和输出位姿仍使用原定义。
+
 单目 class0 BC 可启用 TT 四点粗归一化、四方向定向及十点 H 编号验证；主配置已启用，class1 和双目保持原路径。配置、误差、拒绝率及端到端对照见 [单目编号修复实验](docs/mono_corner_identity_20261016.md)。
 
 单目 BC 新增先归一化入口：四方向粗定向、标准空间浮点轮廓十点提取、原图边线精化及 H 验证，绕过 BC 内原有 24 方向匹配。配置、流程图与三组对比见 [单目 BC 归一化提取实验](docs/mono_bc_normalized_20261016.md)。
@@ -11,6 +13,14 @@
 九个具体帧的角点/位姿对比、实际归一化中间图和 CPU/内存开销见 [代表帧可视化与资源测量](docs/mono_bc_representative_frames_20261016.md)。
 
 单目新增 ROI 包含关系与候选验证、BC 可靠点编号传递和有限缺角匹配。配置、4,080 帧对照结果、耗时与拒绝代价见 [单目 BC 优先项优化实验](docs/mono_bc_priority_20261019.md)。
+
+BC/TT 轮廓与包围框复用、数值一致性及独立耗时对照见 [减少轮廓重复扫描实验](docs/contour_scan_optimization_20261019.md)。
+
+单目 TT 新增四方向编号、受限亚像素精化、逐次拒绝诊断和独立 ROI 验证。低分数放行保留为实验开关，默认关闭。配置、固定 ROI 与完整流程对照见 [TT P0/P1 优化实验](docs/tt_priority_optimization_20261019.md)。
+
+单目 DualRoi 可通过 `strategies.dual_roi.mono_robustness.enabled` 接入独立 class1 归一化 BC、微小 class1 直接 TT、物理编号传递及联合结果验收，主配置已开启。class1 BC 回退复用原板图标注模型；TT 四点保留独立模型。对照中编号与深度有改善，但 class1 回退成功率和法向精度存在代价；双目前端本轮只验证兼容性。详见 [DualRoi 接入与对照测试](docs/dual_roi_priority_20261020.md)。
+
+双目可通过 `stereo_frontend.robustness.enabled` 独立试用改进 BC/TT、编号贯通、三角化与平面多候选 GPnP、双侧联合验收及左右三维轴。该开关暂默认关闭：物理合成实验中 BC、DualRoi 有改善，但远距离 TT 四点匹配可用率与法向精度仍不足。实验口径、性能及限制见 [双目 P0 接入与实验](docs/stereo_priority_20261020.md)。
 
 普通 BC 双目可选左图检测与特征提取、右图光流匹配。启用配置、失败策略、日志与 Docker 验证见 [普通 BC 光流说明](docs/bc_stereo_flow.md)。原配置默认保留原流程。
 
@@ -323,24 +333,28 @@ TinyT.      BC         Dual-ROI
 
 ### 5.1 State 1 远 — TinyTarget
 
-**适用场景**: 远距离微小矩形目标（如 4 角点标定板）
+**适用场景**: 远距离微小目标的四点包络近似。最小外接矩形顶点不一定是图案上真实存在的物理角点。
 
 | 维度 | 双目 | 单目 |
 |------|------|------|
 | **提取方法** | `extract()` (左右双路) | `extractMono()` (仅左图) |
-| **流程** | Otsu→模板匹配(IoU)→超分(×4)→连通域评分→minAreaRect→角度对齐 | 同双目但仅左图 |
+| **流程** | 插值放大→Otsu/清理→24方向匹配→矩形/亚像素→象限对齐 | 可选四方向归一化定向、唯一编号和受限亚像素精化 |
 | **左右匹配** | 模板匹配 L↔R | — |
 | **Pose** | `cv::solvePnP(ITERATIVE)` | `MonoPnPSolver(EPnP+IPPE)` |
-| **Warm-start** | ❌ | ❌ |
+| **Warm-start** | 按现有双目解算路径 | 按 temporal 配置使用位姿 seed |
 | **退化** | 终止(无后备) | 终止(无后备) |
 
 **立体流水线** (双目):
 
 ```
-Otsu二值化 → 模板匹配(IoU) → 超分辨率×4 → GaussianBlur → Otsu → 形态学
-→ 连通域评分(面积/矩形度/中心距/长宽比) → minAreaRect → cornerSubPix亚像素
-→ 角度对齐(4象限量化) → 视差计算 → cv::solvePnP(ITERATIVE)
+插值放大×4 → GaussianBlur → Otsu → 最大连通域/填洞/闭开运算
+→ 24方向模板IoU → minAreaRect → cornerSubPix → 四象限编号
+→ 现有双目匹配及视差/位姿路径
 ```
+
+单目 `strategies.tiny_target.robustness.enabled=true` 时，用粗归一化后的四个物理方向及其分差确定编号，歧义时拒绝；精化检查原图尺度的窗口、梯度、位移及四边形一致性，失败时保留初值。24方向旧分数仍保留用于严格入口和诊断，不能将其与归一化方向分数混用。功能由 `MonoTracker` 显式启用上下文，双目内部调用 `extractMono()` 时也保持旧语义。
+
+`roi_selection.tt_verification.enabled=true` 使用 TT 独立验收；`allow_small_target_path=false` 保持严格图案门限。实验中的低分数放行会接纳部分类别/尺度混淆，默认关闭。`pixel_center_mapping` 是单独的缩放坐标消融，默认关闭。各开关缺省时兼容旧配置，物理尺寸及 class1 中心偏移保持原定义。
 
 ### 5.2 State 2 中 — BinaryCorner
 

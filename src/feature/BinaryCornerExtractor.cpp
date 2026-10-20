@@ -98,6 +98,14 @@ void BinaryCornerExtractor::setUseClass1(bool v) {
     initPts3dFromTemplates();
 }
 
+void BinaryCornerExtractor::setMonoCanonicalModel(const std::vector<cv::Point2f>& points) {
+    if(points.size()!=10 || !std::all_of(points.begin(),points.end(),[](const cv::Point2f& p) {
+        return std::isfinite(p.x)&&std::isfinite(p.y);
+    }) || std::abs(cv::contourArea(points))<1e-3)
+        throw std::invalid_argument("DualROI canonical BC model requires ten finite nondegenerate points");
+    mono_identity_.setModel(points);
+}
+
 // ============================================================================
 // 模板数据加载
 // ============================================================================
@@ -1306,9 +1314,9 @@ PipelineResult BinaryCornerExtractor::extractMono(const cv::Mat& gray,
         if(debug_capture_) {
             last_largest_region_=largest.clone();last_contour_binary_=mono_identity_mask_.clone();
             last_upright_binary_=mono_identity_mask_.clone();
-            last_contour_=extractLargestContour(mono_identity_mask_);
         }
         last_mono_identity_=mono_identity_.extractNormalized(mono_identity_mask_,debug_capture_);
+        if(debug_capture_) last_contour_=last_mono_identity_.source_contour;
         corners=last_mono_identity_.points;
         last_corners_before_reorder_=last_mono_identity_.before_refinement;
         // Canonical identity is already established. Do not report the old

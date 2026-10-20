@@ -1,3 +1,4 @@
+#include "utils/PoseAxisDisplay.hpp"
 #include "tracker/StereoTracker.hpp"
 #include "common/GeometryUtils.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -69,6 +70,9 @@ bool StereoTracker::prefersLeftBcFlow(const RoiGroup& group) const {
 }
 
 bool StereoTracker::prefersLeftStereoFlow(const RoiGroup& group) const {
+    if(config_.stereo_robustness.enabled&&config_.stereo_flow.enabled&&group.valid()&&
+       (!config_.stereo_flow.disparity_only||config_.stereo_flow.disparity_full_chain)&&
+       (!group.is_dual||config_.stereo_flow.dual_roi_flow))return true;
     if (config_.stereo_flow.enabled && config_.stereo_flow.dual_roi_flow &&
         group.valid() && group.is_dual && !group.is_class1 && group.secondary.valid()) return true;
     if(config_.stereo_flow.enabled && config_.stereo_flow.disparity_only &&
@@ -269,12 +273,15 @@ void StereoTracker::renderBcFlow(const PipelineResult& result, const FlowMatchRe
         cv::Mat rotation(3,3,CV_64F), rvec, tvec = (cv::Mat_<double>(3,1) << result.t.x(), result.t.y(), result.t.z());
         for (int i=0;i<3;++i) for (int j=0;j<3;++j) rotation.at<double>(i,j)=result.R(i,j);
         cv::Rodrigues(rotation, rvec);
-        std::vector<cv::Point3d> axis_model{{0,0,0},{100,0,0},{0,100,0},{0,0,100}};
+        std::vector<cv::Point3d> axis_model{{0,0,0},{100,0,0},{0,100,0},{0,0,utils::upNormalZ(100, result.t.z())}};
         std::vector<cv::Point2d> projected;
         cv::projectPoints(axis_model, rvec, tvec, k, cv::noArray(), projected);
-        for (int i=1;i<4;++i)
-            if (visible(projected[0], axes) && visible(projected[i], axes))
-                cv::line(axes, projected[0], projected[i], i==1 ? cv::Scalar(0,0,255) : i==2 ? cv::Scalar(0,255,0) : cv::Scalar(255,0,0), 3);
+        for (int i=1;i<4;++i) {
+            if (visible(projected[0], axes) && visible(projected[i], axes)) {
+                if (i == 3) utils::drawUpNormal(axes, projected[0], projected[i], 3);
+                else cv::line(axes, projected[0], projected[i], i==1 ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 3);
+            }
+        }
         if (visualize_detailed_) {
             cv::Mat reproj_l = l.clone(), reproj_r = r.clone();
             for (const auto& m : result.good_matches) {

@@ -1,3 +1,4 @@
+#include "utils/PoseAxisDisplay.hpp"
 /**
  * @file main.cpp
  * @brief GPNP 双目视觉跟踪器入口 —— YOLO检测 → 策略选择 → 位姿解算
@@ -11,6 +12,8 @@
 #include "detection/YoloRoiProvider.hpp"
 #include "common/GeometryUtils.hpp"
 #include "common/TemplateGeometry.hpp"
+#include "common/MonoDualRoiPolicy.hpp"
+#include "common/StereoRobustness.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
 #include "utils/AsyncImageSaver.hpp"
@@ -47,7 +50,7 @@ void handleSignal(int) {
 }
 
 // ---- 实时预览 (live_view) 叠加绘制 ----
-// 位姿成功帧: 三维轴 X红/Y绿/Z蓝 (轴长随距离自适应) + 左上角状态行
+// 位姿成功帧: X红/Y绿/朝上法向-Z蓝 (仅显示，轴长随距离自适应) + 左上角状态行
 void drawLiveOverlay(cv::Mat& img, const Eigen::Matrix3d& K,
                      const Eigen::Matrix3d& R, const Eigen::Vector3d& t,
                      const std::string& status) {
@@ -56,7 +59,7 @@ void drawLiveOverlay(cv::Mat& img, const Eigen::Matrix3d& K,
     const float L = static_cast<float>(len_d);
     const std::vector<cv::Point3f> axes = {
         cv::Point3f(0, 0, 0), cv::Point3f(L, 0, 0),
-        cv::Point3f(0, L, 0), cv::Point3f(0, 0, L)};
+        cv::Point3f(0, L, 0), cv::Point3f(0, 0, gpnp::utils::upNormalZ(L, t.z()))};
 
     cv::Mat R_cv(3, 3, CV_64F);
     cv::Matx33d K_cv;
@@ -74,8 +77,9 @@ void drawLiveOverlay(cv::Mat& img, const Eigen::Matrix3d& K,
                       cv::noArray(), pts);
     const cv::Point origin(pts[0]);
     const cv::Scalar axis_colors[3] = {{0, 0, 255}, {0, 255, 0}, {255, 0, 0}};
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 2; ++i)
         cv::line(img, origin, cv::Point(pts[i + 1]), axis_colors[i], 2, cv::LINE_AA);
+    gpnp::utils::drawUpNormal(img, origin, pts[3]);
 
     if (!status.empty())
         cv::putText(img, status, cv::Point(12, 28), cv::FONT_HERSHEY_SIMPLEX, 0.7,
@@ -188,6 +192,10 @@ int main(int argc, char** argv) {
     tiny_cfg.square_size_m_class0 = fs["strategies"]["tiny_target"]["square_size_m_class0"];
     tiny_cfg.square_size_m_class1 = fs["strategies"]["tiny_target"]["square_size_m_class1"];
     tiny_cfg.roi_pad_pixels = fs["strategies"]["tiny_target"]["roi_pad_pixels"];
+    tiny_cfg.robustness = readTinyTargetRobustnessConfig(
+        fs["strategies"]["tiny_target"]["robustness"]);
+    tiny_cfg.robustness.diagnostics = tiny_cfg.robustness.diagnostics ||
+                                     roi_selection_cfg.tt_verification.enabled;
     std::string tiny_template_dir = fs["strategies"]["tiny_target"]["template_dir"];
 
     // YOLO 检测参数
@@ -224,6 +232,8 @@ int main(int argc, char** argv) {
     std::string dual_c1_points_path;
     double dual_joint_gate_px = 12.0;
     cv::FileNode dual_node = fs["strategies"]["dual_roi"];
+    const auto mono_dual_roi_cfg = readMonoDualRoiConfig(dual_node["mono_robustness"]);
+    const auto stereo_robustness_cfg=readStereoRobustnessConfig(fs["stereo_frontend"]["robustness"]);
     if (!dual_node.empty()) {
         dual_expand = dual_node["secondary_expand_pixels"];
         {
@@ -552,7 +562,8 @@ int main(int argc, char** argv) {
             for (int j = 0; j < 3; ++j) pose_csv << ",R" << i << j;
         pose_csv << ",failure_reason,roi_candidates,roi_verified,roi_selected,"
                     "roi_containment,roi_reason,roi_verify_ms,bc_detected,bc_"
-                    "rejected,pose_points\n"
+                    "rejected,pose_points,tt_status,tt_legacy_iou,tt_direction_iou,"
+                    "tt_direction_gap,tt_quadrant,tt_refined_count,tt_max_refine_shift_px,roi_verification_details\n"
                  << std::setprecision(17);
     }
     auto exportPose = [&](int frame, const PipelineResult& result) {
@@ -588,8 +599,13 @@ int main(int argc, char** argv) {
         pose_csv << ','
                  << (roi_timing == result.timing.end() ? 0 : roi_timing->second)
                  << ',' << result.bc_detected_count << ','
-                 << result.bc_rejected_count << ',' << result.gpnp_n_pts
-                 << '\n';
+                 << result.bc_rejected_count << ',' << result.gpnp_n_pts << ',';
+        csvString(result.tt_status);
+        pose_csv << ',' << result.tt_legacy_iou << ',' << result.tt_direction_iou
+                 << ',' << result.tt_direction_gap << ',' << result.tt_quadrant
+                 << ',' << result.tt_refined_count << ',' << result.tt_max_refine_shift_px << ',';
+        csvString(result.roi_verification_details);
+        pose_csv << '\n';
     };
     std::cout << "输出目录: " << output_dir << std::endl;
 
@@ -612,6 +628,8 @@ int main(int argc, char** argv) {
     tracker_cfg.dual_roi_class0_points_path = dual_c0_points_path;
     tracker_cfg.dual_roi_class1_points_path = dual_c1_points_path;
     tracker_cfg.dual_roi_joint_match_gate_px = dual_joint_gate_px;
+    tracker_cfg.mono_dual_roi = mono_dual_roi_cfg;
+    tracker_cfg.stereo_robustness=stereo_robustness_cfg;
     tracker_cfg.stereo_flow = stereo_flow_cfg;
     tracker_cfg.template_geometry = template_geometry_cfg;
     tracker_cfg.mono_pose_prior = mono_pose_prior_cfg;

@@ -87,6 +87,7 @@ set(SOURCES
     src/tracker/StereoTrackerFlow.cpp
     src/tracker/StereoTrackerDualFlow.cpp
     src/tracker/StereoTrackerDisparity.cpp
+    src/tracker/StereoTrackerRobust.cpp
     src/detection/RoiGenerator.cpp
     src/detection/YoloRoiProvider.cpp
     # RKNN NPU 检测后端 (无 librknnrt 时编译为存根, 详见下方 RKNN 可选块)

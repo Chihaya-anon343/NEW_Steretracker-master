@@ -62,6 +62,11 @@ public:
                                const RoiGroup* roi_group = nullptr);
 
 private:
+    PipelineResult processRobustStereo(const cv::Mat& left,const cv::Mat& right,
+                                      const RoiGroup& group,bool visualize,PoseEstimate& pose);
+    std::unique_ptr<BinaryCornerExtractor> robust_bc_, robust_dual_c0_, robust_dual_c1_;
+    std::unique_ptr<TinyTargetExtractor> robust_tt_;
+    std::vector<Eigen::Vector3d> robust_c1_model_;
     PipelineResult processSingleDisparity(const cv::Mat& left, const cv::Mat& right,
                                           const RoiGroup& group, bool visualize);
     PipelineResult runDisparityExtraction(FeatureExtractor& extractor, StereoFlowFrame& context,

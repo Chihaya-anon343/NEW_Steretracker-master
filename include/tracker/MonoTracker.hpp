@@ -59,6 +59,9 @@ public:
         std::string* out_route_detail = nullptr);
 
     MonoPnPSolver mono_pnp_;
+    // Separate context: enabling class1 BC here must not change ordinary BC,
+    // standalone class1 selection, or the stereo frontends.
+    std::unique_ptr<BinaryCornerExtractor> dual_class1_bc_;
     bool has_verified_roi_{false};
     RoiRect verified_roi_;
     int verified_roi_frame_{-1};

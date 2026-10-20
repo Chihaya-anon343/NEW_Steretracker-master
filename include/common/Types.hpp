@@ -121,6 +121,15 @@ struct MonoPosePriorConfig {
     double max_tilt_deg{30.0}; ///< Total angle: template +Z versus camera +Z.
 };
 
+struct TinyTargetVerificationConfig {
+  bool enabled{false};
+  bool allow_small_target_path{false}; ///< Experimental: weak shape evidence cannot resolve class/scale ambiguity.
+  double min_shape_class0{0.75}, min_shape_class1{0.75};
+  double small_min_shape_class0{0.65}, small_min_shape_class1{0.65};
+  double small_span_class0{40.0}, small_span_class1{24.0};
+  double min_direction_iou{0.60}, min_direction_gap{0.03};
+};
+
 struct RoiSelectionConfig {
   bool enabled{false};
   bool verify_mono{false};
@@ -130,6 +139,28 @@ struct RoiSelectionConfig {
   double min_component_ratio{0.25};
   double min_observed_span_px{4.0};
   int history_max_age{15};
+  TinyTargetVerificationConfig tt_verification;
+};
+
+/// Opt-in single-camera DualROI integration; stereo extraction is independent.
+struct MonoDualRoiConfig {
+    bool enabled{false};
+    bool size_aware_class1{true};
+    bool joint_quality_check{true};
+    double max_primary_error_increase_px{0.25};
+    double max_group_error_px{3.0};
+    double max_rotation_delta_deg{10.0};
+    double max_translation_delta_ratio{0.10};
+};
+
+// Independent stereo rollout. Missing configuration preserves the old frontend.
+struct StereoRobustnessConfig {
+    bool enabled{false};
+    bool binary_corner{true};
+    bool tiny_target{true};
+    bool joint_quality_check{true};
+    int min_bc_points{6};
+    MonoDualRoiConfig joint_limits;
 };
 
 /// 跟踪器级别配置（构造时一次性设置）。
@@ -147,11 +178,13 @@ struct TrackerConfig {
     std::string dual_roi_class0_points_path; ///< Dual-ROI class0 人工标注点文件 (空=approxPolyDP 自动推导)
     std::string dual_roi_class1_points_path; ///< Dual-ROI class1 人工标注点文件 (空=Tier1b 联合解算停用)
     double dual_roi_joint_match_gate_px{12.0}; ///< Tier1b NN 匹配门限 (px, 投影预测点↔提取角点)
+    MonoDualRoiConfig mono_dual_roi;
     TemporalConfig temporal;             ///< 时序连贯性（序列模式）
     StereoFlowConfig stereo_flow;
     TemplateGeometryConfig template_geometry;
     MonoPosePriorConfig mono_pose_prior;
     RoiSelectionConfig roi_selection;
+    StereoRobustnessConfig stereo_robustness;
 };
 
 // ============================================================================
@@ -332,6 +365,13 @@ struct LogEntry {
 /// 单次 process() 调用的聚合结果。
 /// 替代 Python 版本中 process() 返回的字典。
 struct PipelineResult {
+  // Candidate verification attempts, including rejected BC/TT observations.
+  // Compact JSON in the CSV keeps one row per frame and preserves old columns.
+  std::string roi_verification_details;
+  std::string tt_status;
+  double tt_legacy_iou{0.0}, tt_direction_iou{0.0}, tt_direction_gap{0.0};
+  int tt_quadrant{-1}, tt_refined_count{0};
+  double tt_max_refine_shift_px{0.0};
   // BC observations retain canonical IDs after quality/partial filtering.
   int bc_detected_count{0}, bc_rejected_count{0};
   int pose_min_inliers{4};

@@ -1,3 +1,4 @@
+#include "utils/PoseAxisDisplay.hpp"
 /**
  * @file StereoTracker.cpp
  * @brief StereoTracker 双 ROI 策略实现。
@@ -5,6 +6,7 @@
 
 #include "tracker/StereoTracker.hpp"
 #include "common/TemplateGeometry.hpp"
+#include "common/StereoRobustness.hpp"
 #include "common/GeometryUtils.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
@@ -50,6 +52,23 @@ StereoTracker::StereoTracker(const Eigen::Matrix3d& K,
     validateStereoFlowConfig(config_.stereo_flow);
 
     initExtractors(template_path, binary_cfg, binary_template_dir, tiny_cfg, tiny_template_dir);
+    if(config_.stereo_robustness.enabled) {
+        if(!config_.stereo_flow.enabled)throw std::invalid_argument("stereo robustness requires left_bc_lk");
+        auto bc=binary_cfg;bc.template_geometry=config_.template_geometry;
+        bc.mono_identity.enabled=config_.stereo_robustness.binary_corner;
+        bc.mono_identity.class1_enabled=true;bc.mono_identity.frontend="normalized";
+        bc.mono_identity.quality_filter=true;bc.mono_identity.partial_matching=true;
+        bc.mono_identity.min_reliable_points=config_.stereo_robustness.min_bc_points;
+        robust_bc_=std::make_unique<BinaryCornerExtractor>(bc,binary_template_dir);
+        robust_dual_c0_=std::make_unique<BinaryCornerExtractor>(bc,binary_template_dir);
+        robust_dual_c1_=std::make_unique<BinaryCornerExtractor>(bc,binary_template_dir);
+        for(auto* ext:{robust_bc_.get(),robust_dual_c0_.get(),robust_dual_c1_.get()})ext->setMonoContext(true);
+        robust_dual_c1_->setUseClass1(true);
+        auto tt=tiny_cfg;tt.template_geometry=config_.template_geometry;
+        tt.robustness.enabled=config_.stereo_robustness.tiny_target;
+        robust_tt_=std::make_unique<TinyTargetExtractor>(tt,tiny_template_dir);
+        robust_tt_->setMonoContext(true);
+    }
 }
 
 StereoTracker::~StereoTracker() = default;
@@ -453,6 +472,15 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img, const cv::Mat& ri
         return flow;
     }
 
+    if(config_.stereo_robustness.enabled && config_.stereo_flow.enabled && left_group &&
+       !left_group->is_dual && (!right_group || config_.stereo_flow.disparity_only)) {
+        PoseEstimate pose;const bool first=!state_.has_cache;
+        auto r=processRobustStereo(left_img,right_img,*left_group,visualize,pose);
+        if(pose.success)finalizePose(r,pose);
+        if(r.disparity_only)writeDisparityResult(r);
+        if(visualize)renderDualFlowResult(r,left_img,right_img,*left_group);
+        addLogEntry(r,first,r.fallback_used);return r;
+    }
     if(config_.stereo_flow.disparity_only && config_.stereo_flow.disparity_full_chain && left_group) {
         auto result=processSingleDisparity(left_img,right_img,*left_group,visualize);
         addLogEntry(result,!state_.has_cache,result.fallback_used);
@@ -702,13 +730,13 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img, const cv::Mat& ri
                     result.R(2,0), result.R(2,1), result.R(2,2));
                 cv::Rodrigues(R_cv, rvec);
                 cv::Mat tvec = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
-                std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,100}};
+                std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,utils::upNormalZ(100, result.t.z())}};
                 std::vector<cv::Point2d> img_pts;
                 cv::projectPoints(axis, rvec, tvec, K_cv, cv::Mat(), img_pts);
                 if (img_pts.size() == 4) {
                     cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0,0,255), 3);
                     cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0,255,0), 3);
-                    cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255,0,0), 3);
+                    utils::drawUpNormal(vis, img_pts[0], img_pts[3], 3);
                 }
             } else {
                 if (verbose_console_)
@@ -853,14 +881,14 @@ PipelineResult StereoTracker::process(const cv::Mat& left_img, const cv::Mat& ri
                 Eigen::Vector3d o  = final_pose.R * Eigen::Vector3d(0,0,0) + final_pose.t;
                 Eigen::Vector3d ax = final_pose.R * Eigen::Vector3d(axis_len,0,0) + final_pose.t;
                 Eigen::Vector3d ay = final_pose.R * Eigen::Vector3d(0,axis_len,0) + final_pose.t;
-                Eigen::Vector3d az = final_pose.R * Eigen::Vector3d(0,0,axis_len) + final_pose.t;
+                Eigen::Vector3d az = final_pose.R * Eigen::Vector3d(0,0,utils::upNormalZ(axis_len, final_pose.t.z())) + final_pose.t;
                 cv::Point o_p = proj(o);  o_p.x -= expand_L.x; o_p.y -= expand_L.y;
                 cv::Point ax_p = proj(ax); ax_p.x -= expand_L.x; ax_p.y -= expand_L.y;
                 cv::Point ay_p = proj(ay); ay_p.x -= expand_L.x; ay_p.y -= expand_L.y;
                 cv::Point az_p = proj(az); az_p.x -= expand_L.x; az_p.y -= expand_L.y;
                 cv::line(p1, o_p, ax_p, cv::Scalar(0,0,255), 2, cv::LINE_AA);
                 cv::line(p1, o_p, ay_p, cv::Scalar(0,255,0), 2, cv::LINE_AA);
-                cv::line(p1, o_p, az_p, cv::Scalar(255,0,0), 2, cv::LINE_AA);
+                utils::drawUpNormal(p1, o_p, az_p, 2);
                 utils::AsyncImageSaver::write(output_dir_ + "/binary_corner_axes" + prefix + ".png", p1);
             }
 
@@ -1187,6 +1215,16 @@ void StereoTracker::prepareDualBcTemplate() {
     // The annotation's previous board-space center must not be added twice.
     placeTemplateInClass0(dual_bc_tmpl_pts3d_, false, config_.template_geometry);
     placeTemplateInClass0(dual_c1_tmpl_pts3d_, true, config_.template_geometry);
+    if(robust_dual_c0_&&dual_bc_tmpl_corners_.size()==10)
+        robust_dual_c0_->setMonoCanonicalModel(dual_bc_tmpl_corners_);
+    if(robust_dual_c1_&&!config_.dual_roi_class1_points_path.empty()) {
+        const auto rows=readCorners(config_.dual_roi_class1_points_path);
+        if(rows.size()==10) {
+            robust_dual_c1_->setMonoCanonicalModel(rows);
+            for(auto p:rows)robust_c1_model_.emplace_back(p.x/tw*real_w-cx,p.y/th*real_h-cy,0);
+            placeTemplateInClass0(robust_c1_model_,true,config_.template_geometry);
+        }
+    }
     dual_bc_template_ready_ = true;
     if (verbose_console_)
         std::cout << "[DualRoi] BC template ready: c0=" << dual_bc_tmpl_corners_.size()
@@ -1802,13 +1840,13 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
                     result.R(2,0), result.R(2,1), result.R(2,2));
                 cv::Rodrigues(R_cv, rvec);
                 cv::Mat tvec = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
-                std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,100}};
+                std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,utils::upNormalZ(100, result.t.z())}};
                 std::vector<cv::Point2d> img_pts;
                 cv::projectPoints(axis, rvec, tvec, K_cv, cv::Mat(), img_pts);
                 if (img_pts.size() == 4) {
                     cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0,0,255), 3);
                     cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0,255,0), 3);
-                    cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255,0,0), 3);
+                    utils::drawUpNormal(vis, img_pts[0], img_pts[3], 3);
                 }
             }
             utils::AsyncImageSaver::write(output_dir_ + "/stereo_dualroi" + prefix + ".png", vis);
@@ -1865,10 +1903,10 @@ PipelineResult StereoTracker::processDualRoi(const cv::Mat& left_img,
             Eigen::Vector3d o  = pose.R * Eigen::Vector3d(0, 0, 0) + pose.t;
             Eigen::Vector3d ax = pose.R * Eigen::Vector3d(axis_len, 0, 0) + pose.t;
             Eigen::Vector3d ay = pose.R * Eigen::Vector3d(0, axis_len, 0) + pose.t;
-            Eigen::Vector3d az = pose.R * Eigen::Vector3d(0, 0, axis_len) + pose.t;
+            Eigen::Vector3d az = pose.R * Eigen::Vector3d(0, 0, utils::upNormalZ(axis_len, pose.t.z())) + pose.t;
             cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
-            cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
+            utils::drawUpNormal(p2, projPoint(o), projPoint(az), 2);
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_axes" + prefix + ".png", p2);
         }
 
@@ -2351,13 +2389,13 @@ PipelineResult StereoTracker::processMono(const cv::Mat& img,
                 result.R(2,0), result.R(2,1), result.R(2,2));
             cv::Rodrigues(R_cv, rvec);
             cv::Mat tvec = (cv::Mat_<double>(3,1) << result.t(0), result.t(1), result.t(2));
-            std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,100}};
+            std::vector<cv::Point3d> axis = {{0,0,0},{100,0,0},{0,100,0},{0,0,utils::upNormalZ(100, result.t.z())}};
             std::vector<cv::Point2d> img_pts;
             cv::projectPoints(axis, rvec, tvec, K_cv, cv::Mat(), img_pts);
             if (img_pts.size() == 4) {
                 cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0,0,255), 3);
                 cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0,255,0), 3);
-                cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255,0,0), 3);
+                utils::drawUpNormal(vis, img_pts[0], img_pts[3], 3);
             }
         }
         std::string mono_path = output_dir_ + "/mono_f" + std::to_string(current_frame_) + ".png";

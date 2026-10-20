@@ -204,6 +204,53 @@ void test_partial_correspondence_missing_and_extra_points() {
     cv::Mat wrong=cv::Mat::zeros(s.mask.size(),CV_8U);cv::rectangle(wrong,{200,120},{440,360},255,-1);
     TEST_ASSERT(!matcher.match(extra,wrong).accepted);
 }
+void test_captured_contour_reuses_final_mask_geometry() {
+    MonoCornerIdentityConfig cfg;cfg.quality_filter=true;cfg.partial_matching=true;
+    cfg.min_roi_span_ratio=0;MonoCornerIdentity matcher(cfg);matcher.setModel(shape());
+    for(double yaw:{0.,17.,90.,175.,270.})for(double perspective:{0.,.002}) {
+        auto s=scene(yaw,perspective);
+        // Additional external component and a hole exercise the exact mask's
+        // external-contour selection; neither may leak into debug geometry.
+        cv::rectangle(s.mask,{3,3},{8,8},255,-1);
+        cv::circle(s.mask,{320,300},3,0,-1);
+        const cv::Mat original=s.mask.clone();
+        auto captured=matcher.extractNormalized(s.mask,true);
+        auto plain=matcher.extractNormalized(s.mask,false);
+        TEST_ASSERT(cv::norm(original,s.mask,cv::NORM_INF)==0);
+        TEST_ASSERT(captured.accepted==plain.accepted);
+        TEST_ASSERT(captured.status==plain.status);
+        TEST_ASSERT(captured.template_ids==plain.template_ids);
+        TEST_ASSERT(captured.points==plain.points);
+        TEST_ASSERT(plain.source_contour.empty());
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(s.mask,contours,cv::RETR_EXTERNAL,cv::CHAIN_APPROX_SIMPLE);
+        const auto largest=std::max_element(contours.begin(),contours.end(),
+            [](const auto& a,const auto& b){return cv::contourArea(a)<cv::contourArea(b);});
+        TEST_ASSERT(captured.source_contour==*largest);
+    }
+    cv::Mat empty=cv::Mat::zeros(32,32,CV_8U);
+    auto rejected=matcher.extractNormalized(empty,true);
+    TEST_ASSERT(!rejected.accepted);TEST_ASSERT(rejected.source_contour.empty());
+}
+void test_dual_class1_annotation_model_keeps_physical_ids() {
+    BinaryCornerExtractor::Config cfg;cfg.pixel_to_meter_scale_class0=.0059;cfg.pixel_to_meter_scale_class1=.00046;
+    cfg.mono_identity.enabled=true;cfg.mono_identity.class1_enabled=true;cfg.mono_identity.frontend="normalized";
+    cfg.mono_identity.quality_filter=true;cfg.mono_identity.partial_matching=true;
+    BinaryCornerExtractor e(cfg,"data/NewMuBan(reordered)");e.setMonoContext(true);e.setUseClass1(true);e.setDebugCapture(false);
+    auto canonical=shape();canonical[0].x+=1;canonical[1].x+=1;
+    e.setMonoCanonicalModel(canonical);
+    cv::Mat mask=cv::Mat::zeros(300,300,CV_8U);std::vector<cv::Point2f> expected;
+    std::vector<cv::Point> polygon;
+    for(auto p:canonical){auto q=p*4+cv::Point2f(40,40);expected.push_back(q);polygon.emplace_back(q);}
+    cv::fillPoly(mask,std::vector<std::vector<cv::Point>>{polygon},255);
+    auto result=e.extractMono(mask,{});TEST_ASSERT(result.success);TEST_ASSERT(result.good_matches.size()>=8);
+    for(size_t i=0;i<result.good_matches.size();++i)
+        TEST_ASSERT(cv::norm(result.pts_left_match[i]-expected[result.good_matches[i].trainIdx])<2);
+    TEST_ASSERT_THROWS(e.setMonoCanonicalModel(std::vector<cv::Point2f>(10,{0,0})),std::exception);
+    TEST_ASSERT(e.extractMono(mask,{}).pts_left_match==result.pts_left_match);
+}
+REGISTER_TEST(test_dual_class1_annotation_model_keeps_physical_ids);
+REGISTER_TEST(test_captured_contour_reuses_final_mask_geometry);
 REGISTER_TEST(test_quality_filter_preserves_sparse_model_ids);
 REGISTER_TEST(test_partial_correspondence_missing_and_extra_points);
 REGISTER_TEST(test_mono_identity_cyclic_and_reversed_perspective);

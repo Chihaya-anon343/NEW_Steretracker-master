@@ -20,6 +20,8 @@ const char* initName(PoseInitializationSource s) {
         case PoseInitializationSource::InitialPnP: return "InitialPnP";
         case PoseInitializationSource::DepthGuess: return "DepthGuess";
         case PoseInitializationSource::PreviousPose: return "PreviousPose";
+        case PoseInitializationSource::StereoTriangulation: return "StereoTriangulation";
+        case PoseInitializationSource::PlanarIppe: return "PlanarIppe";
         default: return "Provided";
     }
 }

@@ -19,6 +19,7 @@
 
 #include "feature/FeatureExtractor.hpp"
 #include "common/Types.hpp"
+#include "feature/TinyTargetRobustness.hpp"
 
 #include <opencv2/core.hpp>
 
@@ -37,6 +38,7 @@ public:
         double square_size_m_class1 = 0.04;   ///< class1 目标物理边长（米，0 则回退 class0）
         int roi_pad_pixels = 0;               ///< ROI 四周扩展像素数
         TemplateGeometryConfig template_geometry;
+        TinyTargetRobustnessConfig robustness;
     };
 
     /// 使用配置和模板目录构造。
@@ -71,6 +73,12 @@ public:
 
     /// 关闭后跳过 last_call_debug_ 调试快照 clone (可视化/单测需要时置 true, 默认 true 保持原行为)
     void setDebugCapture(bool v) { debug_capture_ = v; }
+
+    // MonoTracker explicitly enables this context. Stereo flow also invokes
+    // extractMono(), so choosing that entry point alone must not enable changes.
+    void setMonoContext(bool v) { mono_context_ = v; }
+    const TinyTargetRobustnessConfig& robustnessConfig() const { return config_.robustness; }
+    const TinyTargetQuality& lastQuality() const { return last_quality_; }
 
     // ---- Post-extraction state ----
 
@@ -114,10 +122,20 @@ private:
     std::vector<cv::Point2f> refineCorners(const cv::Mat& image,
                                             const std::vector<cv::Point2f>& corners,
                                             int win_size);
+    void prepareCanonicalReference();
+    void evaluateDirection(const cv::Mat& cleaned,
+                           const std::vector<cv::Point2f>& initial);
+    std::vector<cv::Point2f> guardedRefine(const cv::Mat& large,
+                                          const std::vector<cv::Point2f>& initial);
+    void resetLastCall();
+    void attachQuality(PipelineResult& result) const;
 
     Config config_;
     bool use_class1_ = false;                    ///< 当前使用 class1 尺寸
     bool debug_capture_ = true;                  ///< last_call_debug_ 调试快照开关
+    bool mono_context_ = false;
+    cv::Mat canonical_reference_;
+    TinyTargetQuality last_quality_;
     std::vector<TemplateData> templates_;       ///< 来自 NewMuBan 的角点模板
     TemplateData template_data_;                 ///< 存储用于 GPNP 的 pts_3d
 

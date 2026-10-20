@@ -88,9 +88,13 @@ public:
 
     /// 关闭后跳过 last_*_ 调试快照 clone (可视化/单测需要时置 true, 默认 true 保持原行为)
     void setDebugCapture(bool v) { debug_capture_ = v; }
+    bool debugCapture() const { return debug_capture_; }
     // Only MonoTracker enables this context; StereoTracker also calls extractMono
     // for LK, so method name alone must never activate the new front end.
     void setMonoContext(bool v) { mono_context_ = v; }
+    /// Dedicated DualROI extractor: annotation row IDs become canonical IDs.
+    /// Does not alter physical scale or the legacy/stereo template cache.
+    void setMonoCanonicalModel(const std::vector<cv::Point2f>& points);
     const MonoCornerIdentityResult& lastMonoIdentity() const { return last_mono_identity_; }
 
     // ---- 提取后状态 ----

@@ -1,3 +1,4 @@
+#include "utils/PoseAxisDisplay.hpp"
 #include "tracker/StereoTracker.hpp"
 #include "utils/AsyncImageSaver.hpp"
 #include <opencv2/imgproc.hpp>
@@ -49,6 +50,7 @@ void writeDisparity(const PipelineResult& r,const std::string& directory,int fra
 
 PipelineResult StereoTracker::processDualRoiFlow(const cv::Mat& left, const cv::Mat& right,
                                                 const RoiGroup& group, bool visualize, PoseEstimate& pose) {
+    if(config_.stereo_robustness.enabled)return processRobustStereo(left,right,group,visualize,pose);
     const auto& cfg=config_.stereo_flow;
     auto [lc,lg]=loadImage(left,visualize);
     auto [rc,rg]=loadImage(right,visualize);
@@ -411,7 +413,12 @@ void StereoTracker::renderDualFlowResult(const PipelineResult& result,const cv::
         const cv::Scalar c=region?cv::Scalar(80,255,80):cv::Scalar(0,220,255);
         for(auto view:std::vector<std::pair<cv::Mat*,cv::Point2f>>{{&l,result.pts_left_good[i]},{&r,result.pts_right_good[i]}}) {
             cv::circle(*view.first,view.second,4,c,1);
-            cv::putText(*view.first,std::to_string(region)+":"+std::to_string(original),view.second+cv::Point2f(4,-4),
+            int label=original;
+            if(config_.stereo_robustness.enabled&&i<result.flow_template_indices.size()) {
+                label=result.flow_template_indices[i];
+                if(region&&group.is_dual&&!result.is_class1&&label>=int(dual_bc_tmpl_pts3d_.size()))label-=int(dual_bc_tmpl_pts3d_.size());
+            }
+            cv::putText(*view.first,std::to_string(region)+":"+std::to_string(label),view.second+cv::Point2f(4,-4),
                         cv::FONT_HERSHEY_SIMPLEX,.4,c,1);
         }
     }
@@ -430,8 +437,22 @@ void StereoTracker::renderDualFlowResult(const PipelineResult& result,const cv::
         cv::Mat rotation(3,3,CV_64F),rv,tv=(cv::Mat_<double>(3,1)<<result.t.x(),result.t.y(),result.t.z());
         for(int i=0;i<3;++i)for(int j=0;j<3;++j)rotation.at<double>(i,j)=result.R(i,j);
         cv::Rodrigues(rotation,rv);std::vector<cv::Point2d> uv;
-        cv::projectPoints(std::vector<cv::Point3d>{{0,0,0},{50,0,0},{0,50,0},{0,0,50}},rv,tv,k,cv::Mat(),uv);
-        for(int i=1;i<4;++i)cv::line(axes,uv[0],uv[i],i==1?cv::Scalar(0,0,255):i==2?cv::Scalar(0,255,0):cv::Scalar(255,0,0),2);
+        const double axis=config_.stereo_robustness.enabled&&result.is_class1?5:50;
+        cv::projectPoints(std::vector<cv::Point3d>{{0,0,0},{axis,0,0},{0,axis,0},{0,0,utils::upNormalZ(axis, result.t.z())}},rv,tv,k,cv::Mat(),uv);
+        for(int i=1;i<3;++i)cv::line(axes,uv[0],uv[i],i==1?cv::Scalar(0,0,255):cv::Scalar(0,255,0),2);
+        utils::drawUpNormal(axes,uv[0],uv[3]);
+        if(config_.stereo_robustness.enabled&&result.pose_source==PoseSource::StereoGpnp) {
+            cv::Mat right_axes=r.clone();
+            const Eigen::Matrix3d right_rotation=camera_.R_rl.transpose()*result.R;
+            const Eigen::Vector3d right_translation=camera_.R_rl.transpose()*(result.t-camera_.t_rl);
+            for(int i=0;i<3;++i){tv.at<double>(i)=right_translation(i);for(int j=0;j<3;++j)rotation.at<double>(i,j)=right_rotation(i,j);}
+            cv::Rodrigues(rotation,rv);
+            cv::projectPoints(std::vector<cv::Point3d>{{0,0,0},{axis,0,0},{0,axis,0},{0,0,utils::upNormalZ(axis,right_translation.z())}},rv,tv,k,cv::Mat(),uv);
+            for(int i=1;i<3;++i)cv::line(right_axes,uv[0],uv[i],i==1?cv::Scalar(0,0,255):cv::Scalar(0,255,0),2);
+            utils::drawUpNormal(right_axes,uv[0],uv[3]);
+            cv::Mat both;cv::hconcat(axes,right_axes,both);
+            panel(output_dir_+"/stereo_axes_lr"+suffix,both,"Actual observations + axes | left / right camera projection | -Z up");
+        }
         std::vector<int> model_index(result.pts_left_match.size(),-1);
         for(const auto& m:result.good_matches)if(m.queryIdx>=0&&m.queryIdx<static_cast<int>(model_index.size()))model_index[m.queryIdx]=m.trainIdx;
         auto projected_indices=result.idx_from_filtered;

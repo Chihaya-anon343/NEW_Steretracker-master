@@ -1,3 +1,4 @@
+#include "utils/PoseAxisDisplay.hpp"
 /**
  * @file MonoTracker.cpp
  * @brief 单目追踪器实现。
@@ -5,6 +6,8 @@
 
 #include "tracker/MonoTracker.hpp"
 #include "common/TemplateGeometry.hpp"
+#include "common/TinyTargetPolicy.hpp"
+#include "common/MonoDualRoiPolicy.hpp"
 #include "common/GeometryUtils.hpp"
 #include "feature/BinaryCornerExtractor.hpp"
 #include "feature/TinyTargetExtractor.hpp"
@@ -25,6 +28,109 @@
 namespace gpnp {
 
 namespace {
+void copyTtDiagnostics(PipelineResult& target, const PipelineResult& source) {
+  target.tt_status = source.tt_status;
+  target.tt_legacy_iou = source.tt_legacy_iou;
+  target.tt_direction_iou = source.tt_direction_iou;
+  target.tt_direction_gap = source.tt_direction_gap;
+  target.tt_quadrant = source.tt_quadrant;
+  target.tt_refined_count = source.tt_refined_count;
+  target.tt_max_refine_shift_px = source.tt_max_refine_shift_px;
+}
+
+void saveTtQualityPanel(const TinyTargetExtractor& extractor, const PipelineResult& local,
+                        const std::string& path) {
+  const auto& q = extractor.lastQuality();
+  if (local.left_color.empty() || q.initial_corners.empty()) return;
+  const int size = 300;
+  auto thumbnail = [&](const cv::Mat& input) {
+    cv::Mat panel(size, size, CV_8UC3, cv::Scalar(25, 25, 25));
+    if (input.empty()) return panel;
+    cv::Mat color;
+    if (input.channels() == 1) cv::cvtColor(input, color, cv::COLOR_GRAY2BGR);
+    else color = input;
+    const double scale = std::min(double(size) / color.cols, double(size) / color.rows);
+    cv::Mat resized;
+    cv::resize(color, resized, {}, scale, scale, cv::INTER_NEAREST);
+    resized.copyTo(panel(cv::Rect(0, 0, resized.cols, resized.rows)));
+    return panel;
+  };
+  // Virtual rectangle vertices can lie outside the cropped foreground ROI.
+  // Pad the diagnostic canvas so all four are visible without moving observations.
+  float x_min = 0, y_min = 0, x_max = float(local.left_color.cols - 1), y_max = float(local.left_color.rows - 1);
+  for (const auto* points : {&q.initial_corners, &q.final_corners})
+    for (const auto& p : *points) if (std::isfinite(p.x) && std::isfinite(p.y)) {
+      x_min = std::min(x_min, p.x); y_min = std::min(y_min, p.y);
+      x_max = std::max(x_max, p.x); y_max = std::max(y_max, p.y);
+    }
+  const int left = std::max(0, int(std::ceil(-x_min))) + 2;
+  const int top = std::max(0, int(std::ceil(-y_min))) + 2;
+  cv::Mat diagnostic;
+  cv::copyMakeBorder(local.left_color, diagnostic, top,
+      std::max(0, int(std::ceil(y_max - local.left_color.rows + 1))) + 2, left,
+      std::max(0, int(std::ceil(x_max - local.left_color.cols + 1))) + 2,
+      cv::BORDER_CONSTANT, {15, 15, 15});
+  cv::Mat measured = thumbnail(diagnostic);
+  const float scale = std::min(float(size) / diagnostic.cols, float(size) / diagnostic.rows);
+  const cv::Point2f offset{float(left), float(top)};
+  for (size_t i = 0; i < q.initial_corners.size(); ++i) {
+    cv::circle(measured, (q.initial_corners[i] + offset) * scale, 5, {0, 255, 255}, 1, cv::LINE_AA);
+    if (i < q.final_corners.size()) {
+      const auto p = (q.final_corners[i] + offset) * scale;
+      cv::circle(measured, p, 3, {0, 0, 255}, -1, cv::LINE_AA);
+      cv::putText(measured, std::to_string(i),
+          {std::clamp(cvRound(p.x) + 6, 0, size - 20), std::clamp(cvRound(p.y) - 6, 15, size - 3)},
+          cv::FONT_HERSHEY_SIMPLEX, .5, {0, 255, 0}, 1, cv::LINE_AA);
+    }
+  }
+  std::vector<cv::Mat> panels{measured, thumbnail(q.normalized), thumbnail(q.reference)};
+  const char* titles[] = {"TT: yellow initial / red emitted", "coarse normalized observation", "canonical direction reference"};
+  for (int i = 0; i < 3; ++i) {
+    cv::copyMakeBorder(panels[i], panels[i], 25, 0, 0, 0, cv::BORDER_CONSTANT, {25, 25, 25});
+    cv::putText(panels[i], titles[i], {5, 17}, cv::FONT_HERSHEY_SIMPLEX, .4, {235, 235, 235}, 1);
+  }
+  cv::Mat output;
+  cv::hconcat(panels, output);
+  cv::copyMakeBorder(output, output, 47, 0, 0, 0, cv::BORDER_CONSTANT, {25, 25, 25});
+  std::ostringstream text;
+  text << (local.failure_reason.empty() ? q.status : local.failure_reason)
+       << " legacy=" << q.legacy_iou << " direction=" << q.direction_iou << " gap=" << q.direction_gap;
+  cv::putText(output, text.str(), {7, 18}, cv::FONT_HERSHEY_SIMPLEX, .44, {235, 235, 235}, 1);
+  text.str("");
+  text << "quadrant=" << q.quadrant << " refined=" << q.refined_count << "/4  max accepted shift="
+       << q.max_refine_shift_px << " original px";
+  cv::putText(output, text.str(), {7, 39}, cv::FONT_HERSHEY_SIMPLEX, .43, {235, 235, 235}, 1);
+  utils::AsyncImageSaver::write(path, output);
+}
+
+TinyTargetRoiEvidence ttRoiEvidence(const PipelineResult& result,
+                                    const TinyTargetExtractor& extractor) {
+  TinyTargetRoiEvidence evidence;
+  evidence.extracted = result.success;
+  evidence.points = static_cast<int>(result.pts_left_match.size());
+  const auto& quality = extractor.lastQuality();
+  evidence.legacy_iou = quality.legacy_iou;
+  evidence.direction_iou = quality.direction_iou;
+  evidence.direction_gap = quality.direction_gap;
+  evidence.geometry_valid = quality.geometry_valid;
+  const auto& robust = extractor.robustnessConfig();
+  evidence.emitted_direction_consistent = quality.direction_reliable &&
+      ((robust.enabled && robust.direction_match) ||
+       (quality.quadrant >= 0 && quality.quadrant == quality.legacy_quadrant));
+  if (!result.pts_left_match.empty()) {
+    cv::Point2f lo = result.pts_left_match.front(), hi = lo;
+    evidence.finite = true;
+    for (auto p : result.pts_left_match) {
+      evidence.finite = evidence.finite && std::isfinite(p.x) && std::isfinite(p.y);
+      lo.x = std::min(lo.x, p.x); lo.y = std::min(lo.y, p.y);
+      hi.x = std::max(hi.x, p.x); hi.y = std::max(hi.y, p.y);
+    }
+    evidence.span_x = hi.x - lo.x;
+    evidence.span_y = hi.y - lo.y;
+  }
+  return evidence;
+}
+
 int physicalCornerId(const PipelineResult &result, size_t index) {
   return index < result.good_matches.size()
              ? result.good_matches[index].trainIdx
@@ -163,6 +269,37 @@ MonoTracker::processCandidates(const cv::Mat &image, bool visualize,
   tiny_extractor_->setDebugCapture(visualize);
   int checked = 0, selected = -1;
   std::vector<std::string> reasons;
+  std::ostringstream verification;
+  verification << '[';
+  int attempts = 0;
+  auto recordAttempt = [&](int index, bool class1, const RoiRect& roi,
+                           const char* strategy, const PipelineResult& observation,
+                           double shape, const std::string& reason,
+                           const TinyTargetRoiEvidence* tt = nullptr) {
+    if (attempts++) verification << ',';
+    auto number = [&](double value) {
+      if (std::isfinite(value)) verification << value;
+      else verification << "null";
+    };
+    verification << "{\"candidate\":" << index << ",\"class\":" << (class1 ? 1 : 0)
+                 << ",\"roi\":[" << roi.x << ',' << roi.y << ',' << roi.width << ',' << roi.height
+                 << "],\"strategy\":\"" << strategy << "\",\"extracted\":"
+                 << (observation.success ? "true" : "false") << ",\"points\":"
+                 << observation.pts_left_match.size() << ",\"shape\":";
+    number(shape);
+    verification << ",\"decision\":\"" << reason << '"';
+    if (std::string(strategy) == "TT")
+      verification << ",\"extraction_status\":\"" << observation.tt_status << '"';
+    if (tt) {
+      verification << ",\"span_x\":"; number(tt->span_x);
+      verification << ",\"span_y\":"; number(tt->span_y);
+      verification << ",\"direction_iou\":"; number(tt->direction_iou);
+      verification << ",\"direction_gap\":"; number(tt->direction_gap);
+      verification << ",\"geometry_valid\":" << (tt->geometry_valid ? "true" : "false")
+                   << ",\"direction_consistent\":" << (tt->emitted_direction_consistent ? "true" : "false");
+    }
+    verification << '}';
+  };
   for (int i = 0;
        i < std::min((int)ranked.size(), config_.roi_selection.max_candidates);
        ++i) {
@@ -217,11 +354,16 @@ MonoTracker::processCandidates(const cv::Mat &image, bool visualize,
       prepared_bc_ = binary_extractor_->extractMono(gray, image(rc));
       has_prepared_bc_ = !short_primary;
       good = credible(prepared_bc_, binary_extractor_->lastMatchOverlap());
+      recordAttempt(i, class1, roi, "BC", prepared_bc_, binary_extractor_->lastMatchOverlap(),
+                    good ? "bc_accepted" : "bc_appearance_or_observation_invalid");
     }
     if (!good) {
       prepared_tt_ = tiny_extractor_->extractMono(gray, image(rc));
       has_prepared_tt_ = !short_primary;
-      good = credible(prepared_tt_, tiny_extractor_->lastMatchOverlap());
+      auto evidence = ttRoiEvidence(prepared_tt_, *tiny_extractor_);
+      const auto decision = evaluateTinyTargetRoi(evidence, config_.roi_selection, class1, roi.width, roi.height);
+      good = decision.accepted;
+      recordAttempt(i, class1, roi, "TT", prepared_tt_, evidence.legacy_iou, decision.reason, &evidence);
     }
     if (good) {
       selected = i;
@@ -253,6 +395,8 @@ MonoTracker::processCandidates(const cv::Mat &image, bool visualize,
   }
   has_prepared_bc_ = has_prepared_tt_ = false;
   result.roi_candidates = (int)ranked.size();
+  verification << ']';
+  result.roi_verification_details = verification.str();
   result.roi_verified = checked;
   result.roi_selected = selected;
   result.roi_selection_reason =
@@ -310,8 +454,22 @@ MonoTracker::MonoTracker(const Eigen::Matrix3d& K,
     camera_ = makeStereoCameraParams(K, R_rl, t_rl);
     config_ = config;
 
-    initExtractors(template_path, binary_cfg, binary_template_dir, tiny_cfg, tiny_template_dir);
+    auto tt_config = tiny_cfg;
+    tt_config.robustness.diagnostics = tt_config.robustness.diagnostics ||
+                                      config.roi_selection.tt_verification.enabled;
+    initExtractors(template_path, binary_cfg, binary_template_dir, tt_config, tiny_template_dir);
     binary_extractor_->setMonoContext(true);
+    tiny_extractor_->setMonoContext(true);
+    if(config_.mono_dual_roi.enabled) {
+        auto c=binary_cfg;
+        c.mono_identity.enabled=true;
+        c.mono_identity.class1_enabled=true;
+        c.mono_identity.frontend="normalized";
+        c.mono_identity.quality_filter=true;
+        c.mono_identity.partial_matching=true;
+        dual_class1_bc_=std::make_unique<BinaryCornerExtractor>(c,binary_template_dir);
+        dual_class1_bc_->setMonoContext(true);
+    }
 }
 
 // ============================================================
@@ -405,12 +563,19 @@ void MonoTracker::prepareDualBcTemplate() {
     if (!config_.dual_roi_class1_points_path.empty()) {
         auto anno = readCorners(config_.dual_roi_class1_points_path);
         if (anno.size() >= 4) {
+            if(config_.mono_dual_roi.enabled) {
+                // Annotation rows are the physical IDs. The concave upper
+                // corner of class1 can be closest to vertical from its centroid;
+                // rotating the row sequence around that centroid changes IDs.
+                dual_c1_tmpl_corners_=anno;
+            } else {
             cv::Point2f ctr(0.0f, 0.0f);
             for (const auto& p : anno) { ctr.x += p.x; ctr.y += p.y; }
             ctr *= 1.0f / static_cast<float>(anno.size());
             auto order = BinaryCornerExtractor::reorderByGeometry(anno, ctr, 0.0, -1.0);
             dual_c1_tmpl_corners_.reserve(order.size());
             for (int idx : order) dual_c1_tmpl_corners_.push_back(anno[idx]);
+            }
         } else {
             std::cerr << "[DualRoi] class1 annotation unusable (" << anno.size()
                       << " pts): " << config_.dual_roi_class1_points_path
@@ -437,6 +602,8 @@ void MonoTracker::prepareDualBcTemplate() {
     // The annotation's previous board-space center must not be added twice.
     placeTemplateInClass0(dual_bc_tmpl_pts3d_, false, config_.template_geometry);
     placeTemplateInClass0(dual_c1_tmpl_pts3d_, true, config_.template_geometry);
+    if(dual_class1_bc_ && dual_c1_tmpl_corners_.size()==10)
+        dual_class1_bc_->setMonoCanonicalModel(dual_c1_tmpl_corners_);
     dual_bc_template_ready_ = true;
     if (verbose_console_)
         std::cout << "[DualRoi] BC template ready: c0=" << dual_bc_tmpl_corners_.size()
@@ -469,6 +636,9 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     // 消融开关 (config: strategies.dual_roi.tier1_only): true = 屏蔽 Tier3(class1 链)/
     // 巨型 primary 短路, 仅保留 Tier1 (BC class0 解算)
     const bool kDualRoiTier1Only = config_.dual_roi_tier1_only;
+    const auto& dual_policy=config_.mono_dual_roi;
+    BinaryCornerExtractor* class1_bc=dual_class1_bc_ ? dual_class1_bc_.get() : binary_extractor_.get();
+    if(dual_class1_bc_)dual_class1_bc_->setDebugCapture(visualize);
 
     // BC 二值化过程条图 (成功/失败路径共用 —— 失败帧也要可视化, 排查主证据)
     auto saveBcProcessPanel = [&]() {
@@ -558,12 +728,14 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     cv::Mat left_c0_gray, left_c0_color;
     if (!primary_spans_frame) {
         cv::Rect pri_rc(left_pri.x, left_pri.y, left_pri.width, left_pri.height);
-        cv::cvtColor(left_img(pri_rc), left_c0_gray, cv::COLOR_BGR2GRAY);
+        if(left_img.channels()==1)left_c0_gray=left_img(pri_rc);
+        else cv::cvtColor(left_img(pri_rc), left_c0_gray, cv::COLOR_BGR2GRAY);
         left_c0_color = left_img(pri_rc);
     }
     cv::Rect sec_rc(left_sec.x, left_sec.y, left_sec.width, left_sec.height);
     cv::Mat left_c1_gray;
-    cv::cvtColor(left_img(sec_rc), left_c1_gray, cv::COLOR_BGR2GRAY);
+    if(left_img.channels()==1)left_c1_gray=left_img(sec_rc);
+    else cv::cvtColor(left_img(sec_rc), left_c1_gray, cv::COLOR_BGR2GRAY);
     cv::Mat left_c1_color = left_img(sec_rc);
 
     // 可视化/面板用全帧引用（不复制；所有画图处均先 clone）
@@ -618,6 +790,10 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     }
     n_bc_use = explicit_ids ? (int)result_bc.good_matches.size()
                             : ((n_bc == n_bc_3d) ? n_bc : 0);
+    if(dual_policy.enabled && !monoDualMatchesValid(result_bc,dual_bc_tmpl_pts3d_)) {
+        n_bc_use=0;
+        routeStep("C0:invalid_physical_correspondences");
+    }
     for (int i = 0; i < n_bc_use; ++i) {
       const int id = explicit_ids ? result_bc.good_matches[i].trainIdx : i;
       if (id < 0 || id >= n_bc_3d)
@@ -700,21 +876,27 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     //     角点数波动/多余角点由门限与唯一性自然剔除。匹配对多于 Tier1a
     //     时联合重解 (P0 作 seed), 否则保留 P0。
     // ================================================================
-    if (pose.success && !dual_c1_tmpl_pts3d_.empty() && !left_c1_gray.empty()) {
+    const int class1_tiny_area=tiny_max_area_class1_>0?tiny_max_area_class1_:tiny_max_area_;
+    const bool class1_tiny=dual_policy.enabled && dual_policy.size_aware_class1 &&
+        left_sec.width*left_sec.height<=class1_tiny_area;
+    if(pose.success && class1_tiny)routeStep("Tier1b(BCJ) SKIP[class1 tiny, keep primary]");
+    if (pose.success && !class1_tiny && !dual_c1_tmpl_pts3d_.empty() && !left_c1_gray.empty()) {
         auto t_c1_ext = std::chrono::steady_clock::now();
         // Secondary observations are class1 even though their 3D coordinates
         // come from the explicit joint model below. Restore class0 immediately
         // so later primary frames and visualization keep their original scale.
-        binary_extractor_->setUseClass1(true);
-        PipelineResult r_c1 = binary_extractor_->extractMono(left_c1_gray, left_c1_color);
-        binary_extractor_->setUseClass1(false);
-        if(visualize && !output_dir_.empty()) saveMonoIdentityPanel(*binary_extractor_,r_c1,
+        class1_bc->setUseClass1(true);
+        PipelineResult r_c1 = class1_bc->extractMono(left_c1_gray, left_c1_color);
+        class1_bc->setUseClass1(false);
+        if(visualize && !output_dir_.empty()) saveMonoIdentityPanel(*class1_bc,r_c1,
             output_dir_+"/mono_identity_joint_c1_f"+std::to_string(current_frame_)+".png");
         extract_ms += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_c1_ext).count();
         int n_c1 = static_cast<int>(r_c1.pts_left_match.size());
 
-        if (n_c1 < 4) {
+        if (!r_c1.success || n_c1 < 4 ||
+            (dual_policy.enabled && (dual_c1_tmpl_pts3d_.size()!=10 ||
+                !monoDualMatchesValid(r_c1,dual_c1_tmpl_pts3d_)))) {
             routeStep("Tier1b(BCJ) SKIP[c1 corners=" + std::to_string(n_c1) + " <4]");
         } else {
             // 观测集: c0 角点 + c1 角点 (全图坐标)
@@ -759,6 +941,13 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                       i < (int)result_bc.good_matches.size() &&
                       j != result_bc.good_matches[i].trainIdx)
                     continue;
+                  // Reliable canonical class1 IDs cannot be reassigned by P0.
+                  if(dual_policy.enabled && obs_is_c1[i]) {
+                    const int index=i-(int)result_bc.pts_left_match.size();
+                    if(index<0 || index>=(int)r_c1.good_matches.size() ||
+                       j!=(int)dual_bc_tmpl_pts3d_.size()+r_c1.good_matches[index].trainIdx)
+                        continue;
+                  }
                   double dx = obs[i].x - pred[j].x;
                   double dy = obs[i].y - pred[j].y;
                   double d = std::sqrt(dx * dx + dy * dy);
@@ -798,11 +987,13 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 p0_seed.t = pose.t;
                 auto t_j = std::chrono::steady_clock::now();
                 PoseEstimate pj = mono_pnp_.solve(jp2d, jp3d, camera_.K, &p0_seed,
-                                                  config_.temporal.tie_epsilon_px);
+                                                  config_.temporal.tie_epsilon_px,
+                                                  dual_policy.enabled?std::max(4,result_bc.pose_min_inliers):4);
                 bool joint_ok = pj.success;
                 if (joint_ok && use_seed &&
                     !motionGatePass(pj, seed, nullptr, false, "DualRoi-BCJ", true)) {
-                    PoseEstimate pc = mono_pnp_.solve(jp2d, jp3d, camera_.K, nullptr, 0.0);
+                    PoseEstimate pc = mono_pnp_.solve(jp2d, jp3d, camera_.K, nullptr, 0.0,
+                                                     dual_policy.enabled?std::max(4,result_bc.pose_min_inliers):4);
                     if (pc.success) {
                         pj = pc;
                     } else {
@@ -812,6 +1003,14 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 pnp_ms += std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - t_j).count();
 
+                std::string joint_rejection;
+                if(joint_ok && dual_policy.enabled && dual_policy.joint_quality_check) {
+                    std::vector<Eigen::Vector3d> secondary_model;
+                    for(int id:jidx_c1)secondary_model.push_back(all_3d[id]);
+                    joint_rejection=checkMonoDualJoint(pose,pj,merged_pts_2d,merged_pts_3d,
+                        j2d_c1,secondary_model,camera_.K,dual_policy);
+                    joint_ok=joint_rejection.empty();
+                }
                 if (joint_ok) {
                     pose = pj;
                     joint_used = true;
@@ -832,7 +1031,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 } else {
                     routeStep("Tier1b(BCJ c0=" + std::to_string(static_cast<int>(j2d_c0.size()))
                               + "+c1=" + std::to_string(static_cast<int>(j2d_c1.size()))
-                              + ") FAIL[pnp]");
+                              + ") FAIL["+(joint_rejection.empty()?"pnp":joint_rejection)+"]");
                 }
             }
         }
@@ -893,7 +1092,6 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         result.pts_left_match  = merged_pts_2d;
         result.pts_left_good   = merged_pts_2d;
     }
-    result.n_template_match=(int)result.good_matches.size();
     result.left_color      = left_color_orig;
     result.is_first_frame  = is_first;
 
@@ -914,6 +1112,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         p.y += left_pri.y;
       }
     }
+    result.n_template_match=(int)result.good_matches.size();
     if (pose.success) {
         finalizePose(result, pose);
     }
@@ -923,6 +1122,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
     // "DualRoi_BC"; class1 链胜出保留 C1 命名
     result.strategy_name = c1_fallback_used ? c1_strategy
                          : (joint_used ? "DualRoi_BCJ" : "DualRoi_BC");
+    result.fallback_used=c1_fallback_used;
     if(!pose.success)result.failure_reason="dual_roi_chain_failed";
 
     result.n_matched   = total_use;
@@ -954,7 +1154,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
             cv::putText(p0, "class0 (BC)",
                 cv::Point(left_pri.x + 4, left_pri.y + 14),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(255, 0, 0), 1);
-            cv::putText(p0, "class1 (BC)",
+            cv::putText(p0, "class1 (BC / TT fallback)",
                 cv::Point(left_sec.x + 4, left_sec.y + 14),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 0), 1);
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_overview" + prefix + ".png", p0);
@@ -994,10 +1194,10 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                 Eigen::Vector3d o  = pose.R * Eigen::Vector3d(0,            0,             0) + pose.t;
                 Eigen::Vector3d ax = pose.R * Eigen::Vector3d(axis_len,     0,             0) + pose.t;
                 Eigen::Vector3d ay = pose.R * Eigen::Vector3d(0,            axis_len,      0) + pose.t;
-                Eigen::Vector3d az = pose.R * Eigen::Vector3d(0,            0,             axis_len) + pose.t;
+                Eigen::Vector3d az = pose.R * Eigen::Vector3d(0,            0,             utils::upNormalZ(axis_len, pose.t.z())) + pose.t;
                 cv::line(p2, projPoint(o), projPoint(ax), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
                 cv::line(p2, projPoint(o), projPoint(ay), cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
-                cv::line(p2, projPoint(o), projPoint(az), cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
+                utils::drawUpNormal(p2, projPoint(o), projPoint(az), 2);
             } else {
                 // 无有效位姿不画轴（单位阵 pose 画轴无意义），叠加合并特征点便于排查
                 for (int i = 0; i < total_use; ++i) {
@@ -1010,6 +1210,18 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
                     << ", AK=" << (total_use - n_bc_use) << ")";
                 cv::putText(p2, oss.str(), cv::Point(10, 30),
                             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
+            }
+            // Always show actual emitted observations and their physical IDs,
+            // including successful poses (previously axes hid these points).
+            for(size_t i=0;i<merged_pts_2d.size();++i) {
+                const auto p=merged_pts_2d[i];
+                const bool c1=c1_fallback_used || (int)i>=n_bc_use;
+                const int id=i<result.good_matches.size()?result.good_matches[i].trainIdx:(int)i;
+                const std::string label=(c1?"C1:":"C0:")+std::to_string(
+                    c1&&!c1_fallback_used?id-(int)dual_bc_tmpl_pts3d_.size():id);
+                cv::circle(p2,p,3,c1?AK_COLOR:BC_COLOR,-1,cv::LINE_AA);
+                cv::putText(p2,label,p+cv::Point2f(4,-4),cv::FONT_HERSHEY_SIMPLEX,.4,
+                            c1?AK_COLOR:BC_COLOR,1,cv::LINE_AA);
             }
             utils::AsyncImageSaver::write(output_dir_ + "/dual_roi_mono_axes" + prefix + ".png", p2);
         }
@@ -1122,6 +1334,7 @@ PipelineResult MonoTracker::processDualRoi(const cv::Mat& left_img,
         std::chrono::steady_clock::now() - t_dual_start).count();
 
     routeStep(pose.success ? "FRAME-OK" : "FRAME-FAIL");
+    result.route_detail=route;
     if (verbose_console_)
         std::cout << "[DualRoi][Mono] Route: " << route << "\n";
 
@@ -1167,13 +1380,20 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         BinaryCornerExtractor* bc;
         TinyTargetExtractor* tt;
         ~Class1ScaleGuard() { bc->setUseClass1(false); tt->setUseClass1(false); }
-    } guard{binary_extractor_.get(), tiny_extractor_.get()};
-    binary_extractor_->setUseClass1(true);
+    } guard{dual_class1_bc_?dual_class1_bc_.get():binary_extractor_.get(), tiny_extractor_.get()};
+    BinaryCornerExtractor* bc=guard.bc;
+    bc->setUseClass1(true);
     tiny_extractor_->setUseClass1(true);
 
-    FeatureExtractor* chain[] = {binary_extractor_.get(), tiny_extractor_.get()};
+    FeatureExtractor* chain[] = {bc, tiny_extractor_.get()};
     for (auto* ext : chain) {
         const bool is_bc = (ext->strategyType() == StrategyType::BinaryCorner);
+        const int tiny_area=tiny_max_area_class1_>0?tiny_max_area_class1_:tiny_max_area_;
+        if(is_bc && config_.mono_dual_roi.enabled && config_.mono_dual_roi.size_aware_class1 &&
+           left_sec.width*left_sec.height<=tiny_area) {
+            legFail("BC","skip_tiny_roi");
+            continue;
+        }
         if (verbose_console_)
             std::cout << "[DualRoi][Mono] class1 chain: " << ext->name()
                       << " on secondary ROI" << "\n";
@@ -1182,11 +1402,26 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         PipelineResult local = ext->extractMono(left_gray, left_color);
         extract_ms_acc += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_ext).count();
+        if(!output_dir_.empty() && visualize_detailed_ && bc->debugCapture()) {
+            // Snapshots must be saved before the next extractor call replaces them.
+            if(is_bc)saveMonoIdentityPanel(*bc,local,output_dir_+"/mono_identity_fallback_c1_f"+std::to_string(current_frame_)+".png");
+            else saveTtQualityPanel(*tiny_extractor_,local,output_dir_+"/mono_tt_quality_dual_c1_f"+std::to_string(current_frame_)+".png");
+        }
+        if (!is_bc && config_.roi_selection.tt_verification.enabled && local.success) {
+            const auto decision = evaluateTinyTargetRoi(ttRoiEvidence(local, *tiny_extractor_),
+                config_.roi_selection, true, left_gray.cols, left_gray.rows);
+            if (!decision.accepted) {
+                local.success = false;
+                local.failure_reason = decision.reason;
+                local.tt_status = decision.reason;
+            }
+        }
+        if (!is_bc && !local.success) copyTtDiagnostics(out_result, local);
         if (!(local.success && local.n_kp_left >= 3)) {
             if (verbose_console_)
                 std::cout << "  [DualRoi][Mono] class1 " << ext->name()
                           << " extraction failed" << "\n";
-            legFail(is_bc ? "BC" : "TT", "extract");
+            legFail(is_bc ? "BC" : "TT", local.failure_reason.empty() ? "extract" : local.failure_reason.c_str());
             continue;
         }
 
@@ -1198,7 +1433,14 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         for (auto& kp : local.kp_left) { kp.pt.x += sox; kp.pt.y += soy; }
 
         // 2D/3D 配对: good_matches[i].trainIdx → class1 3D 模板 (与 process 主链同规则)
-        const auto& pts3d = ext->templateData().pts_3d;
+        // New DualROI class1 BC uses exactly the annotation model of Tier1b.
+        // TT retains its distinct four-point physical model and IDs.
+        const auto& pts3d = is_bc && dual_class1_bc_ && dual_c1_tmpl_pts3d_.size()==10
+            ? dual_c1_tmpl_pts3d_ : ext->templateData().pts_3d;
+        if(config_.mono_dual_roi.enabled && !monoDualMatchesValid(local,pts3d)) {
+            legFail(is_bc?"BC":"TT","invalid_physical_correspondences");
+            continue;
+        }
         std::vector<cv::Point2f> pnp_2d;
         std::vector<Eigen::Vector3d> pnp_3d;
         pnp_2d.reserve(std::min(local.good_matches.size(), local.pts_left_match.size()));
@@ -1223,8 +1465,8 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         auto t_c1_pnp = std::chrono::steady_clock::now();
         PoseEstimate p = seed
             ? mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K, seed,
-                              config_.temporal.tie_epsilon_px)
-            : mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K);
+                              config_.temporal.tie_epsilon_px,local.pose_min_inliers)
+            : mono_pnp_.solve(pnp_2d, pnp_3d, camera_.K,nullptr,0,local.pose_min_inliers);
         pnp_ms_acc += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_c1_pnp).count();
         if (!p.success) {
@@ -1254,7 +1496,9 @@ std::pair<bool, PoseEstimate> MonoTracker::runDualRoiClass1Chain(
         out_result = std::move(local);
         out_pts3d = std::move(pnp_3d);
         out_strategy = is_bc ? "DualRoi_C1BC" : "DualRoi_C1TT";
-        if (out_route_detail) *out_route_detail = is_bc ? "BC" : "TT";
+        if (out_route_detail) *out_route_detail =
+            config_.mono_dual_roi.enabled && !fail_detail.empty()
+                ? fail_detail+"; "+(is_bc?"BC":"TT") : (is_bc?"BC":"TT");
         return {true, p};
     }
     return {false, PoseEstimate{}};
@@ -1358,8 +1602,20 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
           has_prepared_tt_ = false;
         } else
           local = ext->extractMono(left_gray_roi, left_color_roi);
+        if (ext == tiny_extractor_.get() && config_.roi_selection.tt_verification.enabled && local.success) {
+            const auto decision = evaluateTinyTargetRoi(ttRoiEvidence(local, *tiny_extractor_),
+                config_.roi_selection, use_c1, left_gray_roi.cols, left_gray_roi.rows);
+            if (!decision.accepted) {
+                local.success = false;
+                local.failure_reason = decision.reason;
+                local.tt_status = decision.reason;
+            }
+        }
         if(visualize && !output_dir_.empty() && ext->strategyType()==StrategyType::BinaryCorner)
             saveMonoIdentityPanel(*binary_extractor_,local,output_dir_+"/mono_identity_f"+std::to_string(current_frame_)+".png");
+        if (visualize && visualize_detailed_ && !output_dir_.empty() && ext == tiny_extractor_.get())
+            saveTtQualityPanel(*tiny_extractor_, local, output_dir_ + "/mono_tt_quality_f" + std::to_string(current_frame_) + ".png");
+        if (ext == tiny_extractor_.get() && !local.success) copyTtDiagnostics(result, local);
         extract_ms += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t_extract).count();
 
@@ -1552,13 +1808,13 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
                 cv::drawMarker(vis, pt, cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 8, 2);
             }
             if (result.success) {
-                std::vector<cv::Point3d> axis_pts = {{0,0,0}, {100,0,0}, {0,100,0}, {0,0,100}};
+                std::vector<cv::Point3d> axis_pts = {{0,0,0}, {100,0,0}, {0,100,0}, {0,0,utils::upNormalZ(100, result.t.z())}};
                 std::vector<cv::Point2d> img_pts;
                 cv::projectPoints(axis_pts, rvec, tvec_cv, K_cv, cv::Mat(), img_pts);
                 if (img_pts.size() == 4) {
                     cv::line(vis, img_pts[0], img_pts[1], cv::Scalar(0, 0, 255), 3);
                     cv::line(vis, img_pts[0], img_pts[2], cv::Scalar(0, 255, 0), 3);
-                    cv::line(vis, img_pts[0], img_pts[3], cv::Scalar(255, 0, 0), 3);
+                    utils::drawUpNormal(vis, img_pts[0], img_pts[3], 3);
                 }
             } else {
                 cv::putText(vis, "PnP FAIL", cv::Point(10, 30),
@@ -1583,14 +1839,14 @@ PipelineResult MonoTracker::process(const cv::Mat& left_img,
             Eigen::Vector3d o  = result.R * Eigen::Vector3d(0,0,0) + result.t;
             Eigen::Vector3d ax = result.R * Eigen::Vector3d(axis_len,0,0) + result.t;
             Eigen::Vector3d ay = result.R * Eigen::Vector3d(0,axis_len,0) + result.t;
-            Eigen::Vector3d az = result.R * Eigen::Vector3d(0,0,axis_len) + result.t;
+            Eigen::Vector3d az = result.R * Eigen::Vector3d(0,0,utils::upNormalZ(axis_len, result.t.z())) + result.t;
             cv::Point o_p  = proj(o);  o_p.x  -= expand_L.x; o_p.y  -= expand_L.y;
             cv::Point ax_p = proj(ax); ax_p.x -= expand_L.x; ax_p.y -= expand_L.y;
             cv::Point ay_p = proj(ay); ay_p.x -= expand_L.x; ay_p.y -= expand_L.y;
             cv::Point az_p = proj(az); az_p.x -= expand_L.x; az_p.y -= expand_L.y;
             cv::line(p_axes, o_p, ax_p, cv::Scalar(0,0,255), 2, cv::LINE_AA);
             cv::line(p_axes, o_p, ay_p, cv::Scalar(0,255,0), 2, cv::LINE_AA);
-            cv::line(p_axes, o_p, az_p, cv::Scalar(255,0,0), 2, cv::LINE_AA);
+            utils::drawUpNormal(p_axes, o_p, az_p, 2);
             // Draw matched points on axes panel (BC/TT 用小半径避免遮挡角点)
             const int pt_radius = (is_bc || is_tiny) ? 1 : 4;
             for (size_t i = 0; i < result.pts_left_match.size(); ++i) {

@@ -41,6 +41,8 @@ struct MonoCornerIdentityResult {
     int refined_points{0};
     double normalization_ms{0}, corners_ms{0}, refinement_ms{0}, validation_ms{0};
     std::vector<cv::Point2f> points, before_refinement;
+    // Capture-only external contour, reused by the extractor's debug display.
+    std::vector<cv::Point> source_contour;
     cv::Mat foreground;
     cv::Mat image_to_template, normalized, coarse_normalized, reference;
 };

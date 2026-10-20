@@ -11,8 +11,64 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 namespace gpnp {
+
+namespace {
+using Clock = std::chrono::steady_clock;
+double elapsedMs(Clock::time_point start) {
+    return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+}
+
+// atan2 winding gives four unique corners even at exact diamond orientations,
+// unlike independently selecting extrema of x+y and x-y.
+std::vector<cv::Point2f> uniqueWinding(std::vector<cv::Point2f> corners) {
+    if (corners.size() != 4) return {};
+    cv::Point2f center;
+    for (const auto& p : corners) center += p * .25f;
+    std::sort(corners.begin(), corners.end(), [&](const auto& a, const auto& b) {
+        return std::atan2(a.y - center.y, a.x - center.x) <
+               std::atan2(b.y - center.y, b.x - center.x);
+    });
+    auto first = std::min_element(corners.begin(), corners.end(), [](const auto& a, const auto& b) {
+        const double da = a.x + a.y, db = b.x + b.y;
+        if (std::abs(da - db) > 1e-4) return da < db;
+        return a.y != b.y ? a.y < b.y : a.x < b.x;
+    });
+    std::rotate(corners.begin(), first, corners.end());
+    return corners;
+}
+
+bool validQuad(const std::vector<cv::Point2f>& corners, double min_edge) {
+    if (corners.size() != 4) return false;
+    for (const auto& p : corners)
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) return false;
+    double sign = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        const auto a = corners[(i + 1) % 4] - corners[i];
+        const auto b = corners[(i + 2) % 4] - corners[(i + 1) % 4];
+        if (cv::norm(a) < min_edge) return false;
+        const double cross = a.x * b.y - a.y * b.x;
+        if (std::abs(cross) < 1e-6) return false;
+        if (i == 0) sign = cross;
+        else if (sign * cross <= 0.0) return false;
+    }
+    return std::abs(cv::contourArea(corners)) > min_edge * min_edge * .25;
+}
+
+cv::Mat normalizeQuad(const cv::Mat& mask, const std::vector<cv::Point2f>& corners,
+                      int side) {
+    if (!validQuad(corners, 1.0) || side < 8) return {};
+    const float hi = static_cast<float>(side - 2);
+    const std::vector<cv::Point2f> target{{1.f, 1.f}, {hi, 1.f}, {hi, hi}, {1.f, hi}};
+    cv::Mat normalized;
+    const cv::Mat H = cv::getPerspectiveTransform(corners, target);
+    cv::warpPerspective(mask, normalized, H, cv::Size(side, side),
+                        cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
+    return normalized;
+}
+} // namespace
 
 // ============================================================================
 // 构造 —— 从 NewMuBan 加载24个角点模板
@@ -22,6 +78,11 @@ TinyTargetExtractor::TinyTargetExtractor(const Config& config,
                                            const std::string& template_dir)
     : config_(config)
 {
+    validateTinyTargetRobustnessConfig(config_.robustness);
+    if (config_.scale_factor < 1 || config_.scale_factor > 8 ||
+        config_.target_size.width < 8 || config_.target_size.width > 512 ||
+        config_.target_size.height < 8 || config_.target_size.height > 512)
+        throw std::invalid_argument("Invalid TinyTarget scale_factor or target_size");
     templates_ = loadTemplates(template_dir, false);
     if (!templates_.empty()) {
         if (g_verbose_console)
@@ -31,6 +92,8 @@ TinyTargetExtractor::TinyTargetExtractor(const Config& config,
         std::cerr << "[TinyTarget] WARNING: No templates loaded from "
                   << template_dir << std::endl;
     }
+
+    prepareCanonicalReference();
 
     // 一次性初始化 3D 模板点（基于 square_size_m）
     initPts3d();
@@ -76,6 +139,8 @@ void TinyTargetExtractor::setTemplateData(const std::string& template_dir,
                                            double /*real_width_mm*/,
                                            double /*real_height_mm*/) {
     templates_ = loadTemplates(template_dir, false);
+    prepareCanonicalReference();
+    resetLastCall();
     if (!templates_.empty()) {
         if (g_verbose_console)
             std::cout << "[TinyTarget] Reloaded " << templates_.size()
@@ -87,15 +152,176 @@ void TinyTargetExtractor::setTemplateData(const std::string& template_dir,
 // 公共 extract() —— FeatureExtractor 接口
 // ============================================================================
 
+void TinyTargetExtractor::resetLastCall() {
+    last_best_angle_ = -1;
+    last_best_overlap_ = 0.0;
+    last_quality_ = TinyTargetQuality{};
+    last_call_debug_ = DebugImages{};
+    last_left_debug_ = DebugImages{};
+    last_right_debug_ = DebugImages{};
+}
+
+void TinyTargetExtractor::attachQuality(PipelineResult& result) const {
+    result.tt_status = last_quality_.status;
+    result.tt_legacy_iou = last_quality_.legacy_iou;
+    result.tt_direction_iou = last_quality_.direction_iou;
+    result.tt_direction_gap = last_quality_.direction_gap;
+    result.tt_quadrant = last_quality_.quadrant;
+    result.tt_refined_count = last_quality_.refined_count;
+    result.tt_max_refine_shift_px = last_quality_.max_refine_shift_px;
+    for (const auto& item : last_quality_.stage_ms)
+        result.timing["tt_" + item.first] = item.second;
+}
+
+void TinyTargetExtractor::prepareCanonicalReference() {
+    canonical_reference_.release();
+    const auto it = std::find_if(templates_.begin(), templates_.end(),
+                                [](const auto& t) { return t.angle == 0; });
+    if (it == templates_.end() || it->image_bool.empty()) return;
+    // Apply the same foreground semantics as the observation: retain the largest
+    // white component, fill holes and close/open before coarse normalization.
+    cv::Mat labels, stats, centroids;
+    const int count = cv::connectedComponentsWithStats(it->image_bool, labels, stats, centroids);
+    if (count < 2) return;
+    int best = 1;
+    for (int i = 2; i < count; ++i)
+        if (stats.at<int>(i, cv::CC_STAT_AREA) > stats.at<int>(best, cv::CC_STAT_AREA)) best = i;
+    cv::Mat mask = labels == best;
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (contours.empty()) return;
+    mask.setTo(0);
+    cv::drawContours(mask, contours, -1, cv::Scalar(255), cv::FILLED);
+    const auto kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
+    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (contours.empty()) return;
+    const auto best_contour = std::max_element(contours.begin(), contours.end(),
+        [](const auto& a, const auto& b) { return cv::contourArea(a) < cv::contourArea(b); });
+    cv::Point2f box[4];
+    cv::minAreaRect(*best_contour).points(box);
+    const auto ordered = uniqueWinding(std::vector<cv::Point2f>(box, box + 4));
+    canonical_reference_ = normalizeQuad(mask, ordered,
+        std::max(config_.target_size.width, config_.target_size.height));
+}
+
+void TinyTargetExtractor::evaluateDirection(const cv::Mat& cleaned,
+                                           const std::vector<cv::Point2f>& initial) {
+    const auto start = Clock::now();
+    if (!canonical_reference_.empty()) {
+        const cv::Mat normalized = normalizeQuad(cleaned, initial, canonical_reference_.cols);
+        if (!normalized.empty()) {
+            int best = -1;
+            double first = -1.0, second = -1.0;
+            cv::Mat candidate = normalized;
+            for (int q = 0; q < 4; ++q) {
+                if (q > 0) cv::rotate(candidate, candidate, cv::ROTATE_90_COUNTERCLOCKWISE);
+                const double score = calculateOverlap(candidate, canonical_reference_);
+                last_quality_.direction_scores[q] = score;
+                if (score > first) { second = first; first = score; best = q; }
+                else if (score > second) second = score;
+            }
+            last_quality_.quadrant = best;
+            last_quality_.direction_iou = std::max(0.0, first);
+            last_quality_.direction_gap = std::max(0.0, first - second);
+            last_quality_.direction_reliable = best >= 0 &&
+                first >= config_.robustness.min_direction_iou &&
+                first - second >= config_.robustness.min_direction_gap;
+            if (debug_capture_) {
+                last_quality_.normalized = normalized.clone();
+                last_quality_.reference = canonical_reference_.clone();
+            }
+        }
+    }
+    last_quality_.stage_ms["direction"] = elapsedMs(start);
+}
+
+std::vector<cv::Point2f> TinyTargetExtractor::guardedRefine(
+    const cv::Mat& large, const std::vector<cv::Point2f>& initial) {
+    const auto start = Clock::now();
+    const double sf = config_.scale_factor;
+    double edge = std::numeric_limits<double>::max();
+    for (int i = 0; i < 4; ++i)
+        edge = std::min(edge, cv::norm(initial[(i + 1) % 4] - initial[i]) / sf);
+    // Radius is expressed in original pixels. Do not span most of a tiny edge.
+    const double radius = std::min(1.75, std::max(.75, .06 * edge));
+    const int win = std::max(2, static_cast<int>(std::lround(radius * sf)));
+    const int border = win + 2;
+    cv::Mat padded;
+    cv::copyMakeBorder(large, padded, border, border, border, border, cv::BORDER_REPLICATE);
+    std::vector<cv::Point2f> result = initial;
+    last_quality_.accepted_refinement.assign(4, 0);
+    last_quality_.refined_count = 0;
+    for (int i = 0; i < 4; ++i) {
+        const auto p = initial[i];
+        // Replicated padding is available to the solver but is not independent
+        // evidence for a corner. A virtual or clipped corner can remain raw.
+        if (p.x < win || p.y < win || p.x >= large.cols - win || p.y >= large.rows - win)
+            continue;
+        cv::Mat patch;
+        cv::getRectSubPix(large, cv::Size(2 * win + 1, 2 * win + 1), p, patch);
+        cv::Mat dx, dy;
+        cv::Sobel(patch, dx, CV_32F, 1, 0, 3, 1.0 / 255.0);
+        cv::Sobel(patch, dy, CV_32F, 0, 1, 3, 1.0 / 255.0);
+        const double xx = cv::sum(dx.mul(dx))[0], yy = cv::sum(dy.mul(dy))[0];
+        const double xy = cv::sum(dx.mul(dy))[0];
+        const double trace = xx + yy;
+        const double delta = std::sqrt(std::max(0.0, (xx - yy) * (xx - yy) + 4.0 * xy * xy));
+        const double ratio = (trace - delta) / std::max(1e-12, trace + delta);
+        if (trace / patch.total() < 1e-4 || ratio < config_.robustness.min_gradient_ratio)
+            continue;
+        std::vector<cv::Point2f> proposed{p + cv::Point2f(static_cast<float>(border), static_cast<float>(border))};
+        cv::cornerSubPix(padded, proposed, cv::Size(win, win), cv::Size(-1, -1),
+            cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 50, .001));
+        const cv::Point2f refined = proposed[0] - cv::Point2f(static_cast<float>(border), static_cast<float>(border));
+        const double shift = cv::norm(refined - p) / sf;
+        if (std::isfinite(shift)) last_quality_.max_proposed_refine_shift_px = std::max(last_quality_.max_proposed_refine_shift_px, shift);
+        if (!std::isfinite(refined.x) || !std::isfinite(refined.y) ||
+            shift > config_.robustness.max_refine_shift_px ||
+            refined.x < 0 || refined.y < 0 || refined.x >= large.cols || refined.y >= large.rows)
+            continue;
+        result[i] = refined;
+        last_quality_.max_refine_shift_px = std::max(last_quality_.max_refine_shift_px, shift);
+        last_quality_.accepted_refinement[i] = 1;
+        ++last_quality_.refined_count;
+    }
+    bool consistent = validQuad(result, sf);
+    const double original_area = std::abs(cv::contourArea(initial));
+    const double ratio = std::abs(cv::contourArea(result)) / std::max(1.0, original_area);
+    consistent = consistent && ratio >= .65 && ratio <= 1.35;
+    for (int i = 0; consistent && i < 4; ++i) {
+        const double initial_edge = cv::norm(initial[(i + 1) % 4] - initial[i]);
+        const double refined_edge = cv::norm(result[(i + 1) % 4] - result[i]);
+        consistent = refined_edge >= .65 * initial_edge && refined_edge <= 1.35 * initial_edge;
+    }
+    if (!consistent) {
+        result = initial;
+        last_quality_.accepted_refinement.assign(4, 0);
+        last_quality_.refined_count = 0;
+        last_quality_.max_refine_shift_px = 0.0;
+    }
+    last_quality_.stage_ms["refinement"] = elapsedMs(start);
+    return result;
+}
+
 PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
                                              const cv::Mat& right_gray,
                                              const cv::Mat& left_color,
                                              const cv::Mat& right_color) {
+    resetLastCall();
+    // extract() is the legacy stereo entry even if an instance was previously
+    // configured for monocular work. Restore the owner context on every return.
+    const bool saved_context = mono_context_;
+    struct RestoreContext { bool& target; bool value; ~RestoreContext() { target = value; } } restore{mono_context_, saved_context};
+    mono_context_ = false;
     PipelineResult result;
     result.left_color = left_color;
     result.right_color = right_color;
 
     if (left_gray.empty()) {
+        last_quality_.status = "empty_input";
+        attachQuality(result);
         std::cerr << "[TinyTarget] extract() called with empty left image." << std::endl;
         return result;
     }
@@ -115,6 +341,7 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
     double best_overlap = 0.0;
     Status s_left = extract4Corners(left_gray, left_corners, best_angle, best_overlap);
     last_left_debug_ = last_call_debug_;
+    attachQuality(result);
 
     if (s_left != Status::Success || left_corners.size() != 4) {
         std::cerr << "[TinyTarget] Left extraction failed (status="
@@ -125,6 +352,7 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
 
     last_best_angle_ = best_angle;
     last_best_overlap_ = best_overlap;
+    const TinyTargetQuality left_quality = last_quality_;
 
     // ---- 步骤2: 从右图提取4个角点 ----
     std::vector<cv::Point2f> right_corners;
@@ -137,6 +365,7 @@ PipelineResult TinyTargetExtractor::extract(const cv::Mat& left_gray,
             right_corners.clear();
         }
     }
+    last_quality_ = left_quality;
 
     // ---- 步骤3: 按索引匹配左右（均为 TL→TR→BR→BL，各4个角点）----
     int n_stereo = (has_right && right_corners.size() == 4) ? 4 : 0;
@@ -207,8 +436,20 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     best_angle = -1;
     best_overlap = 0.0;
     last_call_debug_ = DebugImages{};
+    last_quality_ = TinyTargetQuality{};
+    last_quality_.status = "no_component";
 
-    if (roi_gray.empty()) return Status::EmptyInput;
+    if (roi_gray.empty()) { last_quality_.status = "empty_input"; return Status::EmptyInput; }
+    if (roi_gray.type() != CV_8UC1 || roi_gray.cols < 2 || roi_gray.rows < 2 ||
+        roi_gray.cols > std::numeric_limits<int>::max() / config_.scale_factor ||
+        roi_gray.rows > std::numeric_limits<int>::max() / config_.scale_factor) {
+        last_quality_.status = "invalid_size";
+        return Status::InvalidSize;
+    }
+
+    const bool robust = mono_context_ && config_.robustness.enabled;
+    const bool diagnostics = mono_context_ && (config_.robustness.diagnostics || robust);
+    const auto preprocessing_start = Clock::now();
 
     if (debug_capture_) last_call_debug_.roi_gray = roi_gray.clone();
 
@@ -308,6 +549,8 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     cv::morphologyEx(filled, cleaned, cv::MORPH_CLOSE, kernel);
     cv::morphologyEx(cleaned, cleaned, cv::MORPH_OPEN, kernel);
     if (debug_capture_) last_call_debug_.super_binary = cleaned.clone();
+    last_quality_.area_px = static_cast<double>(cv::countNonZero(cleaned)) / (sf * sf);
+    last_quality_.stage_ms["preprocess"] = elapsedMs(preprocessing_start);
 
     // ---- 3. 角度匹配：清理后的二值图（与角点提取共用同一张图）----
     if (!templates_.empty()) {
@@ -315,6 +558,9 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
         best_angle = match_res.best_angle;
         best_overlap = match_res.best_overlap;
     }
+    last_quality_.legacy_iou = best_overlap;
+    if (best_angle >= 0)
+        last_quality_.legacy_quadrant = static_cast<int>(std::round((360 - best_angle) / 90.0)) % 4;
 
     // 角点提取输入：清理后的单域实心二值图
     std::vector<std::vector<cv::Point>> contours;
@@ -329,24 +575,88 @@ Status TinyTargetExtractor::extract4Corners(const cv::Mat& roi_gray,
     cv::Point2f box_pts[4];
     rect.points(box_pts);
     std::vector<cv::Point2f> corners_large(box_pts, box_pts + 4);
-    corners_large = orderPoints(corners_large);
+    // Diagnostics use the unique winding, but must not alter legacy coordinates.
+    const auto unique_corners = uniqueWinding(corners_large);
+    corners_large = robust ? unique_corners : orderPoints(corners_large);
+
+    const auto bbox = cv::boundingRect(*best_contour);
+    last_quality_.span_x_px = (bbox.width - 1.0) / sf;
+    last_quality_.span_y_px = (bbox.height - 1.0) / sf;
+    last_quality_.span_px = std::min(last_quality_.span_x_px, last_quality_.span_y_px);
+    last_quality_.geometry_valid = validQuad(unique_corners, sf) &&
+        last_quality_.span_px >= config_.robustness.min_span_px;
+    last_quality_.initial_corners.reserve(4);
+    for (const auto& p : unique_corners)
+        last_quality_.initial_corners.emplace_back(p.x / sf, p.y / sf);
+    if (diagnostics) evaluateDirection(cleaned, unique_corners);
+    if (robust && !last_quality_.geometry_valid) {
+        last_quality_.status = "invalid_geometry";
+        return Status::InsufficientFeatures;
+    }
+    if (robust && config_.robustness.direction_match) {
+        if (canonical_reference_.empty()) {
+            last_quality_.status = "no_templates";
+            return Status::InsufficientFeatures;
+        }
+        if (last_quality_.direction_iou < config_.robustness.min_direction_iou) {
+            last_quality_.status = "direction_low_iou";
+            return Status::InsufficientFeatures;
+        }
+        if (!last_quality_.direction_reliable) {
+            last_quality_.status = "direction_ambiguous";
+            return Status::InsufficientFeatures;
+        }
+        // Template angle compatibility for existing visualization only. Physical
+        // IDs are determined directly by the cyclic source index below.
+        best_angle = (360 - 90 * last_quality_.quadrant) % 360;
+        best_overlap = last_quality_.direction_iou;
+    }
 
     // ---- 5. 亚像素细化 ----
-    std::vector<cv::Point2f> refined = refineCorners(large, corners_large, 5);
+    std::vector<cv::Point2f> refined;
+    if (robust && config_.robustness.guarded_refinement) {
+        refined = guardedRefine(large, corners_large);
+    } else {
+        const auto refinement_start = Clock::now();
+        refined = refineCorners(large, corners_large, 5);
+        last_quality_.accepted_refinement.assign(4, 1);
+        last_quality_.refined_count = 4;
+        for (int i = 0; i < 4; ++i)
+            last_quality_.max_refine_shift_px = std::max(last_quality_.max_refine_shift_px,
+                cv::norm(refined[i] - corners_large[i]) / sf);
+        last_quality_.stage_ms["refinement"] = elapsedMs(refinement_start);
+    }
 
     // ---- 6. 角度对齐：旋至规范方向 ----
     if (best_angle >= 0) {
         int quadrant = static_cast<int>(std::round((360 - best_angle) / 90.0)) % 4;
         std::rotate(refined.begin(), refined.begin() + quadrant, refined.end());
+        std::rotate(corners_large.begin(), corners_large.begin() + quadrant, corners_large.end());
+        if (last_quality_.accepted_refinement.size() == 4)
+            std::rotate(last_quality_.accepted_refinement.begin(),
+                        last_quality_.accepted_refinement.begin() + quadrant,
+                        last_quality_.accepted_refinement.end());
     }
 
     // ---- 7. 缩放回原始 ROI 坐标 ----
     double inv_sf = 1.0 / sf;
+    // cv::resize maps source pixel centers: dst=(src+.5)*sf-.5.
+    // Keep the original direct division unless explicitly enabled for ablation.
+    const double center_correction = robust && config_.robustness.pixel_center_mapping
+        ? .5 * inv_sf - .5 : 0.0;
     out_corners.resize(4);
+    last_quality_.initial_corners.resize(4);
     for (int i = 0; i < 4; ++i) {
-        out_corners[i].x = static_cast<float>(refined[i].x * inv_sf);
-        out_corners[i].y = static_cast<float>(refined[i].y * inv_sf);
+        out_corners[i].x = static_cast<float>(refined[i].x * inv_sf + center_correction);
+        out_corners[i].y = static_cast<float>(refined[i].y * inv_sf + center_correction);
+        last_quality_.initial_corners[i] = cv::Point2f(
+            static_cast<float>(corners_large[i].x * inv_sf + center_correction),
+            static_cast<float>(corners_large[i].y * inv_sf + center_correction));
     }
+
+    last_quality_.final_corners = out_corners;
+    last_quality_.geometry_valid = last_quality_.geometry_valid && validQuad(out_corners, .5);
+    last_quality_.status = "success";
 
     return Status::Success;
 }
@@ -372,20 +682,12 @@ TinyTargetExtractor::matchTemplate(const cv::Mat& roi_binary) {
         if (area > best_area) { best_area = area; best_label = i; }
     }
 
-    cv::Mat component_mask = (labels == best_label);
-    component_mask.convertTo(component_mask, CV_8UC1, 255.0);
-
-    std::vector<cv::Point> pts;
-    cv::findNonZero(component_mask, pts);
-    if (pts.empty()) return result;
-
-    // 裁剪最大分量周围的边界正方形
-    int x_min = component_mask.cols, x_max = 0;
-    int y_min = component_mask.rows, y_max = 0;
-    for (const auto& pt : pts) {
-        x_min = std::min(x_min, pt.x); x_max = std::max(x_max, pt.x);
-        y_min = std::min(y_min, pt.y); y_max = std::max(y_max, pt.y);
-    }
+    // The same selected component's exact pixel bounds are already available.
+    // Keep inclusive maxima and the original crop/rounding behavior.
+    const int x_min = stats.at<int>(best_label, cv::CC_STAT_LEFT);
+    const int y_min = stats.at<int>(best_label, cv::CC_STAT_TOP);
+    const int x_max = x_min + stats.at<int>(best_label, cv::CC_STAT_WIDTH) - 1;
+    const int y_max = y_min + stats.at<int>(best_label, cv::CC_STAT_HEIGHT) - 1;
 
     int side = std::max(x_max - x_min + 1, y_max - y_min + 1);
     int cx = (x_min + x_max) / 2, cy = (y_min + y_max) / 2;
@@ -457,10 +759,13 @@ std::vector<cv::Point2f> TinyTargetExtractor::refineCorners(
 
 PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
                                                  const cv::Mat& color) {
+    resetLastCall();
     PipelineResult result;
     result.left_color = color;
 
     if (gray.empty()) {
+        last_quality_.status = "empty_input";
+        attachQuality(result);
         std::cerr << "[TinyTarget::extractMono] empty image" << std::endl;
         return result;
     }
@@ -475,8 +780,11 @@ PipelineResult TinyTargetExtractor::extractMono(const cv::Mat& gray,
     double best_overlap = 0.0;
     Status s = extract4Corners(gray, corners, best_angle, best_overlap);
     last_left_debug_ = last_call_debug_;
+    attachQuality(result);
 
     if (s != Status::Success || corners.size() != 4) {
+        if (mono_context_ && config_.robustness.enabled)
+            result.failure_reason = "tt_" + last_quality_.status;
         std::cerr << "[TinyTarget::extractMono] extraction failed (status="
                   << static_cast<int>(s) << ", n=" << corners.size() << ")" << std::endl;
         return result;

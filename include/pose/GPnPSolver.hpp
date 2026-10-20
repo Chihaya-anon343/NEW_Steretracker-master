@@ -34,7 +34,7 @@
 
 namespace gpnp {
 
-enum class PoseInitializationSource { Provided, InitialPnP, DepthGuess, PreviousPose };
+enum class PoseInitializationSource { Provided, InitialPnP, DepthGuess, PreviousPose, StereoTriangulation, PlanarIppe };
 
 struct GPnPOptions {
     PoseInitializationSource initial_source{PoseInitializationSource::Provided};
